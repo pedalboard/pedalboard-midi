@@ -1,7 +1,8 @@
 [package]
 edition = "2021"
-name = "rp2040-project-template"
+name = "pedalboard-midi"
 version = "0.1.0"
+readme = "README.md"
 
 [dependencies]
 cortex-m = "0.7"
@@ -21,6 +22,12 @@ rp-pico = "0.6"
 # If you're not going to use a Board Support Package you'll need these:
 # rp2040-hal = { version="0.6", features=["rt"] }
 # rp2040-boot2 = "0.2"
+
+cortex-m-rtic = "1.0.0"
+rp2040-monotonic = "1.2.0"
+
+# [dev-dependencies]
+panic-halt= "0.2.0"
 
 # cargo build/run
 [profile.dev]
