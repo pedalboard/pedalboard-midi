@@ -10,7 +10,15 @@ mod app {
 
     use embedded_hal::digital::v2::OutputPin;
     use rp2040_monotonic::Rp2040Monotonic;
-    use rp_pico::hal;
+    use rp_pico::{
+        hal::{
+            clocks::init_clocks_and_plls,
+            gpio::{Pin, PushPullOutput},
+            Sio, Watchdog,
+        },
+        Pins,
+    };
+    const XTAL_FREQ_HZ: u32 = 12_000_000;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Rp2040Monotonic;
@@ -20,17 +28,32 @@ mod app {
 
     #[local]
     struct Local {
-        led: hal::gpio::Pin<hal::gpio::pin::bank0::Gpio25, hal::gpio::PushPullOutput>,
+        led: Pin<rp_pico::hal::gpio::pin::bank0::Gpio25, PushPullOutput>,
     }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
-        let sio = hal::Sio::new(cx.device.SIO);
         let mut resets = cx.device.RESETS;
+
+        let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
+
+        let _clocks = init_clocks_and_plls(
+            XTAL_FREQ_HZ,
+            cx.device.XOSC,
+            cx.device.CLOCKS,
+            cx.device.PLL_SYS,
+            cx.device.PLL_USB,
+            &mut resets,
+            &mut watchdog,
+        )
+        .ok()
+        .unwrap();
+
         let timer = cx.device.TIMER;
         let mono = Rp2040Monotonic::new(timer);
 
-        let pins = rp_pico::Pins::new(
+        let sio = Sio::new(cx.device.SIO);
+        let pins = Pins::new(
             cx.device.IO_BANK0,
             cx.device.PADS_BANK0,
             sio.gpio_bank0,
