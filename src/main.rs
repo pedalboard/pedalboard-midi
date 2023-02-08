@@ -42,24 +42,24 @@ mod app {
         (Shared { led }, Local {}, init::Monotonics(mono))
     }
 
-    #[task( shared = [led],)]
+    #[task(shared = [led])]
     fn led_on(cx: led_on::Context) {
         let mut led = cx.shared.led;
         (led).lock(|led_l| {
             led_l.set_high().unwrap();
         });
 
-        let d1 = rp2040_monotonic::fugit::Duration::<u64, 1, 1_000_000>::secs(1);
-        led_off::spawn_after(d1).unwrap();
+        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::secs(1);
+        led_off::spawn_after(d).unwrap();
     }
 
-    #[task( shared = [led],)]
+    #[task(shared = [led])]
     fn led_off(cx: led_off::Context) {
         let mut led = cx.shared.led;
         (led).lock(|led_l| {
             led_l.set_low().unwrap();
         });
-        let d1 = rp2040_monotonic::fugit::Duration::<u64, 1, 1_000_000>::secs(1);
-        led_on::spawn_after(d1).unwrap();
+        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::secs(1);
+        led_on::spawn_after(d).unwrap();
     }
 }
