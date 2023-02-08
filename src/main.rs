@@ -16,12 +16,12 @@ mod app {
     type MyMono = Rp2040Monotonic;
 
     #[shared]
-    struct Shared {
-        led: hal::gpio::Pin<hal::gpio::pin::bank0::Gpio25, hal::gpio::PushPullOutput>,
-    }
+    struct Shared {}
 
     #[local]
-    struct Local {}
+    struct Local {
+        led: hal::gpio::Pin<hal::gpio::pin::bank0::Gpio25, hal::gpio::PushPullOutput>,
+    }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
@@ -38,28 +38,19 @@ mod app {
         );
 
         let led = pins.led.into_push_pull_output();
-        led_on::spawn().unwrap();
-        (Shared { led }, Local {}, init::Monotonics(mono))
+        blink::spawn().unwrap();
+        (Shared {}, Local { led }, init::Monotonics(mono))
     }
 
-    #[task(shared = [led])]
-    fn led_on(cx: led_on::Context) {
-        let mut led = cx.shared.led;
-        (led).lock(|led_l| {
-            led_l.set_high().unwrap();
-        });
-
+    #[task(local = [led, state: bool = false])]
+    fn blink(ctx: blink::Context) {
+        *ctx.local.state = !*ctx.local.state;
+        if *ctx.local.state {
+            ctx.local.led.set_high().ok().unwrap();
+        } else {
+            ctx.local.led.set_low().ok().unwrap();
+        }
         let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::secs(1);
-        led_off::spawn_after(d).unwrap();
-    }
-
-    #[task(shared = [led])]
-    fn led_off(cx: led_off::Context) {
-        let mut led = cx.shared.led;
-        (led).lock(|led_l| {
-            led_l.set_low().unwrap();
-        });
-        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::secs(1);
-        led_on::spawn_after(d).unwrap();
+        blink::spawn_after(d).unwrap();
     }
 }
