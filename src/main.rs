@@ -50,7 +50,7 @@ mod app {
         } else {
             ctx.local.led.set_low().ok().unwrap();
         }
-        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::secs(1);
+        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::millis(500);
         blink::spawn_after(d).unwrap();
     }
 }
