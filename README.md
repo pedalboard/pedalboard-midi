@@ -33,10 +33,10 @@ cargo install elf2uf2-rs
 ```
 
 
-## Deploment (Linux Host)
+## Deployment (from Linux Host)
 
 The firmware supports No-Button-Boot (nbb) bootsel mode via USB serial interface.
 
-1. Connect USB C cable to Feather
+1. Connect USB C cable to the Pico
 4. Run `make deploy`
-5. Remove USB C cable from Feater
+5. Remove USB C cable from the Pico
