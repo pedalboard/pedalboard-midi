@@ -10,10 +10,13 @@ XSONIC XTONE => this MIDI Adapter => Plethora X3 => RC500
 
 The XTONE case is used to host the hardware.
 
-## Hardware
+## Hardware 
 
-The target hardware is a Adafruit [MIDI Feather Wing](https://www.adafruit.com/product/4740) on top of an Adafruit
-[Feather RP2040](https://www.adafruit.com/product/4884)
+### BOM
+
+* 1 x Rasperry PI [Pico](https://www.raspberrypi.com/products/raspberry-pi-pico/)
+* 1 x Adafruit [MIDI Feather Wing](https://www.adafruit.com/product/4740) 
+* 2 x SensorKit [KY-40 Rotary Encoder](https://sensorkit.joy-it.net/en/sensors/ky-040)
 
 ### Wiring 
 
