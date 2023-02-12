@@ -33,14 +33,13 @@ mod app {
     type MyMono = Rp2040Monotonic;
 
     #[shared]
-    struct Shared {
-        serial: SerialPort<'static, UsbBus>,
-        usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-    }
+    struct Shared {}
 
     #[local]
     struct Local {
         led: Pin<rp_pico::hal::gpio::pin::bank0::Gpio25, PushPullOutput>,
+        usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
+        serial: SerialPort<'static, UsbBus>,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -73,8 +72,6 @@ mod app {
 
         let led = pins.led.into_push_pull_output();
 
-        // The bus that is used to manage the device and class below.
-
         let usb_bus: &'static _ = cx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
             cx.device.USBCTRL_REGS,
             cx.device.USBCTRL_DPRAM,
@@ -83,20 +80,23 @@ mod app {
             &mut resets,
         )));
 
-        // Set up the USB Communications Class Device driver.
         let serial = SerialPort::new(usb_bus);
 
-        // Create a USB device with a fake VID and PID
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .manufacturer("laenzlinger")
             .product("pedalboard-midi")
             .serial_number("0.0.1")
             .device_class(2) // from: https://www.usb.org/defined-class-codes
             .build();
+
         blink::spawn().unwrap();
         (
-            Shared { usb_dev, serial },
-            Local { led },
+            Shared {},
+            Local {
+                led,
+                usb_dev,
+                serial,
+            },
             init::Monotonics(mono),
         )
     }
@@ -113,32 +113,30 @@ mod app {
         blink::spawn_after(d).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [serial, usb_dev])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [serial, usb_dev])]
     fn usb_rx(cx: usb_rx::Context) {
-        let usb_dev = cx.shared.usb_dev;
-        let serial = cx.shared.serial;
+        let usb_dev = cx.local.usb_dev;
+        let serial = cx.local.serial;
 
-        (usb_dev, serial).lock(|usb_dev_a, serial_a| {
-            // Check for new data
-            if usb_dev_a.poll(&mut [serial_a]) {
-                let mut buf = [0u8; 64];
-                match serial_a.read(&mut buf) {
-                    Err(_e) => {
-                        // Do nothing
-                    }
-                    Ok(0) => {
-                        // Do nothing
-                    }
-                    Ok(count) => {
-                        buf.iter().take(count).for_each(|b| {
-                            if b == &b'z' {
-                                let _ = serial_a.write(b"Reboot\r\n");
-                                reset_to_usb_boot(0, 0)
-                            }
-                        });
-                    }
+        // Check for new data
+        if usb_dev.poll(&mut [serial]) {
+            let mut buf = [0u8; 64];
+            match serial.read(&mut buf) {
+                Err(_e) => {
+                    // Do nothing
+                }
+                Ok(0) => {
+                    // Do nothing
+                }
+                Ok(count) => {
+                    buf.iter().take(count).for_each(|b| {
+                        if b == &b'z' {
+                            let _ = serial.write(b"Reboot\r\n");
+                            reset_to_usb_boot(0, 0)
+                        }
+                    });
                 }
             }
-        });
+        }
     }
 }
