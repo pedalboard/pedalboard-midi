@@ -14,30 +14,36 @@ mod app {
         hal::{
             clocks::init_clocks_and_plls,
             gpio::{Pin, PushPullOutput},
+            rom_data::reset_to_usb_boot,
             usb::UsbBus,
             Sio, Watchdog,
         },
         Pins,
     };
 
-    use usb_device::class_prelude::UsbBusAllocator;
+    use usb_device::{
+        class_prelude::UsbBusAllocator,
+        device::{UsbDeviceBuilder, UsbVidPid},
+    };
+    use usbd_serial::SerialPort;
 
     const XTAL_FREQ_HZ: u32 = 12_000_000;
-
-    static mut USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Rp2040Monotonic;
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        serial: SerialPort<'static, UsbBus>,
+        usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
+    }
 
     #[local]
     struct Local {
         led: Pin<rp_pico::hal::gpio::pin::bank0::Gpio25, PushPullOutput>,
     }
 
-    #[init]
+    #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut resets = cx.device.RESETS;
         let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
@@ -68,22 +74,31 @@ mod app {
         let led = pins.led.into_push_pull_output();
 
         // The bus that is used to manage the device and class below.
-        let usb_bus = UsbBusAllocator::new(UsbBus::new(
+
+        let usb_bus: &'static _ = cx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
             cx.device.USBCTRL_REGS,
             cx.device.USBCTRL_DPRAM,
             clocks.usb_clock,
             true,
             &mut resets,
-        ));
+        )));
 
-        // We store the bus in a static to make the borrows satisfy the rtic model, since rtic
-        // needs all references to be 'static.
-        unsafe {
-            USB_BUS = Some(usb_bus);
-        }
+        // Set up the USB Communications Class Device driver.
+        let serial = SerialPort::new(usb_bus);
 
+        // Create a USB device with a fake VID and PID
+        let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
+            .manufacturer("laenzlinger")
+            .product("pedalboard-midi")
+            .serial_number("0.0.1")
+            .device_class(2) // from: https://www.usb.org/defined-class-codes
+            .build();
         blink::spawn().unwrap();
-        (Shared {}, Local { led }, init::Monotonics(mono))
+        (
+            Shared { usb_dev, serial },
+            Local { led },
+            init::Monotonics(mono),
+        )
     }
 
     #[task(local = [led, state: bool = false])]
@@ -96,5 +111,34 @@ mod app {
         }
         let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::millis(500);
         blink::spawn_after(d).unwrap();
+    }
+
+    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [serial, usb_dev])]
+    fn usb_rx(cx: usb_rx::Context) {
+        let usb_dev = cx.shared.usb_dev;
+        let serial = cx.shared.serial;
+
+        (usb_dev, serial).lock(|usb_dev_a, serial_a| {
+            // Check for new data
+            if usb_dev_a.poll(&mut [serial_a]) {
+                let mut buf = [0u8; 64];
+                match serial_a.read(&mut buf) {
+                    Err(_e) => {
+                        // Do nothing
+                    }
+                    Ok(0) => {
+                        // Do nothing
+                    }
+                    Ok(count) => {
+                        buf.iter().take(count).for_each(|b| {
+                            if b == &b'z' {
+                                let _ = serial_a.write(b"Reboot\r\n");
+                                reset_to_usb_boot(0, 0)
+                            }
+                        });
+                    }
+                }
+            }
+        });
     }
 }
