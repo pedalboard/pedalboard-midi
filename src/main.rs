@@ -118,7 +118,7 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
-        let pin = pins.gpio18.into_floating_input();
+        let pin = pins.gpio18.into_pull_up_input();
 
         let inputs = crate::mmi::Inputs::new(pin);
 
