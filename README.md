@@ -1,11 +1,11 @@
-# Pedalboard Midi Adapter
+# Pedalboard Midi Controller
 
-This project implements a MIDI adapter for my pedalboard
+This project implements a MIDI controller for my pedalboard
 
 The midi devices are daisy chained with MIDI cables in the following order:
 
 ```
-XSONIC XTONE => this MIDI Adapter => Plethora X3 => RC500
+MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
 ```
 
 The XTONE case is used to host the hardware.
