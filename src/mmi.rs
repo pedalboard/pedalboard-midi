@@ -67,17 +67,15 @@ impl Inputs {
                 if self.vol_value < 127 {
                     self.vol_value = self.vol_value + 1;
                 }
-                Some(InputEvent::Vol(Value7::new(self.vol_value)));
+                Some(InputEvent::Vol(Value7::new(self.vol_value)))
             }
             Direction::Anticlockwise => {
                 if self.vol_value > 1 {
                     self.vol_value = self.vol_value - 1;
                 }
-                Some(InputEvent::Vol(Value7::new(self.vol_value)));
+                Some(InputEvent::Vol(Value7::new(self.vol_value)))
             }
-            Direction::None => (),
+            Direction::None => None,
         }
-
-        None
     }
 }
