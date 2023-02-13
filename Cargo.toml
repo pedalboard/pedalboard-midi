@@ -21,6 +21,8 @@ usb-device= "0.2.9"
 usbd-serial = "0.1.1"
 fugit = "0.3"
 embedded-midi = { git = "https://github.com/rust-midi/embedded-midi", branch = "main" }
+midi-types = { version = "0.1.5", features = ["defmt"] }
+debouncr = "0.2.2"
 
 # [dev-dependencies]
 panic-halt= "0.2.0"

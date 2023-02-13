@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
 
-use rtic::app;
+mod mmi;
 
 use panic_halt as _;
+use rtic::app;
 
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
@@ -51,6 +52,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
         midi_out: MidiOut,
+        inputs: crate::mmi::Inputs,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -116,6 +118,10 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
+        let pin = pins.gpio16.into_floating_input();
+
+        let inputs = crate::mmi::Inputs::new(pin);
+
         blink::spawn().unwrap();
         (
             Shared {},
@@ -124,6 +130,7 @@ mod app {
                 usb_dev,
                 serial,
                 midi_out,
+                inputs,
             },
             init::Monotonics(mono),
         )
@@ -137,8 +144,6 @@ mod app {
         } else {
             ctx.local.led.set_low().ok().unwrap();
         }
-        // FIXME remove once test is done
-        midi_out::spawn().unwrap();
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
@@ -151,6 +156,17 @@ mod app {
             embedded_midi::midi_types::Value7::new(0),
         );
         midi_out.write(&message).unwrap();
+    }
+
+    #[task(local = [inputs])]
+    fn poll_input(ctx: poll_input::Context) {
+        let inputs = ctx.local.inputs;
+
+        match inputs.update() {
+            Some(_event) => midi_out::spawn().unwrap(),
+            None => {}
+        };
+        poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3, local = [serial, usb_dev])]
