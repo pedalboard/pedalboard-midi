@@ -9,17 +9,22 @@ use panic_halt as _;
 mod app {
 
     use embedded_hal::digital::v2::OutputPin;
+    use embedded_midi::MidiOut;
     use fugit::HertzU32;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
             clocks::init_clocks_and_plls,
-            gpio::{pin::bank0::Gpio25, FunctionUart, Pin, PushPullOutput},
+            gpio::{
+                pin::bank0::{Gpio0, Gpio1, Gpio25},
+                Function, FunctionUart, Pin, PushPullOutput, Uart,
+            },
             rom_data::reset_to_usb_boot,
-            uart::{DataBits, StopBits, UartConfig, UartPeripheral},
+            uart::{DataBits, StopBits, UartConfig, UartPeripheral, Writer},
             usb::UsbBus,
             Clock, Sio, Watchdog,
         },
+        pac::UART0,
         Pins,
     };
     use usb_device::{
@@ -41,6 +46,7 @@ mod app {
         led: Pin<Gpio25, PushPullOutput>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
+        midi_out: MidiOut<Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>>,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -106,10 +112,10 @@ mod app {
             .unwrap();
 
         // Configure Midi
-        let (_rx, _tx) = uart.split();
+        let (_rx, tx) = uart.split();
 
         //    let mut midi_in = MidiIn::new(rx);
-        // let mut midi_out = MidiOut::new(tx);
+        let midi_out = MidiOut::new(tx);
 
         blink::spawn().unwrap();
         (
@@ -118,6 +124,7 @@ mod app {
                 led,
                 usb_dev,
                 serial,
+                midi_out,
             },
             init::Monotonics(mono),
         )
@@ -133,6 +140,17 @@ mod app {
         }
         let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::millis(500);
         blink::spawn_after(d).unwrap();
+    }
+
+    #[task(local = [midi_out])]
+    fn midi_out(ctx: midi_out::Context) {
+        let midi_out = ctx.local.midi_out;
+        let message = embedded_midi::midi_types::MidiMessage::ControlChange(
+            embedded_midi::midi_types::Channel::new(0),
+            embedded_midi::midi_types::Control::new(0),
+            embedded_midi::midi_types::Value7::new(0),
+        );
+        midi_out.write(&message).unwrap();
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3, local = [serial, usb_dev])]
