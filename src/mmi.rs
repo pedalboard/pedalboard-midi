@@ -1,6 +1,6 @@
 use debouncr::{debounce_stateful_3, DebouncerStateful, Repeat3};
 use embedded_hal::digital::v2::InputPin;
-use rp_pico::hal::gpio::{pin::bank0::Gpio16, Floating, Input, Pin};
+use rp_pico::hal::gpio::{pin::bank0::Gpio18, Floating, Input, Pin};
 pub enum Direction {
     Up,
     Down,
@@ -21,12 +21,12 @@ pub enum InputEvent {
 }
 
 pub struct Inputs {
-    rotary_vol_button_pin: Pin<Gpio16, Input<Floating>>,
+    rotary_vol_button_pin: Pin<Gpio18, Input<Floating>>,
     rotary_vol_button_state: DebouncerStateful<u8, Repeat3>,
 }
 
 impl Inputs {
-    pub fn new(rotary_vol_button_pin: Pin<Gpio16, Input<Floating>>) -> Self {
+    pub fn new(rotary_vol_button_pin: Pin<Gpio18, Input<Floating>>) -> Self {
         Self {
             rotary_vol_button_pin,
             rotary_vol_button_state: debounce_stateful_3(false),
