@@ -135,6 +135,8 @@ mod app {
         } else {
             ctx.local.led.set_low().ok().unwrap();
         }
+        // FIXME remove once test is done
+        midi_out::spawn().unwrap();
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
