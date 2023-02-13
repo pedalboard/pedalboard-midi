@@ -35,6 +35,8 @@ mod app {
 
     const XTAL_FREQ_HZ: u32 = 12_000_000;
 
+    type Duration = fugit::TimerDurationU64<1_000_000>;
+
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Rp2040Monotonic;
 
@@ -133,8 +135,7 @@ mod app {
         } else {
             ctx.local.led.set_low().ok().unwrap();
         }
-        let d = rp2040_monotonic::fugit::TimerDurationU64::<1_000_000>::millis(500);
-        blink::spawn_after(d).unwrap();
+        blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
     #[task(local = [midi_out])]
