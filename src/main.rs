@@ -9,18 +9,19 @@ use panic_halt as _;
 mod app {
 
     use embedded_hal::digital::v2::OutputPin;
+    use fugit::HertzU32;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
             clocks::init_clocks_and_plls,
-            gpio::{Pin, PushPullOutput},
+            gpio::{pin::bank0::Gpio25, FunctionUart, Pin, PushPullOutput},
             rom_data::reset_to_usb_boot,
+            uart::{DataBits, StopBits, UartConfig, UartPeripheral},
             usb::UsbBus,
-            Sio, Watchdog,
+            Clock, Sio, Watchdog,
         },
         Pins,
     };
-
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
@@ -37,7 +38,7 @@ mod app {
 
     #[local]
     struct Local {
-        led: Pin<rp_pico::hal::gpio::pin::bank0::Gpio25, PushPullOutput>,
+        led: Pin<Gpio25, PushPullOutput>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
     }
@@ -61,7 +62,6 @@ mod app {
 
         let timer = cx.device.TIMER;
         let mono = Rp2040Monotonic::new(timer);
-
         let sio = Sio::new(cx.device.SIO);
         let pins = Pins::new(
             cx.device.IO_BANK0,
@@ -88,6 +88,28 @@ mod app {
             .serial_number("0.0.1")
             .device_class(2) // from: https://www.usb.org/defined-class-codes
             .build();
+
+        let uart_pins = (
+            pins.gpio0.into_mode::<FunctionUart>(),
+            pins.gpio1.into_mode::<FunctionUart>(),
+        );
+
+        // set the MIDI baud rate
+        let conf = UartConfig::new(
+            HertzU32::from_raw(31250),
+            DataBits::Eight,
+            None,
+            StopBits::One,
+        );
+        let uart = UartPeripheral::new(cx.device.UART0, uart_pins, &mut resets)
+            .enable(conf, clocks.peripheral_clock.freq())
+            .unwrap();
+
+        // Configure Midi
+        let (_rx, _tx) = uart.split();
+
+        //    let mut midi_in = MidiIn::new(rx);
+        // let mut midi_out = MidiOut::new(tx);
 
         blink::spawn().unwrap();
         (
