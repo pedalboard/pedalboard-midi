@@ -9,7 +9,6 @@ use panic_halt as _;
 mod app {
 
     use embedded_hal::digital::v2::OutputPin;
-    use embedded_midi::MidiOut;
     use fugit::HertzU32;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
@@ -33,9 +32,12 @@ mod app {
     };
     use usbd_serial::SerialPort;
 
-    const XTAL_FREQ_HZ: u32 = 12_000_000;
-
     type Duration = fugit::TimerDurationU64<1_000_000>;
+    type MidiOut = embedded_midi::MidiOut<
+        Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
+    >;
+
+    const XTAL_FREQ_HZ: u32 = 12_000_000;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Rp2040Monotonic;
@@ -48,7 +50,7 @@ mod app {
         led: Pin<Gpio25, PushPullOutput>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
-        midi_out: MidiOut<Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>>,
+        midi_out: MidiOut,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
