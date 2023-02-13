@@ -29,6 +29,9 @@ pub struct Inputs {
     vol_value: u8,
     gain_sw_state: DebouncerStateful<u8, Repeat5>,
     gain_sw_pin: Pin<Gpio21, Input<PullUp>>,
+    gain_rotary:
+        RotaryEncoder<StandardMode, Pin<Gpio20, Input<PullUp>>, Pin<Gpio19, Input<PullUp>>>,
+    gain_value: u8,
 }
 
 impl Inputs {
@@ -47,6 +50,8 @@ impl Inputs {
             gain_sw_state: debounce_stateful_5(false),
             vol_rotary: RotaryEncoder::new(vol_dt_pin, vol_clk_pin).into_standard_mode(),
             vol_value: 0,
+            gain_rotary: RotaryEncoder::new(gain_dt_pin, gain_clk_pin).into_standard_mode(),
+            gain_value: 0,
         }
     }
 
@@ -62,20 +67,40 @@ impl Inputs {
             return Some(InputEvent::GainButton);
         }
         self.vol_rotary.update();
-        match self.vol_rotary.direction() {
-            Direction::Clockwise => {
-                if self.vol_value < 127 {
-                    self.vol_value = self.vol_value + 1;
-                }
-                Some(InputEvent::Vol(Value7::new(self.vol_value)))
-            }
-            Direction::Anticlockwise => {
-                if self.vol_value > 1 {
-                    self.vol_value = self.vol_value - 1;
-                }
-                Some(InputEvent::Vol(Value7::new(self.vol_value)))
-            }
-            Direction::None => None,
+        if self.vol_rotary.direction() != Direction::None {
+            return Some(InputEvent::Vol(rotary_value(
+                self.vol_value,
+                self.vol_rotary.direction(),
+            )));
         }
+        self.gain_rotary.update();
+        if self.gain_rotary.direction() != Direction::None {
+            return Some(InputEvent::Vol(rotary_value(
+                self.gain_value,
+                self.gain_rotary.direction(),
+            )));
+        }
+
+        None
     }
+}
+
+fn rotary_value(current: u8, dir: Direction) -> Value7 {
+    return Value7::new(match dir {
+        Direction::Clockwise => {
+            let mut next = current;
+            if current < 127 {
+                next = current + 1
+            }
+            next
+        }
+        Direction::Anticlockwise => {
+            let mut next = current;
+            if current > 1 {
+                next = current - 1;
+            }
+            next
+        }
+        Direction::None => current,
+    });
 }
