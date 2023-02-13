@@ -76,8 +76,10 @@ mod app {
             &mut resets,
         );
 
+        // Pins
         let led = pins.led.into_push_pull_output();
 
+        // USB
         let usb_bus: &'static _ = cx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
             cx.device.USBCTRL_REGS,
             cx.device.USBCTRL_DPRAM,
@@ -85,9 +87,7 @@ mod app {
             true,
             &mut resets,
         )));
-
         let serial = SerialPort::new(usb_bus);
-
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .manufacturer("laenzlinger")
             .product("pedalboard-midi")
@@ -95,12 +95,11 @@ mod app {
             .device_class(2) // from: https://www.usb.org/defined-class-codes
             .build();
 
+        // UART Midi
         let uart_pins = (
             pins.gpio0.into_mode::<FunctionUart>(),
             pins.gpio1.into_mode::<FunctionUart>(),
         );
-
-        // set the MIDI baud rate
         let conf = UartConfig::new(
             HertzU32::from_raw(31250),
             DataBits::Eight,
@@ -110,11 +109,7 @@ mod app {
         let uart = UartPeripheral::new(cx.device.UART0, uart_pins, &mut resets)
             .enable(conf, clocks.peripheral_clock.freq())
             .unwrap();
-
-        // Configure Midi
         let (_rx, tx) = uart.split();
-
-        //    let mut midi_in = MidiIn::new(rx);
         let midi_out = MidiOut::new(tx);
 
         blink::spawn().unwrap();
