@@ -41,7 +41,7 @@ mod app {
     const XTAL_FREQ_HZ: u32 = 12_000_000;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
-    type MyMono = Rp2040Monotonic;
+    type Rp2040Mono = Rp2040Monotonic;
 
     #[shared]
     struct Shared {}
@@ -123,6 +123,8 @@ mod app {
         let inputs = crate::mmi::Inputs::new(pin);
 
         blink::spawn().unwrap();
+        poll_input::spawn().unwrap();
+
         (
             Shared {},
             Local {
