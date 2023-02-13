@@ -1,4 +1,4 @@
-use debouncr::{debounce_stateful_3, DebouncerStateful, Repeat3};
+use debouncr::{debounce_stateful_5, DebouncerStateful, Repeat5};
 use embedded_hal::digital::v2::InputPin;
 use rp_pico::hal::gpio::{pin::bank0::Gpio18, Input, Pin, PullUp};
 pub enum Direction {
@@ -21,22 +21,22 @@ pub enum InputEvent {
 }
 
 pub struct Inputs {
-    rotary_vol_button_pin: Pin<Gpio18, Input<PullUp>>,
-    rotary_vol_button_state: DebouncerStateful<u8, Repeat3>,
+    vol_button_pin: Pin<Gpio18, Input<PullUp>>,
+    vol_button_state: DebouncerStateful<u8, Repeat5>,
 }
 
 impl Inputs {
-    pub fn new(rotary_vol_button_pin: Pin<Gpio18, Input<PullUp>>) -> Self {
+    pub fn new(vol_button_pin: Pin<Gpio18, Input<PullUp>>) -> Self {
         Self {
-            rotary_vol_button_pin,
-            rotary_vol_button_state: debounce_stateful_3(false),
+            vol_button_pin,
+            vol_button_state: debounce_stateful_5(false),
         }
     }
 
     pub fn update(&mut self) -> Option<InputEvent> {
         let edge = self
-            .rotary_vol_button_state
-            .update(self.rotary_vol_button_pin.is_high().unwrap());
+            .vol_button_state
+            .update(self.vol_button_pin.is_high().unwrap());
         if edge.is_some() {
             return Some(InputEvent::GainButton);
         }
