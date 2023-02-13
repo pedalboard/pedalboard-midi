@@ -118,9 +118,14 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
-        let pin = pins.gpio18.into_pull_up_input();
-
-        let inputs = crate::mmi::Inputs::new(pin);
+        let inputs = crate::mmi::Inputs::new(
+            pins.gpio16.into_pull_up_input(),
+            pins.gpio17.into_pull_up_input(),
+            pins.gpio18.into_pull_up_input(),
+            pins.gpio19.into_pull_up_input(),
+            pins.gpio20.into_pull_up_input(),
+            pins.gpio21.into_pull_up_input(),
+        );
 
         blink::spawn().unwrap();
         poll_input::spawn().unwrap();
