@@ -6,11 +6,17 @@ use debouncr::{
 use embedded_hal::digital::v2::InputPin;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp_pico::hal::gpio::{
-    pin::bank0::{
-        Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
+    pin::{
+        bank0::{
+            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio3, Gpio4, Gpio5, Gpio6,
+            Gpio7,
+        },
+        PinId,
     },
     Input, Pin, PullUp,
 };
+
+type PullUpInputPin<I> = Pin<I, Input<PullUp>>;
 
 use midi_types::Value7;
 
@@ -33,17 +39,21 @@ pub enum InputEvent {
     Gain(Value7),
 }
 
-struct Rotary<DT, CLK> {
-    encoder: RotaryEncoder<StandardMode, DT, CLK>,
+struct Rotary<DT, CLK>
+where
+    DT: PinId,
+    CLK: PinId,
+{
+    encoder: RotaryEncoder<StandardMode, PullUpInputPin<DT>, PullUpInputPin<CLK>>,
     value: u8,
 }
 
 impl<DT, CLK> Rotary<DT, CLK>
 where
-    DT: InputPin,
-    CLK: InputPin,
+    DT: PinId,
+    CLK: PinId,
 {
-    fn new(dt: DT, clk: CLK) -> Self {
+    fn new(dt: PullUpInputPin<DT>, clk: PullUpInputPin<CLK>) -> Self {
         Rotary {
             encoder: RotaryEncoder::new(dt, clk).into_standard_mode(),
             value: 0u8,
@@ -70,16 +80,19 @@ where
     }
 }
 
-struct Button<PIN> {
-    pin: PIN,
+struct Button<I>
+where
+    I: PinId,
+{
+    pin: PullUpInputPin<I>,
     debouncer: DebouncerStateful<u8, Repeat5>,
 }
 
-impl<PIN> Button<PIN>
+impl<I> Button<I>
 where
-    PIN: InputPin,
+    I: PinId,
 {
-    fn new(pin: PIN) -> Self {
+    fn new(pin: PullUpInputPin<I>) -> Self {
         Button {
             pin,
             debouncer: debounce_stateful_5(false),
@@ -87,7 +100,7 @@ where
     }
 
     fn update(&mut self) -> Option<Edge> {
-        let pressed = self.pin.is_low().unwrap_or_default();
+        let pressed = self.pin.is_low().unwrap();
         let edge = self.debouncer.update(pressed);
         edge.map(|e| match e {
             Falling => Edge::Deactivate,
@@ -97,32 +110,32 @@ where
 }
 
 pub struct Inputs {
-    button_vol: Button<Pin<Gpio18, Input<PullUp>>>,
-    vol_rotary: Rotary<Pin<Gpio17, Input<PullUp>>, Pin<Gpio16, Input<PullUp>>>,
-    button_gain: Button<Pin<Gpio21, Input<PullUp>>>,
-    gain_rotary: Rotary<Pin<Gpio20, Input<PullUp>>, Pin<Gpio19, Input<PullUp>>>,
-    button_a: Button<Pin<Gpio2, Input<PullUp>>>,
-    button_b: Button<Pin<Gpio3, Input<PullUp>>>,
-    button_c: Button<Pin<Gpio4, Input<PullUp>>>,
-    button_d: Button<Pin<Gpio5, Input<PullUp>>>,
-    button_e: Button<Pin<Gpio6, Input<PullUp>>>,
-    button_f: Button<Pin<Gpio7, Input<PullUp>>>,
+    button_vol: Button<Gpio18>,
+    vol_rotary: Rotary<Gpio17, Gpio16>,
+    button_gain: Button<Gpio21>,
+    gain_rotary: Rotary<Gpio20, Gpio19>,
+    button_a: Button<Gpio2>,
+    button_b: Button<Gpio3>,
+    button_c: Button<Gpio4>,
+    button_d: Button<Gpio5>,
+    button_e: Button<Gpio6>,
+    button_f: Button<Gpio7>,
 }
 
 impl Inputs {
     pub fn new(
-        vol_clk_pin: Pin<Gpio16, Input<PullUp>>,
-        vol_dt_pin: Pin<Gpio17, Input<PullUp>>,
-        vol_sw_pin: Pin<Gpio18, Input<PullUp>>,
-        gain_clk_pin: Pin<Gpio19, Input<PullUp>>,
-        gain_dt_pin: Pin<Gpio20, Input<PullUp>>,
-        gain_sw_pin: Pin<Gpio21, Input<PullUp>>,
-        button_a_pin: Pin<Gpio2, Input<PullUp>>,
-        button_b_pin: Pin<Gpio3, Input<PullUp>>,
-        button_c_pin: Pin<Gpio4, Input<PullUp>>,
-        button_d_pin: Pin<Gpio5, Input<PullUp>>,
-        button_e_pin: Pin<Gpio6, Input<PullUp>>,
-        button_f_pin: Pin<Gpio7, Input<PullUp>>,
+        vol_clk_pin: PullUpInputPin<Gpio16>,
+        vol_dt_pin: PullUpInputPin<Gpio17>,
+        vol_sw_pin: PullUpInputPin<Gpio18>,
+        gain_clk_pin: PullUpInputPin<Gpio19>,
+        gain_dt_pin: PullUpInputPin<Gpio20>,
+        gain_sw_pin: PullUpInputPin<Gpio21>,
+        button_a_pin: PullUpInputPin<Gpio2>,
+        button_b_pin: PullUpInputPin<Gpio3>,
+        button_c_pin: PullUpInputPin<Gpio4>,
+        button_d_pin: PullUpInputPin<Gpio5>,
+        button_e_pin: PullUpInputPin<Gpio6>,
+        button_f_pin: PullUpInputPin<Gpio7>,
     ) -> Self {
         Self {
             button_vol: Button::new(vol_sw_pin),
