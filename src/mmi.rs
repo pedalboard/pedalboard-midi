@@ -60,10 +60,10 @@ where
 }
 
 pub struct Inputs {
-    vol_sw: Button<Pin<Gpio18, Input<PullUp>>>,
+    button_vol: Button<Pin<Gpio18, Input<PullUp>>>,
     vol_rotary: RotaryEncoder<StandardMode, Pin<Gpio17, Input<PullUp>>, Pin<Gpio16, Input<PullUp>>>,
     vol_value: u8,
-    gain_sw: Button<Pin<Gpio21, Input<PullUp>>>,
+    button_gain: Button<Pin<Gpio21, Input<PullUp>>>,
     gain_rotary:
         RotaryEncoder<StandardMode, Pin<Gpio20, Input<PullUp>>, Pin<Gpio19, Input<PullUp>>>,
     gain_value: u8,
@@ -91,11 +91,11 @@ impl Inputs {
         button_f_pin: Pin<Gpio7, Input<PullUp>>,
     ) -> Self {
         Self {
-            vol_sw: Button::new(vol_sw_pin),
+            button_vol: Button::new(vol_sw_pin),
             vol_rotary: RotaryEncoder::new(vol_dt_pin, vol_clk_pin).into_standard_mode(),
             vol_value: 0,
 
-            gain_sw: Button::new(gain_sw_pin),
+            button_gain: Button::new(gain_sw_pin),
             gain_rotary: RotaryEncoder::new(gain_dt_pin, gain_clk_pin).into_standard_mode(),
             gain_value: 0,
 
@@ -132,8 +132,8 @@ impl Inputs {
             .or_else(|| self.button_d.update().map(InputEvent::ButtonD))
             .or_else(|| self.button_e.update().map(InputEvent::ButtonE))
             .or_else(|| self.button_f.update().map(InputEvent::ButtonF))
-            .or_else(|| self.vol_sw.update().map(InputEvent::VolButton))
-            .or_else(|| self.gain_sw.update().map(InputEvent::GainButton))
+            .or_else(|| self.button_vol.update().map(InputEvent::VolButton))
+            .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or(None)
     }
 }
