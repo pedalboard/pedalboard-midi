@@ -122,14 +122,21 @@ pub struct Inputs {
     button_f: Button<Gpio7>,
 }
 
+pub struct RotaryPins<DT, CLK, SW>
+where
+    DT: PinId,
+    CLK: PinId,
+    SW: PinId,
+{
+    pub dt: PullUpInputPin<DT>,
+    pub clk: PullUpInputPin<CLK>,
+    pub sw: PullUpInputPin<SW>,
+}
+
 impl Inputs {
     pub fn new(
-        vol_clk_pin: PullUpInputPin<Gpio16>,
-        vol_dt_pin: PullUpInputPin<Gpio17>,
-        vol_sw_pin: PullUpInputPin<Gpio18>,
-        gain_clk_pin: PullUpInputPin<Gpio19>,
-        gain_dt_pin: PullUpInputPin<Gpio20>,
-        gain_sw_pin: PullUpInputPin<Gpio21>,
+        vol_pins: RotaryPins<Gpio17, Gpio16, Gpio18>,
+        gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
         button_a_pin: PullUpInputPin<Gpio2>,
         button_b_pin: PullUpInputPin<Gpio3>,
         button_c_pin: PullUpInputPin<Gpio4>,
@@ -138,11 +145,11 @@ impl Inputs {
         button_f_pin: PullUpInputPin<Gpio7>,
     ) -> Self {
         Self {
-            button_vol: Button::new(vol_sw_pin),
-            vol_rotary: Rotary::new(vol_dt_pin, vol_clk_pin),
+            button_vol: Button::new(vol_pins.sw),
+            vol_rotary: Rotary::new(vol_pins.dt, vol_pins.clk),
 
-            button_gain: Button::new(gain_sw_pin),
-            gain_rotary: Rotary::new(gain_dt_pin, gain_clk_pin),
+            button_gain: Button::new(gain_pins.sw),
+            gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
 
             button_a: Button::new(button_a_pin),
             button_b: Button::new(button_b_pin),

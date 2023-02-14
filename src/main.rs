@@ -118,13 +118,21 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
+        let vol_pins = crate::hmi::RotaryPins {
+            clk: pins.gpio16.into_pull_up_input(),
+            dt: pins.gpio17.into_pull_up_input(),
+            sw: pins.gpio18.into_pull_up_input(),
+        };
+
+        let gain_pins = crate::hmi::RotaryPins {
+            clk: pins.gpio19.into_pull_up_input(),
+            dt: pins.gpio20.into_pull_up_input(),
+            sw: pins.gpio21.into_pull_up_input(),
+        };
+
         let inputs = crate::hmi::Inputs::new(
-            pins.gpio16.into_pull_up_input(),
-            pins.gpio17.into_pull_up_input(),
-            pins.gpio18.into_pull_up_input(),
-            pins.gpio19.into_pull_up_input(),
-            pins.gpio20.into_pull_up_input(),
-            pins.gpio21.into_pull_up_input(),
+            vol_pins,
+            gain_pins,
             pins.gpio2.into_pull_up_input(),
             pins.gpio3.into_pull_up_input(),
             pins.gpio4.into_pull_up_input(),
