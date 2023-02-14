@@ -55,13 +55,13 @@ where
         match self.encoder.direction() {
             Direction::Clockwise => {
                 if self.value < 127 {
-                    self.value = self.value + 1
+                    self.value += 1
                 }
                 Some(Value7::new(self.value))
             }
             Direction::Anticlockwise => {
                 if self.value > 1 {
-                    self.value = self.value - 1;
+                    self.value -= 1;
                 }
                 Some(Value7::new(self.value))
             }
