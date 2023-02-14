@@ -125,6 +125,12 @@ mod app {
             pins.gpio19.into_pull_up_input(),
             pins.gpio20.into_pull_up_input(),
             pins.gpio21.into_pull_up_input(),
+            pins.gpio2.into_pull_up_input(),
+            pins.gpio3.into_pull_up_input(),
+            pins.gpio4.into_pull_up_input(),
+            pins.gpio5.into_pull_up_input(),
+            pins.gpio6.into_pull_up_input(),
+            pins.gpio7.into_pull_up_input(),
         );
 
         blink::spawn().unwrap();
