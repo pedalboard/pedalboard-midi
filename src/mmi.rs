@@ -33,6 +33,43 @@ pub enum InputEvent {
     Gain(Value7),
 }
 
+struct Rotary<DT, CLK> {
+    encoder: RotaryEncoder<StandardMode, DT, CLK>,
+    value: u8,
+}
+
+impl<DT, CLK> Rotary<DT, CLK>
+where
+    DT: InputPin,
+    CLK: InputPin,
+{
+    fn new(dt: DT, clk: CLK) -> Self {
+        Rotary {
+            encoder: RotaryEncoder::new(dt, clk).into_standard_mode(),
+            value: 0u8,
+        }
+    }
+    fn update(&mut self) -> Option<Value7> {
+        self.encoder.update();
+
+        match self.encoder.direction() {
+            Direction::Clockwise => {
+                if self.value < 127 {
+                    self.value = self.value + 1
+                }
+                Some(Value7::new(self.value))
+            }
+            Direction::Anticlockwise => {
+                if self.value > 1 {
+                    self.value = self.value - 1;
+                }
+                Some(Value7::new(self.value))
+            }
+            Direction::None => None,
+        }
+    }
+}
+
 struct Button<PIN> {
     pin: PIN,
     debouncer: DebouncerStateful<u8, Repeat5>,
@@ -61,12 +98,9 @@ where
 
 pub struct Inputs {
     button_vol: Button<Pin<Gpio18, Input<PullUp>>>,
-    vol_rotary: RotaryEncoder<StandardMode, Pin<Gpio17, Input<PullUp>>, Pin<Gpio16, Input<PullUp>>>,
-    vol_value: u8,
+    vol_rotary: Rotary<Pin<Gpio17, Input<PullUp>>, Pin<Gpio16, Input<PullUp>>>,
     button_gain: Button<Pin<Gpio21, Input<PullUp>>>,
-    gain_rotary:
-        RotaryEncoder<StandardMode, Pin<Gpio20, Input<PullUp>>, Pin<Gpio19, Input<PullUp>>>,
-    gain_value: u8,
+    gain_rotary: Rotary<Pin<Gpio20, Input<PullUp>>, Pin<Gpio19, Input<PullUp>>>,
     button_a: Button<Pin<Gpio2, Input<PullUp>>>,
     button_b: Button<Pin<Gpio3, Input<PullUp>>>,
     button_c: Button<Pin<Gpio4, Input<PullUp>>>,
@@ -92,12 +126,10 @@ impl Inputs {
     ) -> Self {
         Self {
             button_vol: Button::new(vol_sw_pin),
-            vol_rotary: RotaryEncoder::new(vol_dt_pin, vol_clk_pin).into_standard_mode(),
-            vol_value: 0,
+            vol_rotary: Rotary::new(vol_dt_pin, vol_clk_pin),
 
             button_gain: Button::new(gain_sw_pin),
-            gain_rotary: RotaryEncoder::new(gain_dt_pin, gain_clk_pin).into_standard_mode(),
-            gain_value: 0,
+            gain_rotary: Rotary::new(gain_dt_pin, gain_clk_pin),
 
             button_a: Button::new(button_a_pin),
             button_b: Button::new(button_b_pin),
@@ -109,21 +141,6 @@ impl Inputs {
     }
 
     pub fn update(&mut self) -> Option<InputEvent> {
-        self.vol_rotary.update();
-        if self.vol_rotary.direction() != Direction::None {
-            return Some(InputEvent::Vol(rotary_value(
-                self.vol_value,
-                self.vol_rotary.direction(),
-            )));
-        }
-        self.gain_rotary.update();
-        if self.gain_rotary.direction() != Direction::None {
-            return Some(InputEvent::Vol(rotary_value(
-                self.gain_value,
-                self.gain_rotary.direction(),
-            )));
-        }
-
         self.button_a
             .update()
             .map(InputEvent::ButtonA)
@@ -134,26 +151,8 @@ impl Inputs {
             .or_else(|| self.button_f.update().map(InputEvent::ButtonF))
             .or_else(|| self.button_vol.update().map(InputEvent::VolButton))
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
+            .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
+            .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
             .or(None)
     }
-}
-
-fn rotary_value(current: u8, dir: Direction) -> Value7 {
-    return Value7::new(match dir {
-        Direction::Clockwise => {
-            let mut next = current;
-            if current < 127 {
-                next = current + 1
-            }
-            next
-        }
-        Direction::Anticlockwise => {
-            let mut next = current;
-            if current > 1 {
-                next = current - 1;
-            }
-            next
-        }
-        Direction::None => current,
-    });
 }
