@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-mod mmi;
+mod hmi;
 
 use panic_halt as _;
 use rtic::app;
@@ -52,7 +52,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
         midi_out: MidiOut,
-        inputs: crate::mmi::Inputs,
+        inputs: crate::hmi::Inputs,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -118,7 +118,7 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
-        let inputs = crate::mmi::Inputs::new(
+        let inputs = crate::hmi::Inputs::new(
             pins.gpio16.into_pull_up_input(),
             pins.gpio17.into_pull_up_input(),
             pins.gpio18.into_pull_up_input(),
