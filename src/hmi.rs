@@ -133,16 +133,20 @@ where
     pub sw: PullUpInputPin<SW>,
 }
 
+pub struct ButtonPins(
+    pub PullUpInputPin<Gpio2>,
+    pub PullUpInputPin<Gpio3>,
+    pub PullUpInputPin<Gpio4>,
+    pub PullUpInputPin<Gpio5>,
+    pub PullUpInputPin<Gpio6>,
+    pub PullUpInputPin<Gpio7>,
+);
+
 impl Inputs {
     pub fn new(
         vol_pins: RotaryPins<Gpio17, Gpio16, Gpio18>,
         gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
-        button_a_pin: PullUpInputPin<Gpio2>,
-        button_b_pin: PullUpInputPin<Gpio3>,
-        button_c_pin: PullUpInputPin<Gpio4>,
-        button_d_pin: PullUpInputPin<Gpio5>,
-        button_e_pin: PullUpInputPin<Gpio6>,
-        button_f_pin: PullUpInputPin<Gpio7>,
+        button_pins: ButtonPins,
     ) -> Self {
         Self {
             button_vol: Button::new(vol_pins.sw),
@@ -151,12 +155,12 @@ impl Inputs {
             button_gain: Button::new(gain_pins.sw),
             gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
 
-            button_a: Button::new(button_a_pin),
-            button_b: Button::new(button_b_pin),
-            button_c: Button::new(button_c_pin),
-            button_d: Button::new(button_d_pin),
-            button_e: Button::new(button_e_pin),
-            button_f: Button::new(button_f_pin),
+            button_a: Button::new(button_pins.0),
+            button_b: Button::new(button_pins.1),
+            button_c: Button::new(button_pins.2),
+            button_d: Button::new(button_pins.3),
+            button_e: Button::new(button_pins.4),
+            button_f: Button::new(button_pins.5),
         }
     }
 

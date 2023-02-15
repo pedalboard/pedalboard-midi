@@ -130,9 +130,7 @@ mod app {
             sw: pins.gpio21.into_pull_up_input(),
         };
 
-        let inputs = crate::hmi::Inputs::new(
-            vol_pins,
-            gain_pins,
+        let button_pins = crate::hmi::ButtonPins(
             pins.gpio2.into_pull_up_input(),
             pins.gpio3.into_pull_up_input(),
             pins.gpio4.into_pull_up_input(),
@@ -140,6 +138,8 @@ mod app {
             pins.gpio6.into_pull_up_input(),
             pins.gpio7.into_pull_up_input(),
         );
+
+        let inputs = crate::hmi::Inputs::new(vol_pins, gain_pins, button_pins);
 
         blink::spawn().unwrap();
         poll_input::spawn().unwrap();
