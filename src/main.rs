@@ -54,6 +54,7 @@ mod app {
         serial: SerialPort<'static, UsbBus>,
         midi_out: MidiOut,
         inputs: crate::hmi::Inputs,
+        devices: crate::devices::Devices,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -153,6 +154,7 @@ mod app {
                 serial,
                 midi_out,
                 inputs,
+                devices: crate::devices::Devices::new(),
             },
             init::Monotonics(mono),
         )
@@ -170,23 +172,22 @@ mod app {
     }
 
     #[task(local = [midi_out])]
-    fn midi_out(ctx: midi_out::Context, message: embedded_midi::midi_types::MidiMessage) {
+    fn midi_out(ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
         let midi_out = ctx.local.midi_out;
-        midi_out.write(&message).unwrap();
+        for message in messages.iter() {
+            midi_out.write(&message).unwrap();
+        }
     }
 
-    #[task(local = [inputs])]
+    #[task(local = [inputs, devices])]
     fn poll_input(ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
+        let devices = ctx.local.devices;
 
         match inputs.update() {
-            Some(_event) => {
-                let message = embedded_midi::midi_types::MidiMessage::ControlChange(
-                    embedded_midi::midi_types::Channel::new(0),
-                    embedded_midi::midi_types::Control::new(0),
-                    embedded_midi::midi_types::Value7::new(0),
-                );
-                midi_out::spawn(message).unwrap();
+            Some(event) => {
+                let messages = devices.map(event);
+                midi_out::spawn(messages).unwrap();
             }
             None => {}
         };
