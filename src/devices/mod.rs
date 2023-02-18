@@ -6,39 +6,45 @@ use midi_types::MidiMessage;
 
 use crate::hmi::Edge::{Activate, Deactivate};
 
-use self::plethora::Plethora;
+use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
 use crate::hmi::InputEvent;
 
 pub type MidiMessages = Vec<MidiMessage, 8>;
 
+pub enum Direction {
+    Up,
+    Down,
+}
 pub struct Devices {
     rc500: RC500,
+    plethora: Plethora,
 }
 
 impl Devices {
     pub fn new() -> Self {
         Devices {
             rc500: RC500::new(),
+            plethora: Plethora {},
         }
     }
 
     pub fn map(&mut self, event: crate::hmi::InputEvent) -> MidiMessages {
         match event {
             InputEvent::ButtonA(e) => match e {
-                Activate => self.plethora(Plethora::BoardUp),
+                Activate => self.plethora(PlethoraEvent::Board(Direction::Up)),
                 Deactivate => Vec::new(),
             },
             InputEvent::ButtonB(e) => match e {
-                Activate => self.rc500(RC500Event::Mem(rc500::Direction::Up)),
+                Activate => self.rc500(RC500Event::Mem(Direction::Up)),
                 Deactivate => Vec::new(),
             },
             _ => Vec::new(),
         }
     }
 
-    fn plethora(&mut self, event: Plethora) -> MidiMessages {
-        event.midi_messages()
+    fn plethora(&mut self, event: PlethoraEvent) -> MidiMessages {
+        self.plethora.midi_messages(event)
     }
 
     fn rc500(&mut self, event: RC500Event) -> MidiMessages {

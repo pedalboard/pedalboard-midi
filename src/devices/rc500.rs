@@ -1,4 +1,4 @@
-use crate::devices::MidiMessages;
+use crate::devices::{Direction, MidiMessages};
 use heapless::Vec;
 use midi_types::{Channel, Control, MidiMessage, Program, Value7};
 
@@ -15,11 +15,6 @@ const PATTERNS: [u8; 58] = [
 const DRUMKITS: [u8; 16] = [
     0, 8, 17, 26, 35, 43, 51, 59, 68, 76, 85, 94, 102, 110, 118, 126,
 ];
-
-pub enum Direction {
-    Up,
-    Down,
-}
 
 struct BidirectionalIterator {
     current: usize,
