@@ -169,13 +169,8 @@ mod app {
     }
 
     #[task(local = [midi_out])]
-    fn midi_out(ctx: midi_out::Context) {
+    fn midi_out(ctx: midi_out::Context, message: embedded_midi::midi_types::MidiMessage) {
         let midi_out = ctx.local.midi_out;
-        let message = embedded_midi::midi_types::MidiMessage::ControlChange(
-            embedded_midi::midi_types::Channel::new(0),
-            embedded_midi::midi_types::Control::new(0),
-            embedded_midi::midi_types::Value7::new(0),
-        );
         midi_out.write(&message).unwrap();
     }
 
@@ -184,7 +179,14 @@ mod app {
         let inputs = ctx.local.inputs;
 
         match inputs.update() {
-            Some(_event) => midi_out::spawn().unwrap(),
+            Some(_event) => {
+                let message = embedded_midi::midi_types::MidiMessage::ControlChange(
+                    embedded_midi::midi_types::Channel::new(0),
+                    embedded_midi::midi_types::Control::new(0),
+                    embedded_midi::midi_types::Value7::new(0),
+                );
+                midi_out::spawn(message).unwrap();
+            }
             None => {}
         };
         poll_input::spawn_after(Duration::millis(1)).unwrap();
