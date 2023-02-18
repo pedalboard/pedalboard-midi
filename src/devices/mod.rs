@@ -12,6 +12,8 @@ use crate::hmi::InputEvent;
 
 pub type MidiMessages = Vec<MidiMessage, 8>;
 
+const NO_MESSAGE: MidiMessages = Vec::new();
+
 pub enum Direction {
     Up,
     Down,
@@ -33,13 +35,13 @@ impl Devices {
         match event {
             InputEvent::ButtonA(e) => match e {
                 Activate => self.plethora(PlethoraEvent::Board(Direction::Up)),
-                Deactivate => Vec::new(),
+                Deactivate => NO_MESSAGE,
             },
             InputEvent::ButtonB(e) => match e {
                 Activate => self.rc500(RC500Event::Mem(Direction::Up)),
-                Deactivate => Vec::new(),
+                Deactivate => NO_MESSAGE,
             },
-            _ => Vec::new(),
+            _ => NO_MESSAGE,
         }
     }
 
