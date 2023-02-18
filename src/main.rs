@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod devices;
 mod hmi;
 
 use panic_halt as _;
