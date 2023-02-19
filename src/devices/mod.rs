@@ -114,7 +114,6 @@ impl Devices {
                 Deactivate => NO_MESSAGE,
             },
             InputEvent::ExpessionPedal(val) => self.rc500(RC500Event::CurrentChannelLevel(val)),
-
             _ => NO_MESSAGE,
         }
     }
