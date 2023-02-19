@@ -3,20 +3,25 @@ use debouncr::{
     Edge::{Falling, Rising},
     Repeat5,
 };
+use embedded_hal::adc::OneShot;
 use embedded_hal::digital::v2::InputPin;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
-use rp_pico::hal::gpio::{
-    pin::{
-        bank0::{
-            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio3, Gpio4, Gpio5, Gpio6,
-            Gpio7,
+use rp_pico::hal::{
+    adc::Adc,
+    gpio::{
+        pin::{
+            bank0::{
+                Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio28, Gpio3, Gpio4, Gpio5,
+                Gpio6, Gpio7,
+            },
+            PinId,
         },
-        PinId,
+        Floating, Input, Pin, PullUp,
     },
-    Input, Pin, PullUp,
 };
 
 type PullUpInputPin<I> = Pin<I, Input<PullUp>>;
+type FloatingInputPin<I> = Pin<I, Input<Floating>>;
 
 use midi_types::Value7;
 
@@ -109,14 +114,31 @@ where
     }
 }
 
-pub struct ExpressionPedal {}
+pub struct ExpressionPedal {
+    current: Option<Value7>,
+    adc: Adc,
+    exp_pin: FloatingInputPin<Gpio28>,
+}
 
 impl ExpressionPedal {
-    fn new() -> Self {
-        ExpressionPedal {}
+    fn new(adc: Adc, exp_pin: FloatingInputPin<Gpio28>) -> Self {
+        ExpressionPedal {
+            adc,
+            exp_pin,
+            current: None,
+        }
     }
 
     fn update(&mut self) -> Option<Value7> {
+        let pin_adc_counts: u16 = self.adc.read(&mut self.exp_pin).unwrap();
+        let new_value = pin_adc_counts >> 5;
+        let new = Some(Value7::new(new_value as u8));
+
+        if self.current != new {
+            self.current = new;
+            return self.current;
+        }
+
         None
     }
 }
@@ -160,6 +182,8 @@ impl Inputs {
         vol_pins: RotaryPins<Gpio17, Gpio16, Gpio18>,
         gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
         button_pins: ButtonPins,
+        adc: Adc,
+        exp_pin: FloatingInputPin<Gpio28>,
     ) -> Self {
         Self {
             button_vol: Button::new(vol_pins.sw),
@@ -175,7 +199,7 @@ impl Inputs {
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
-            exp: ExpressionPedal::new(),
+            exp: ExpressionPedal::new(adc, exp_pin),
         }
     }
 

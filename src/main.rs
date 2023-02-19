@@ -15,6 +15,7 @@ mod app {
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
+            adc::Adc,
             clocks::init_clocks_and_plls,
             gpio::{
                 pin::bank0::{Gpio0, Gpio1, Gpio25},
@@ -141,7 +142,11 @@ mod app {
             pins.gpio7.into_pull_up_input(),
         );
 
-        let inputs = crate::hmi::Inputs::new(vol_pins, gain_pins, button_pins);
+        // Enable adc
+        let adc = Adc::new(cx.device.ADC, &mut resets);
+        let exp_pin = pins.gpio28.into_floating_input();
+
+        let inputs = crate::hmi::Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
 
         blink::spawn().unwrap();
         poll_input::spawn().unwrap();
