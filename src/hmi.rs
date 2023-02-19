@@ -109,6 +109,18 @@ where
     }
 }
 
+pub struct ExpressionPedal {}
+
+impl ExpressionPedal {
+    fn new() -> Self {
+        ExpressionPedal {}
+    }
+
+    fn update(&mut self) -> Option<Value7> {
+        None
+    }
+}
+
 pub struct Inputs {
     button_vol: Button<Gpio18>,
     vol_rotary: Rotary<Gpio17, Gpio16>,
@@ -120,6 +132,7 @@ pub struct Inputs {
     button_d: Button<Gpio5>,
     button_e: Button<Gpio6>,
     button_f: Button<Gpio7>,
+    exp: ExpressionPedal,
 }
 
 pub struct RotaryPins<DT, CLK, SW>
@@ -161,6 +174,8 @@ impl Inputs {
             button_d: Button::new(button_pins.3),
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
+
+            exp: ExpressionPedal::new(),
         }
     }
 
@@ -177,6 +192,7 @@ impl Inputs {
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
+            .or_else(|| self.exp.update().map(InputEvent::ExpessionPedal))
             .or(None)
     }
 }
