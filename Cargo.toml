@@ -25,6 +25,7 @@ midi-types = { version = "0.1.5", features = ["defmt"] }
 debouncr = "0.2.2"
 rotary-encoder-embedded = "0.2.0"
 heapless = "0.7.16"
+movavg = { version = "2.2.0", default-features = false }
 
 # [dev-dependencies]
 panic-halt= "0.2.0"

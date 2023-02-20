@@ -5,6 +5,7 @@ use debouncr::{
 };
 use embedded_hal::adc::OneShot;
 use embedded_hal::digital::v2::InputPin;
+use movavg::MovAvg;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp_pico::hal::{
     adc::Adc,
@@ -118,20 +119,26 @@ pub struct ExpressionPedal {
     current: Option<Value7>,
     adc: Adc,
     exp_pin: FloatingInputPin<Gpio28>,
+    avg: MovAvg<u16, u32, 10>,
 }
 
 impl ExpressionPedal {
     fn new(adc: Adc, exp_pin: FloatingInputPin<Gpio28>) -> Self {
+        let avg: MovAvg<u16, u32, 10> = MovAvg::new(); // window size = 3
+
         ExpressionPedal {
             adc,
             exp_pin,
             current: None,
+            avg,
         }
     }
 
     fn update(&mut self) -> Option<Value7> {
         let pin_adc_counts: u16 = self.adc.read(&mut self.exp_pin).unwrap();
-        let new_value = pin_adc_counts >> 5;
+
+        let new_value = self.avg.feed(pin_adc_counts) >> 5;
+
         let new = Some(Value7::new(new_value as u8));
 
         if self.current != new {
