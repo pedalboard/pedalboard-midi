@@ -87,7 +87,7 @@ impl Devices {
                 Activate => self.plethora(PlethoraEvent::GoToBoard(4)),
                 Deactivate => NO_MESSAGE,
             },
-            InputEvent::ExpessionPedal(val) => self.plethora(PlethoraEvent::HotKnob(1, val)),
+            InputEvent::ExpessionPedal(val) => self.plethora(PlethoraEvent::HotKnob(3, val)),
             _ => NO_MESSAGE,
         }
     }

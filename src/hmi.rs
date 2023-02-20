@@ -23,7 +23,7 @@ use rp_pico::hal::{
 
 type PullUpInputPin<I> = Pin<I, Input<PullUp>>;
 type FloatingInputPin<I> = Pin<I, Input<Floating>>;
-type Sma = MovAvg<u16, u32, 10>;
+type Sma = MovAvg<u16, u32, 25>;
 
 use midi_types::Value7;
 
@@ -144,7 +144,7 @@ impl ExpressionPedal {
 
         let pin_adc_counts: u16 = self.adc.read(&mut self.exp_pin).unwrap();
 
-        let new_value = self.avg.feed(pin_adc_counts >> 5);
+        let new_value = self.avg.feed(pin_adc_counts) >> 5;
 
         let new = Some(Value7::new(new_value as u8));
 
