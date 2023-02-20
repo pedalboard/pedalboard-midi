@@ -23,7 +23,7 @@ use rp_pico::hal::{
 
 type PullUpInputPin<I> = Pin<I, Input<PullUp>>;
 type FloatingInputPin<I> = Pin<I, Input<Floating>>;
-type Sma = MovAvg<u16, u32, 25>;
+type Sma = MovAvg<u16, u32, 10>;
 
 use midi_types::Value7;
 
@@ -117,7 +117,7 @@ where
 }
 
 pub struct ExpressionPedal {
-    current: Option<Value7>,
+    current: u8,
     adc: Adc,
     exp_pin: FloatingInputPin<Gpio28>,
     avg: Sma,
@@ -129,7 +129,7 @@ impl ExpressionPedal {
         ExpressionPedal {
             adc,
             exp_pin,
-            current: None,
+            current: 0,
             avg: MovAvg::new(),
             sample_rate_reduction: 0,
         }
@@ -137,20 +137,18 @@ impl ExpressionPedal {
 
     fn update(&mut self) -> Option<Value7> {
         self.sample_rate_reduction += 1;
-        if self.sample_rate_reduction <= 10 {
+        if self.sample_rate_reduction <= 25 {
             return None;
         }
         self.sample_rate_reduction = 0;
 
         let pin_adc_counts: u16 = self.adc.read(&mut self.exp_pin).unwrap();
 
-        let new_value = self.avg.feed(pin_adc_counts) >> 5;
+        let new = (self.avg.feed(pin_adc_counts) >> 5) as u8;
 
-        let new = Some(Value7::new(new_value as u8));
-
-        if self.current != new {
+        if self.current.abs_diff(new) > 2 {
             self.current = new;
-            return self.current;
+            return Some(Value7::new(self.current));
         }
 
         None
