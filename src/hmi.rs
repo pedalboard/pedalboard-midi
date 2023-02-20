@@ -137,7 +137,7 @@ impl ExpressionPedal {
 
     fn update(&mut self) -> Option<Value7> {
         self.sample_rate_reduction += 1;
-        if self.sample_rate_reduction <= 100 {
+        if self.sample_rate_reduction <= 10 {
             return None;
         }
         self.sample_rate_reduction = 0;
