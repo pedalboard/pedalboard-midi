@@ -11,7 +11,9 @@ use rtic::app;
 mod app {
 
     use embedded_hal::digital::v2::OutputPin;
+    use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
+    use fugit::RateExtU32;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
@@ -19,28 +21,33 @@ mod app {
             clocks::init_clocks_and_plls,
             gpio::{
                 pin::bank0::{Gpio0, Gpio1, Gpio25},
-                Function, FunctionUart, Pin, PushPullOutput, Uart,
+                Function, FunctionSpi, FunctionUart, Pin, PushPullOutput, Uart,
             },
             rom_data::reset_to_usb_boot,
+            spi::Spi,
             uart::{DataBits, StopBits, UartConfig, UartPeripheral, Writer},
             usb::UsbBus,
             Clock, Sio, Watchdog,
         },
+        pac::SPI1,
         pac::UART0,
         Pins,
     };
+    use smart_leds::{brightness, SmartLedsWrite, RGB};
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
     };
     use usbd_serial::SerialPort;
+    use ws2812_spi::Ws2812;
 
     type Duration = fugit::TimerDurationU64<1_000_000>;
     type MidiOut = embedded_midi::MidiOut<
         Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
     >;
 
-    const XTAL_FREQ_HZ: u32 = 12_000_000;
+    const NUM_LEDS: usize = 40;
+    const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type Rp2040Mono = Rp2040Monotonic;
@@ -56,6 +63,7 @@ mod app {
         midi_out: MidiOut,
         inputs: crate::hmi::Inputs,
         devices: crate::devices::Devices,
+        ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -64,7 +72,7 @@ mod app {
         let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
-            XTAL_FREQ_HZ,
+            rp_pico::XOSC_CRYSTAL_FREQ,
             cx.device.XOSC,
             cx.device.CLOCKS,
             cx.device.PLL_SYS,
@@ -142,14 +150,28 @@ mod app {
             pins.gpio7.into_pull_up_input(),
         );
 
-        // Enable adc
+        // ADC for analog input
         let adc = Adc::new(cx.device.ADC, &mut resets);
         let exp_pin = pins.gpio28.into_floating_input();
 
         let inputs = crate::hmi::Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
 
+        // These are implicitly used by the spi driver if they are in the correct mode
+        let _spi_sclk = pins.gpio10.into_mode::<FunctionSpi>();
+        let _spi_mosi = pins.gpio11.into_mode::<FunctionSpi>();
+        let _spi_miso = pins.gpio12.into_mode::<FunctionSpi>();
+        let spi = Spi::<_, _, 8>::new(cx.device.SPI1).init(
+            &mut resets,
+            SYS_HZ.Hz(),
+            3_000_000u32.Hz(),
+            &MODE_0,
+        );
+
+        let ws = Ws2812::new(spi);
+
         blink::spawn().unwrap();
         poll_input::spawn().unwrap();
+        led_strip::spawn().unwrap();
 
         (
             Shared {},
@@ -160,6 +182,7 @@ mod app {
                 midi_out,
                 inputs,
                 devices: crate::devices::Devices::new(),
+                ws,
             },
             init::Monotonics(mono),
         )
@@ -224,5 +247,31 @@ mod app {
                 }
             }
         }
+    }
+
+    #[task(local = [ws, state: usize = 0])]
+    fn led_strip(ctx: led_strip::Context) {
+        let g = colorous::TURBO;
+        let mut data: [RGB<u8>; NUM_LEDS] = [RGB::default(); NUM_LEDS];
+
+        *ctx.local.state = *ctx.local.state + 1;
+        if *ctx.local.state == NUM_LEDS {
+            *ctx.local.state = 0
+        }
+        //
+        for (i, led) in data.iter_mut().enumerate() {
+            let v = (i + *ctx.local.state) % NUM_LEDS;
+            let c = g.eval_rational(v, NUM_LEDS);
+            led.r = c.r;
+            led.g = c.g;
+            led.b = c.b;
+        }
+
+        ctx.local
+            .ws
+            .write(brightness(data.iter().cloned(), 16))
+            .unwrap();
+
+        led_strip::spawn_after(Duration::millis(50)).unwrap();
     }
 }
