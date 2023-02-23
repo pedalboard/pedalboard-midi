@@ -4,16 +4,16 @@ const NUM_LEDS: usize = 10;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {
-    A,
-    B,
+    Clip,
+    F,
     C,
+    B,
+    A,
     D,
     E,
-    F,
     Mode,
     Mon,
     L48V,
-    Clip,
 }
 
 type LedData = [RGB8; NUM_LEDS];
