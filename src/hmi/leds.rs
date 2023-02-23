@@ -10,9 +10,9 @@ pub enum Led {
     B,
     A,
     D,
-    E,
     Mode,
     Mon,
+    E,
     L48V,
 }
 
