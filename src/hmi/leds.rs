@@ -39,15 +39,21 @@ impl Leds {
     pub fn animate(&mut self, a: Animation) -> (LedData, Option<Animation>) {
         let next = match a {
             Animation::On(led, c) => {
-                self.data[led as usize] = c;
+                self.data[led as usize].r = c.r;
+                self.data[led as usize].g = c.g;
+                self.data[led as usize].b = c.b;
                 None
             }
             Animation::Off(led) => {
-                self.data[led as usize] = RGB8::default();
+                self.data[led as usize].r = 0;
+                self.data[led as usize].g = 0;
+                self.data[led as usize].b = 0;
                 None
             }
             Animation::Blink(led, c) => {
-                self.data[led as usize] = c;
+                self.data[led as usize].r = c.r;
+                self.data[led as usize].g = c.g;
+                self.data[led as usize].b = c.b;
                 Some(Animation::Off(led))
             }
         };
