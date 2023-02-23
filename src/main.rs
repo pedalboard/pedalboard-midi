@@ -264,7 +264,7 @@ mod app {
             .unwrap();
 
         if next.is_some() {
-            //   led_strip::spawn_after(Duration::millis(200), next.unwrap()).unwrap();
+            led_strip::spawn_after(Duration::millis(1), next.unwrap()).unwrap();
         }
     }
 }
