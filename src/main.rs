@@ -37,7 +37,7 @@ mod app {
         pac::UART0,
         Pins,
     };
-    use smart_leds::colors::GREEN;
+    use smart_leds::colors::{GREEN, WHITE};
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::{
         class_prelude::UsbBusAllocator,
@@ -175,6 +175,10 @@ mod app {
         let ws = Ws2812::new(spi);
 
         blink::spawn().unwrap();
+
+        let mut animations: Animations = Vec::new();
+        animations.push(Animation::On(Led::Mode, WHITE)).unwrap();
+        led_strip::spawn(animations).unwrap();
 
         poll_input::spawn().unwrap();
         (
