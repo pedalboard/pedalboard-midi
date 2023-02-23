@@ -33,7 +33,7 @@ mod app {
         pac::UART0,
         Pins,
     };
-    use smart_leds::{brightness, SmartLedsWrite, RGB};
+    use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
@@ -46,7 +46,6 @@ mod app {
         Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
     >;
 
-    const NUM_LEDS: usize = 40;
     const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
@@ -64,6 +63,7 @@ mod app {
         inputs: crate::hmi::Inputs,
         devices: crate::devices::Devices,
         ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
+        leds: crate::hmi::leds::Leds,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -171,8 +171,6 @@ mod app {
 
         blink::spawn().unwrap();
         poll_input::spawn().unwrap();
-        led_strip::spawn().unwrap();
-
         (
             Shared {},
             Local {
@@ -183,6 +181,7 @@ mod app {
                 inputs,
                 devices: crate::devices::Devices::new(),
                 ws,
+                leds: crate::hmi::leds::Leds::new(),
             },
             init::Monotonics(mono),
         )
@@ -205,6 +204,11 @@ mod app {
         for message in messages.iter() {
             midi_out.write(&message).unwrap();
         }
+        led_strip::spawn_after(
+            Duration::millis(200),
+            crate::hmi::leds::Animation::Blink(crate::hmi::leds::Led::Mon, RGB8::new(255, 0, 0)),
+        )
+        .unwrap();
     }
 
     #[task(local = [inputs, devices])]
@@ -249,29 +253,17 @@ mod app {
         }
     }
 
-    #[task(local = [ws, state: usize = 0])]
-    fn led_strip(ctx: led_strip::Context) {
-        let g = colorous::TURBO;
-        let mut data: [RGB<u8>; NUM_LEDS] = [RGB::default(); NUM_LEDS];
-
-        *ctx.local.state = *ctx.local.state + 1;
-        if *ctx.local.state == NUM_LEDS {
-            *ctx.local.state = 0
-        }
-        //
-        for (i, led) in data.iter_mut().enumerate() {
-            let v = (i + *ctx.local.state) % NUM_LEDS;
-            let c = g.eval_rational(v, NUM_LEDS);
-            led.r = c.r;
-            led.g = c.g;
-            led.b = c.b;
-        }
-
+    #[task(local = [ws, leds])]
+    fn led_strip(ctx: led_strip::Context, a: crate::hmi::leds::Animation) {
+        let leds = ctx.local.leds;
+        let (data, next) = leds.animate(a);
         ctx.local
             .ws
             .write(brightness(data.iter().cloned(), 16))
             .unwrap();
 
-        led_strip::spawn_after(Duration::millis(50)).unwrap();
+        if next.is_some() {
+            led_strip::spawn_after(Duration::millis(200), next.unwrap()).unwrap();
+        }
     }
 }

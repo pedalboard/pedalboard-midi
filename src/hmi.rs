@@ -1,3 +1,5 @@
+pub mod leds;
+
 use debouncr::{
     debounce_stateful_5, DebouncerStateful,
     Edge::{Falling, Rising},
