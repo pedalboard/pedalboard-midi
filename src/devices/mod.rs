@@ -139,7 +139,7 @@ impl Devices {
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
                 animations.push(On(Led::Clip, color)).unwrap();
-                Actions::new(self.plethora(PlethoraEvent::HotKnob(3, val)), NO_ANIMATIONS)
+                Actions::new(self.plethora(PlethoraEvent::HotKnob(3, val)), animations)
             }
             _ => Actions::default(),
         }
