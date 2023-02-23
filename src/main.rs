@@ -220,7 +220,9 @@ mod app {
         match inputs.update() {
             Some(event) => {
                 let messages = devices.map(event);
-                midi_out::spawn(messages).unwrap();
+                if messages.len() > 0 {
+                    midi_out::spawn(messages).unwrap();
+                }
             }
             None => {}
         };
