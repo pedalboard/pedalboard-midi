@@ -10,7 +10,8 @@ use rtic::app;
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
-    use crate::hmi::leds::{Animation, Led};
+    use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
+    use crate::hmi::leds::{Animation, Led, Leds};
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
@@ -61,10 +62,10 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         serial: SerialPort<'static, UsbBus>,
         midi_out: MidiOut,
-        inputs: crate::hmi::Inputs,
+        inputs: Inputs,
         devices: crate::devices::Devices,
         ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
-        leds: crate::hmi::leds::Leds,
+        leds: Leds,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -130,19 +131,19 @@ mod app {
         let (_rx, tx) = uart.split();
         let midi_out = MidiOut::new(tx);
 
-        let vol_pins = crate::hmi::RotaryPins {
+        let vol_pins = RotaryPins {
             clk: pins.gpio16.into_pull_up_input(),
             dt: pins.gpio17.into_pull_up_input(),
             sw: pins.gpio18.into_pull_up_input(),
         };
 
-        let gain_pins = crate::hmi::RotaryPins {
+        let gain_pins = RotaryPins {
             clk: pins.gpio19.into_pull_up_input(),
             dt: pins.gpio20.into_pull_up_input(),
             sw: pins.gpio21.into_pull_up_input(),
         };
 
-        let button_pins = crate::hmi::ButtonPins(
+        let button_pins = ButtonPins(
             pins.gpio2.into_pull_up_input(),
             pins.gpio3.into_pull_up_input(),
             pins.gpio4.into_pull_up_input(),
@@ -155,7 +156,7 @@ mod app {
         let adc = Adc::new(cx.device.ADC, &mut resets);
         let exp_pin = pins.gpio28.into_floating_input();
 
-        let inputs = crate::hmi::Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
+        let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
 
         // These are implicitly used by the spi driver if they are in the correct mode
         let _spi_sclk = pins.gpio10.into_mode::<FunctionSpi>();

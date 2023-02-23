@@ -4,11 +4,13 @@ mod rc500;
 use heapless::Vec;
 use midi_types::MidiMessage;
 
-use crate::hmi::Edge::{Activate, Deactivate};
+use crate::hmi::inputs::{
+    Edge::{Activate, Deactivate},
+    InputEvent,
+};
 
 use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
-use crate::hmi::InputEvent;
 
 pub type MidiMessages = Vec<MidiMessage, 8>;
 
@@ -40,7 +42,7 @@ impl Devices {
         }
     }
 
-    pub fn map(&mut self, event: crate::hmi::InputEvent) -> MidiMessages {
+    pub fn map(&mut self, event: InputEvent) -> MidiMessages {
         match event {
             InputEvent::GainButton(e) => match e {
                 Activate => {
@@ -61,7 +63,7 @@ impl Devices {
         }
     }
 
-    fn map_live_effect(&mut self, event: crate::hmi::InputEvent) -> MidiMessages {
+    fn map_live_effect(&mut self, event: InputEvent) -> MidiMessages {
         match event {
             InputEvent::ButtonA(e) => match e {
                 Activate => self.plethora(PlethoraEvent::GoToBoard(1)),
@@ -91,7 +93,7 @@ impl Devices {
             _ => NO_MESSAGE,
         }
     }
-    fn map_live_looper(&mut self, event: crate::hmi::InputEvent) -> MidiMessages {
+    fn map_live_looper(&mut self, event: InputEvent) -> MidiMessages {
         match event {
             InputEvent::ButtonA(e) => match e {
                 Activate => self.rc500(RC500Event::ToggleRhythm()),
@@ -117,7 +119,7 @@ impl Devices {
             _ => NO_MESSAGE,
         }
     }
-    fn map_setup_looper(&mut self, event: crate::hmi::InputEvent) -> MidiMessages {
+    fn map_setup_looper(&mut self, event: InputEvent) -> MidiMessages {
         match event {
             InputEvent::ButtonA(e) => match e {
                 Activate => self.rc500(RC500Event::RhythmPattern(Direction::Up)),
