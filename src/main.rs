@@ -37,7 +37,8 @@ mod app {
         pac::UART0,
         Pins,
     };
-    use smart_leds::{brightness, SmartLedsWrite, RGB8};
+    use smart_leds::colors::GREEN;
+    use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
@@ -211,7 +212,7 @@ mod app {
         }
         let mut next_animations: Animations = Vec::new();
         next_animations
-            .push(Animation::Blink(Led::Mon, RGB8::new(0, 255, 0)))
+            .push(Animation::Blink(Led::Mon, GREEN))
             .unwrap();
         led_strip::spawn(next_animations).unwrap();
     }

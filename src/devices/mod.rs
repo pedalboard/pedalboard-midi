@@ -1,14 +1,12 @@
 mod plethora;
 mod rc500;
 
-use heapless::Vec;
-use midi_types::MidiMessage;
-use smart_leds::RGB8;
-
 use crate::hmi::inputs::{
     Edge::{Activate, Deactivate},
     InputEvent,
 };
+use heapless::Vec;
+use midi_types::MidiMessage;
 
 use crate::hmi::leds::{Animation, Led};
 
@@ -54,15 +52,15 @@ impl Devices {
                     let mode_color = match self.current {
                         Modes::LiveEffect => {
                             self.current = Modes::LiveLooper;
-                            RGB8::new(255, 0, 0)
+                            smart_leds::colors::RED
                         }
                         Modes::LiveLooper => {
                             self.current = Modes::SetupLooper;
-                            RGB8::new(127, 0, 0)
+                            smart_leds::colors::ORANGE
                         }
                         Modes::SetupLooper => {
                             self.current = Modes::LiveEffect;
-                            RGB8::new(255, 255, 255)
+                            smart_leds::colors::WHITE
                         }
                     };
                     let mut animations: Animations = Vec::new();
