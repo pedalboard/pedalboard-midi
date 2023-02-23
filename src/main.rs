@@ -170,6 +170,7 @@ mod app {
         let ws = Ws2812::new(spi);
 
         blink::spawn().unwrap();
+
         poll_input::spawn().unwrap();
         (
             Shared {},
@@ -204,10 +205,10 @@ mod app {
         for message in messages.iter() {
             midi_out.write(&message).unwrap();
         }
-        led_strip::spawn_after(
-            Duration::millis(200),
-            crate::hmi::leds::Animation::Blink(crate::hmi::leds::Led::Mon, RGB8::new(255, 0, 0)),
-        )
+        led_strip::spawn(crate::hmi::leds::Animation::Blink(
+            crate::hmi::leds::Led::Mon,
+            RGB8::new(255, 0, 0),
+        ))
         .unwrap();
     }
 
