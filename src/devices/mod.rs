@@ -18,7 +18,7 @@ use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
 
 pub type MidiMessages = Vec<MidiMessage, 8>;
-pub type Animations = Vec<Animation, 8>;
+pub type Animations = Vec<crate::hmi::leds::Animation, 8>;
 
 const NO_MESSAGE: MidiMessages = Vec::new();
 const NO_ANIMATIONS: Animations = Vec::new();
