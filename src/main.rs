@@ -207,7 +207,7 @@ mod app {
         }
         led_strip::spawn(crate::hmi::leds::Animation::Blink(
             crate::hmi::leds::Led::Mon,
-            RGB8::new(255, 0, 0),
+            RGB8::new(0, 255, 0),
         ))
         .unwrap();
     }
@@ -264,7 +264,7 @@ mod app {
             .unwrap();
 
         if next.is_some() {
-            led_strip::spawn_after(Duration::millis(1), next.unwrap()).unwrap();
+            led_strip::spawn_after(Duration::millis(10), next.unwrap()).unwrap();
         }
     }
 }
