@@ -7,8 +7,12 @@ use crate::hmi::inputs::{
 };
 use heapless::Vec;
 use midi_types::MidiMessage;
+use smart_leds::colors::{BLUE, GREEN, ORANGE, RED, SEA_GREEN, VIOLET, WHITE};
 
-use crate::hmi::leds::{Animation, Led};
+use crate::hmi::leds::{
+    Animation::{Off, On},
+    Led,
+};
 
 use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
@@ -52,21 +56,19 @@ impl Devices {
                     let mode_color = match self.current {
                         Modes::LiveEffect => {
                             self.current = Modes::LiveLooper;
-                            smart_leds::colors::RED
+                            RED
                         }
                         Modes::LiveLooper => {
                             self.current = Modes::SetupLooper;
-                            smart_leds::colors::ORANGE
+                            ORANGE
                         }
                         Modes::SetupLooper => {
                             self.current = Modes::LiveEffect;
-                            smart_leds::colors::WHITE
+                            WHITE
                         }
                     };
                     let mut animations: Animations = Vec::new();
-                    animations
-                        .push(Animation::On(Led::Mode, mode_color))
-                        .unwrap();
+                    animations.push(On(Led::Mode, mode_color)).unwrap();
                     Actions::new(NO_MESSAGE, animations)
                 }
                 Deactivate => Actions::default(),
@@ -80,17 +82,46 @@ impl Devices {
     }
 
     fn map_live_effect(&mut self, event: InputEvent) -> Actions {
+        let mut animations: Animations = Vec::new();
         match event {
             InputEvent::ButtonA(e) => match e {
-                Activate => Actions::new(self.plethora(PlethoraEvent::GoToBoard(1)), NO_ANIMATIONS),
+                Activate => {
+                    animations.push(On(Led::A, BLUE)).unwrap();
+                    animations.push(Off(Led::B)).unwrap();
+                    animations.push(Off(Led::C)).unwrap();
+                    animations.push(Off(Led::F)).unwrap();
+                    Actions::new(self.plethora(PlethoraEvent::GoToBoard(1)), animations)
+                }
                 Deactivate => Actions::default(),
             },
             InputEvent::ButtonB(e) => match e {
-                Activate => Actions::new(self.plethora(PlethoraEvent::GoToBoard(2)), NO_ANIMATIONS),
+                Activate => {
+                    animations.push(Off(Led::A)).unwrap();
+                    animations.push(On(Led::B, SEA_GREEN)).unwrap();
+                    animations.push(Off(Led::C)).unwrap();
+                    animations.push(Off(Led::F)).unwrap();
+                    Actions::new(self.plethora(PlethoraEvent::GoToBoard(2)), animations)
+                }
                 Deactivate => Actions::default(),
             },
             InputEvent::ButtonC(e) => match e {
-                Activate => Actions::new(self.plethora(PlethoraEvent::GoToBoard(3)), NO_ANIMATIONS),
+                Activate => {
+                    animations.push(Off(Led::A)).unwrap();
+                    animations.push(Off(Led::B)).unwrap();
+                    animations.push(On(Led::C, GREEN)).unwrap();
+                    animations.push(Off(Led::F)).unwrap();
+                    Actions::new(self.plethora(PlethoraEvent::GoToBoard(3)), animations)
+                }
+                Deactivate => Actions::default(),
+            },
+            InputEvent::ButtonF(e) => match e {
+                Activate => {
+                    animations.push(Off(Led::A)).unwrap();
+                    animations.push(Off(Led::B)).unwrap();
+                    animations.push(Off(Led::C)).unwrap();
+                    animations.push(On(Led::F, VIOLET)).unwrap();
+                    Actions::new(self.plethora(PlethoraEvent::GoToBoard(4)), animations)
+                }
                 Deactivate => Actions::default(),
             },
             InputEvent::ButtonD(e) => match e {
@@ -105,10 +136,6 @@ impl Devices {
                     self.plethora(PlethoraEvent::Board(Direction::Down)),
                     NO_ANIMATIONS,
                 ),
-                Deactivate => Actions::default(),
-            },
-            InputEvent::ButtonF(e) => match e {
-                Activate => Actions::new(self.plethora(PlethoraEvent::GoToBoard(4)), NO_ANIMATIONS),
                 Deactivate => Actions::default(),
             },
             InputEvent::ExpessionPedal(val) => {
