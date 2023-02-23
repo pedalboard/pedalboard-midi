@@ -254,7 +254,7 @@ mod app {
         }
     }
 
-    #[task(local = [ws, leds])]
+    #[task(capacity = 5, local = [ws, leds])]
     fn led_strip(ctx: led_strip::Context, a: crate::hmi::leds::Animation) {
         let leds = ctx.local.leds;
         let (data, next) = leds.animate(a);
