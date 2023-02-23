@@ -10,12 +10,14 @@ use rtic::app;
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
+    use crate::devices::Animations;
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use crate::hmi::leds::{Animation, Led, Leds};
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
     use fugit::RateExtU32;
+    use heapless::Vec;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
@@ -207,7 +209,11 @@ mod app {
         for message in messages.iter() {
             midi_out.write(&message).unwrap();
         }
-        led_strip::spawn(Animation::Blink(Led::Mon, RGB8::new(0, 255, 0))).unwrap();
+        let mut next_animations: Animations = Vec::new();
+        next_animations
+            .push(Animation::Blink(Led::Mon, RGB8::new(0, 255, 0)))
+            .unwrap();
+        led_strip::spawn(next_animations).unwrap();
     }
 
     #[task(local = [inputs, devices])]
@@ -217,9 +223,12 @@ mod app {
 
         match inputs.update() {
             Some(event) => {
-                let messages = devices.map(event);
-                if messages.len() > 0 {
-                    midi_out::spawn(messages).unwrap();
+                let actions = devices.map(event);
+                if actions.midi_messages.len() > 0 {
+                    midi_out::spawn(actions.midi_messages).unwrap();
+                }
+                if actions.animations.len() > 0 {
+                    led_strip::spawn(actions.animations).unwrap();
                 }
             }
             None => {}
@@ -255,16 +264,20 @@ mod app {
     }
 
     #[task(capacity = 5, local = [ws, leds])]
-    fn led_strip(ctx: led_strip::Context, a: crate::hmi::leds::Animation) {
+    fn led_strip(ctx: led_strip::Context, animations: Animations) {
         let leds = ctx.local.leds;
-        let (data, next) = leds.animate(a);
-        ctx.local
-            .ws
-            .write(brightness(data.iter().cloned(), 16))
-            .unwrap();
+        for a in animations {
+            let (data, next) = leds.animate(a);
+            ctx.local
+                .ws
+                .write(brightness(data.iter().cloned(), 32))
+                .unwrap();
 
-        if next.is_some() {
-            led_strip::spawn_after(Duration::millis(50), next.unwrap()).unwrap();
+            if next.is_some() {
+                let mut next_animations: Animations = Vec::new();
+                next_animations.push(next.unwrap()).unwrap();
+                led_strip::spawn_after(Duration::millis(50), next_animations).unwrap();
+            }
         }
     }
 }
