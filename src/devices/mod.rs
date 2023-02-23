@@ -3,13 +3,14 @@ mod rc500;
 
 use heapless::Vec;
 use midi_types::MidiMessage;
+use smart_leds::RGB8;
 
 use crate::hmi::inputs::{
     Edge::{Activate, Deactivate},
     InputEvent,
 };
 
-use crate::hmi::leds::Animation;
+use crate::hmi::leds::{Animation, Led};
 
 use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
@@ -50,12 +51,25 @@ impl Devices {
         match event {
             InputEvent::GainButton(e) => match e {
                 Activate => {
-                    match self.current {
-                        Modes::LiveEffect => self.current = Modes::LiveLooper,
-                        Modes::LiveLooper => self.current = Modes::SetupLooper,
-                        Modes::SetupLooper => self.current = Modes::LiveEffect,
+                    let mode_color = match self.current {
+                        Modes::LiveEffect => {
+                            self.current = Modes::LiveLooper;
+                            RGB8::new(255, 0, 0)
+                        }
+                        Modes::LiveLooper => {
+                            self.current = Modes::SetupLooper;
+                            RGB8::new(127, 0, 0)
+                        }
+                        Modes::SetupLooper => {
+                            self.current = Modes::LiveEffect;
+                            RGB8::new(255, 255, 255)
+                        }
                     };
-                    Actions::default()
+                    let mut animations: Animations = Vec::new();
+                    animations
+                        .push(Animation::On(Led::Mode, mode_color))
+                        .unwrap();
+                    Actions::new(NO_MESSAGE, animations)
                 }
                 Deactivate => Actions::default(),
             },
