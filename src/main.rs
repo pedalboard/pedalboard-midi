@@ -10,6 +10,7 @@ use rtic::app;
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
+    use crate::hmi::leds::{Animation, Led};
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
@@ -205,11 +206,7 @@ mod app {
         for message in messages.iter() {
             midi_out.write(&message).unwrap();
         }
-        led_strip::spawn(crate::hmi::leds::Animation::Blink(
-            crate::hmi::leds::Led::Mon,
-            RGB8::new(0, 255, 0),
-        ))
-        .unwrap();
+        led_strip::spawn(Animation::Blink(Led::Mon, RGB8::new(0, 255, 0))).unwrap();
     }
 
     #[task(local = [inputs, devices])]
@@ -266,7 +263,7 @@ mod app {
             .unwrap();
 
         if next.is_some() {
-            led_strip::spawn_after(Duration::millis(10), next.unwrap()).unwrap();
+            led_strip::spawn_after(Duration::millis(50), next.unwrap()).unwrap();
         }
     }
 }
