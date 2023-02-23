@@ -22,7 +22,7 @@ type LedData = [RGB8; NUM_LEDS];
 pub enum Animation {
     On(Led, RGB8),
     Off(Led),
-    Blink(Led, RGB8),
+    Flash(Led, RGB8),
 }
 
 pub struct Leds {
@@ -50,7 +50,7 @@ impl Leds {
                 self.data[led as usize].b = 0;
                 None
             }
-            Animation::Blink(led, c) => {
+            Animation::Flash(led, c) => {
                 self.data[led as usize].r = c.r;
                 self.data[led as usize].g = c.g;
                 self.data[led as usize].b = c.b;

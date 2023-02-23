@@ -216,7 +216,7 @@ mod app {
         }
         let mut next_animations: Animations = Vec::new();
         next_animations
-            .push(Animation::Blink(Led::Mon, GREEN))
+            .push(Animation::Flash(Led::Mon, GREEN))
             .unwrap();
         led_strip::spawn(next_animations).unwrap();
     }
