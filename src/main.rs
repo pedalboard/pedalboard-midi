@@ -259,18 +259,16 @@ mod app {
 
         if let Ok(size) = usb_midi.read(&mut buffer) {
             let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-            for packet in buffer_reader {
-                if let Ok(packet) = packet {
-                    match packet.message {
-                        usbd_midi::data::midi::message::Message::NoteOff(
-                            usbd_midi::data::midi::channel::Channel::Channel16,
-                            usbd_midi::data::midi::notes::Note::C1m,
-                            ..,
-                        ) => {
-                            reset_to_usb_boot(0, 0);
-                        }
-                        _ => {}
+            for packet in buffer_reader.flatten() {
+                match packet.message {
+                    usbd_midi::data::midi::message::Message::NoteOff(
+                        usbd_midi::data::midi::channel::Channel::Channel16,
+                        usbd_midi::data::midi::notes::Note::C1m,
+                        ..,
+                    ) => {
+                        reset_to_usb_boot(0, 0);
                     }
+                    _ => {}
                 }
             }
         }
