@@ -41,7 +41,7 @@ cargo install elf2uf2-rs
 
 The firmware supports No-Button-Boot (nbb) bootsel mode via USB midi interface.
 
-see 'make bootsel' for how to send a midi message to reset the device into bootsel mode.
+see `make bootsel` for how to send a midi message to reset the device into bootsel mode.
 
 1. Connect USB C cable to the Pico
 4. Run `make deploy`
