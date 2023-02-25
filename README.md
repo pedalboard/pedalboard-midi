@@ -17,6 +17,7 @@ The XTONE case is used to host the hardware.
 * 1 x Rasperry PI [Pico](https://www.raspberrypi.com/products/raspberry-pi-pico/)
 * 1 x Adafruit [MIDI Feather Wing](https://www.adafruit.com/product/4740) 
 * 2 x SensorKit [KY-40 Rotary Encoder](https://sensorkit.joy-it.net/en/sensors/ky-040)
+* 1 x Adafruit [NeoPixel Strand](https://www.adafruit.com/product/3631) (only 10 pixels are used)
 
 ### Wiring 
 
@@ -38,7 +39,9 @@ cargo install elf2uf2-rs
 
 ## Deployment (from Linux Host)
 
-The firmware supports No-Button-Boot (nbb) bootsel mode via USB serial interface.
+The firmware supports No-Button-Boot (nbb) bootsel mode via USB midi interface.
+
+see 'make bootsel' for how to send a midi message to reset the device into bootsel mode.
 
 1. Connect USB C cable to the Pico
 4. Run `make deploy`
