@@ -216,7 +216,7 @@ mod app {
     fn midi_out(ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
         let midi_out = ctx.local.midi_out;
         for message in messages.iter() {
-            midi_out.write(&message).unwrap();
+            midi_out.write(message).unwrap();
         }
         let mut next_animations: Animations = Vec::new();
         next_animations
