@@ -24,7 +24,7 @@ The XTONE case is used to host the hardware.
 ![Breadboard Wiring](doc/wiring.png)
 
 ## Development
-This project was generated with the [RP2040 Project Teamplate](https://github.com/rp-rs/rp2040-project-template)
+This project was generated with the [RP2040 Project Template](https://github.com/rp-rs/rp2040-project-template)
 
 ### Dependencies
 
