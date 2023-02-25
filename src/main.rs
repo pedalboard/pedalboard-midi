@@ -257,6 +257,7 @@ mod app {
         if let Ok(size) = usb_midi.read(&mut buffer) {
             let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
             for packet in buffer_reader.flatten() {
+                #[allow(clippy::single_match)]
                 match packet.message {
                     usbd_midi::data::midi::message::Message::NoteOff(
                         usbd_midi::data::midi::channel::Channel::Channel16,
