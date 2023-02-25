@@ -112,7 +112,7 @@ mod app {
             &mut resets,
         )));
 
-        let usb_midi = MidiClass::new(&usb_bus, 1, 1).unwrap();
+        let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .manufacturer("laenzlinger")
             .product("pedalboard-midi")
@@ -259,7 +259,7 @@ mod app {
 
         if let Ok(size) = usb_midi.read(&mut buffer) {
             let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-            for packet in buffer_reader.into_iter() {
+            for packet in buffer_reader {
                 if let Ok(packet) = packet {
                     match packet.message {
                         usbd_midi::data::midi::message::Message::NoteOff(
