@@ -193,9 +193,9 @@ mod app {
                 usb_midi,
                 midi_out,
                 inputs,
-                devices: crate::devices::Devices::new(),
+                devices: crate::devices::Devices::default(),
                 ws,
-                leds: crate::hmi::leds::Leds::new(),
+                leds: crate::hmi::leds::Leds::default(),
             },
             init::Monotonics(mono),
         )

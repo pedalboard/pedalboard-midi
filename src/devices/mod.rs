@@ -51,7 +51,6 @@ impl Devices {
             current: Modes::LiveEffect,
         }
     }
-
     pub fn map(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::GainButton(e) => match e {
@@ -215,6 +214,12 @@ impl Devices {
 
     fn rc500(&mut self, event: RC500Event) -> MidiMessages {
         self.rc500.midi_messages(event)
+    }
+}
+
+impl Default for Devices {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -35,7 +35,6 @@ impl Leds {
             data: [RGB8::default(); NUM_LEDS],
         }
     }
-
     pub fn animate(&mut self, a: Animation) -> (LedData, Option<Animation>) {
         let next = match a {
             Animation::On(led, c) => {
@@ -58,5 +57,11 @@ impl Leds {
             }
         };
         (self.data, next)
+    }
+}
+
+impl Default for Leds {
+    fn default() -> Self {
+        Self::new()
     }
 }
