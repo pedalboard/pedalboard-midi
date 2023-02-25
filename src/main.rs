@@ -233,10 +233,10 @@ mod app {
         match inputs.update() {
             Some(event) => {
                 let actions = devices.map(event);
-                if actions.midi_messages.len() > 0 {
+                if !actions.midi_messages.is_empty() {
                     midi_out::spawn(actions.midi_messages).unwrap();
                 }
-                if actions.animations.len() > 0 {
+                if !actions.animations.is_empty() {
                     led_strip::spawn(actions.animations).unwrap();
                 }
             }
