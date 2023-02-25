@@ -18,7 +18,7 @@ rp-pico = "0.6"
 cortex-m-rtic = "1.0.0"
 rp2040-monotonic = "1.2.0"
 usb-device= "0.2.9"
-usbd-serial = "0.1.1"
+usbd-midi = { git = "https://github.com/btrepp/usbd-midi", branch = "master" }
 fugit = "0.3"
 embedded-midi = { git = "https://github.com/rust-midi/embedded-midi", branch = "main" }
 midi-types = { version = "0.1.5", features = ["defmt"] }

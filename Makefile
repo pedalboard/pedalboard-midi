@@ -15,7 +15,7 @@ run: ## build and run
 	cargo run --release
 
 bootsel: ## restart the RP2040 in bootsel mode
-	echo "z" > /dev/ttyACM0
+	amidi -S '8F 00 00' -p 'hw:1,0,0'
 
 deploy: bootsel mount run ## mount and deploy to RP2040
 

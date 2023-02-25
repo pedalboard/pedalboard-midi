@@ -43,7 +43,9 @@ mod app {
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
     };
-    use usbd_serial::SerialPort;
+    use usbd_midi::data::usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS};
+    use usbd_midi::data::usb_midi::midi_packet_reader::MidiPacketBufferReader;
+    use usbd_midi::midi_device::MidiClass;
     use ws2812_spi::Ws2812;
 
     type Duration = fugit::TimerDurationU64<1_000_000>;
@@ -63,7 +65,7 @@ mod app {
     struct Local {
         led: Pin<Gpio25, PushPullOutput>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        serial: SerialPort<'static, UsbBus>,
+        usb_midi: MidiClass<'static, UsbBus>,
         midi_out: MidiOut,
         inputs: Inputs,
         devices: crate::devices::Devices,
@@ -109,12 +111,14 @@ mod app {
             true,
             &mut resets,
         )));
-        let serial = SerialPort::new(usb_bus);
+
+        let usb_midi = MidiClass::new(&usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .manufacturer("laenzlinger")
             .product("pedalboard-midi")
             .serial_number("0.0.1")
-            .device_class(2) // from: https://www.usb.org/defined-class-codes
+            .device_class(USB_AUDIO_CLASS)
+            .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
             .build();
 
         // UART Midi
@@ -186,7 +190,7 @@ mod app {
             Local {
                 led,
                 usb_dev,
-                serial,
+                usb_midi,
                 midi_out,
                 inputs,
                 devices: crate::devices::Devices::new(),
@@ -241,28 +245,32 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [serial, usb_dev])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [usb_midi, usb_dev])]
     fn usb_rx(cx: usb_rx::Context) {
         let usb_dev = cx.local.usb_dev;
-        let serial = cx.local.serial;
+        let usb_midi = cx.local.usb_midi;
 
         // Check for new data
-        if usb_dev.poll(&mut [serial]) {
-            let mut buf = [0u8; 64];
-            match serial.read(&mut buf) {
-                Err(_e) => {
-                    // Do nothing
-                }
-                Ok(0) => {
-                    // Do nothing
-                }
-                Ok(count) => {
-                    buf.iter().take(count).for_each(|b| {
-                        if b == &b'z' {
-                            let _ = serial.write(b"Reboot\r\n");
-                            reset_to_usb_boot(0, 0)
+        if !usb_dev.poll(&mut [usb_midi]) {
+            return;
+        }
+
+        let mut buffer = [0; 64];
+
+        if let Ok(size) = usb_midi.read(&mut buffer) {
+            let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+            for packet in buffer_reader.into_iter() {
+                if let Ok(packet) = packet {
+                    match packet.message {
+                        usbd_midi::data::midi::message::Message::NoteOff(
+                            usbd_midi::data::midi::channel::Channel::Channel16,
+                            usbd_midi::data::midi::notes::Note::C1m,
+                            ..,
+                        ) => {
+                            reset_to_usb_boot(0, 0);
                         }
-                    });
+                        _ => {}
+                    }
                 }
             }
         }
