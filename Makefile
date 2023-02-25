@@ -9,7 +9,7 @@ mount: ## mount the RP2040 in bootsel mode
 		sleep 1; \
 		echo -n '.'; \
 	done
-	echo ""
+	@echo ""
 	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 /mnt/pico/
 
 run: ## build and run
