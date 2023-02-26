@@ -1,20 +1,6 @@
 use crate::devices::{Direction, MidiMessages};
 use midi_types::{Channel, Control, MidiMessage, Program, Value7};
 
-const RC500_CHANNEL: Channel = Channel::new(0);
-const MAX_V7: Value7 = midi_types::Value7::new(127);
-const MIN_V7: Value7 = midi_types::Value7::new(1);
-
-const PATTERNS: [u8; 58] = [
-    0, 2, 4, 6, 8, 11, 13, 15, 17, 19, 22, 24, 26, 28, 31, 33, 35, 37, 39, 42, 44, 46, 48, 51, 53,
-    55, 57, 60, 62, 64, 66, 68, 71, 73, 75, 77, 80, 82, 84, 86, 89, 91, 93, 95, 97, 100, 102, 104,
-    106, 109, 111, 113, 115, 117, 120, 122, 124, 126,
-];
-
-const DRUMKITS: [u8; 16] = [
-    0, 8, 17, 26, 35, 43, 51, 59, 68, 76, 85, 94, 102, 110, 118, 126,
-];
-
 pub struct RC500 {
     drumkits: BidirectionalIterator,
     patterns: BidirectionalIterator,
@@ -31,6 +17,20 @@ pub enum RC500Action {
     RhythmPattern(Direction),
     DrumKit(Direction),
 }
+
+const RC500_CHANNEL: Channel = Channel::new(0);
+const MAX_V7: Value7 = midi_types::Value7::new(127);
+const MIN_V7: Value7 = midi_types::Value7::new(1);
+
+const PATTERNS: [u8; 58] = [
+    0, 2, 4, 6, 8, 11, 13, 15, 17, 19, 22, 24, 26, 28, 31, 33, 35, 37, 39, 42, 44, 46, 48, 51, 53,
+    55, 57, 60, 62, 64, 66, 68, 71, 73, 75, 77, 80, 82, 84, 86, 89, 91, 93, 95, 97, 100, 102, 104,
+    106, 109, 111, 113, 115, 117, 120, 122, 124, 126,
+];
+
+const DRUMKITS: [u8; 16] = [
+    0, 8, 17, 26, 35, 43, 51, 59, 68, 76, 85, 94, 102, 110, 118, 126,
+];
 
 impl Default for RC500 {
     fn default() -> Self {
