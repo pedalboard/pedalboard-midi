@@ -89,11 +89,10 @@ impl Devices {
                     if self.current_mode == self.modes.len() {
                         self.current_mode = 0
                     }
-
                     let mode_color = match self.modes[self.current_mode] {
-                        Mode::LiveEffect => RED,
-                        Mode::LiveLooper => ORANGE,
-                        Mode::SetupLooper => WHITE,
+                        Mode::LiveEffect => WHITE,
+                        Mode::LiveLooper => RED,
+                        Mode::SetupLooper => ORANGE,
                     };
                     let mut animations = Animations::none();
                     animations.push(On(Led::Mode, mode_color));
