@@ -6,6 +6,7 @@ use crate::hmi::inputs::{
     Edge::{Activate, Deactivate},
     InputEvent,
 };
+use defmt::error;
 use heapless::Vec;
 use midi_types::MidiMessage;
 use smart_leds::{
@@ -22,9 +23,34 @@ use self::pedalboardaudio::{PAEvent, PedalboardAudio};
 use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
 
-pub type MidiMessages = Vec<MidiMessage, 8>;
+type MidiMessageVec = Vec<MidiMessage, 8>;
 
-const NO_MESSAGE: MidiMessages = Vec::new();
+#[derive(Debug)]
+pub struct MidiMessages(MidiMessageVec);
+
+impl MidiMessages {
+    pub fn push(&mut self, a: MidiMessage) {
+        if self.0.push(a).is_err() {
+            error!("failed pushing midi message")
+        };
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub fn none() -> Self {
+        MidiMessages(Vec::new())
+    }
+
+    pub fn messages(self) -> MidiMessageVec {
+        self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 pub enum Direction {
     Up,
@@ -73,7 +99,7 @@ impl Devices {
                     };
                     let mut animations: Animations = Animations::none();
                     animations.push(On(Led::Mode, mode_color));
-                    Actions::new(NO_MESSAGE, animations)
+                    Actions::new(MidiMessages::none(), animations)
                 }
                 Deactivate => Actions::default(),
             },
@@ -207,6 +233,6 @@ impl Actions {
         }
     }
     fn default() -> Self {
-        Actions::new(NO_MESSAGE, Animations::none())
+        Actions::new(MidiMessages::none(), Animations::none())
     }
 }

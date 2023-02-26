@@ -217,7 +217,8 @@ mod app {
     #[task(local = [midi_out], shared = [usb_midi, usb_dev])]
     fn midi_out(mut ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
         let midi_out = ctx.local.midi_out;
-        for message in messages.iter() {
+        let msgs = messages.messages();
+        for message in msgs.iter() {
             midi_out.write(message).unwrap();
         }
 
@@ -234,7 +235,7 @@ mod app {
             return;
         }
 
-        for message in messages.into_iter() {
+        for message in msgs.into_iter() {
             if let Some(mm) = crate::usb::map_midi(message) {
                 ctx.shared
                     .usb_midi

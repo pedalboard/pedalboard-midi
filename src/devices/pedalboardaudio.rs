@@ -1,5 +1,4 @@
 use crate::devices::MidiMessages;
-use heapless::Vec;
 use midi_types::{Channel, Control, MidiMessage, Value7};
 
 const CHANNEL: Channel = Channel::new(2);
@@ -29,13 +28,7 @@ impl PedalboardAudio {
 }
 
 fn control_change(control: Control, value: Value7) -> MidiMessages {
-    let mut messages = empty();
+    let mut messages = MidiMessages::none();
+    messages.push(MidiMessage::ControlChange(CHANNEL, control, value));
     messages
-        .push(MidiMessage::ControlChange(CHANNEL, control, value))
-        .unwrap();
-    messages
-}
-
-fn empty() -> MidiMessages {
-    Vec::new()
 }

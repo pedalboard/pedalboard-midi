@@ -59,6 +59,7 @@ impl Animations {
         self.0.is_empty()
     }
 }
+
 impl Leds {
     pub fn new() -> Self {
         Leds {

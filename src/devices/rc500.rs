@@ -1,5 +1,4 @@
 use crate::devices::{Direction, MidiMessages};
-use heapless::Vec;
 use midi_types::{Channel, Control, MidiMessage, Program, Value7};
 
 const RC500_CHANNEL: Channel = Channel::new(0);
@@ -57,7 +56,7 @@ impl BidirectionalIterator {
     fn current(&self, values: &[u8]) -> MidiMessages {
         match values.get(self.current) {
             Some(value) => control_change(self.control, Value7::new(*value)),
-            None => empty(),
+            None => MidiMessages::none(),
         }
     }
 }
@@ -111,32 +110,20 @@ impl RC500 {
 
 fn control_toggle(control: u8) -> MidiMessages {
     let c = Control::new(control);
-    let mut messages = empty();
-    messages
-        .push(MidiMessage::ControlChange(RC500_CHANNEL, c, MAX_VALUE))
-        .unwrap();
-    messages
-        .push(MidiMessage::ControlChange(RC500_CHANNEL, c, MIN_VALUE))
-        .unwrap();
+    let mut messages = MidiMessages::none();
+    messages.push(MidiMessage::ControlChange(RC500_CHANNEL, c, MAX_VALUE));
+    messages.push(MidiMessage::ControlChange(RC500_CHANNEL, c, MIN_VALUE));
     messages
 }
 
 fn control_change(control: Control, value: Value7) -> MidiMessages {
-    let mut messages = empty();
-    messages
-        .push(MidiMessage::ControlChange(RC500_CHANNEL, control, value))
-        .unwrap();
+    let mut messages = MidiMessages::none();
+    messages.push(MidiMessage::ControlChange(RC500_CHANNEL, control, value));
     messages
 }
 
 fn program_change(program: Program) -> MidiMessages {
-    let mut messages = empty();
+    let mut messages = MidiMessages::none();
+    messages.push(MidiMessage::ProgramChange(RC500_CHANNEL, program));
     messages
-        .push(MidiMessage::ProgramChange(RC500_CHANNEL, program))
-        .unwrap();
-    messages
-}
-
-fn empty() -> MidiMessages {
-    Vec::new()
 }
