@@ -61,10 +61,11 @@ pub struct Devices {
     rc500: RC500,
     plethora: Plethora,
     audio: PedalboardAudio,
-    mode: Modes,
+    modes: [Mode; 3],
+    current_mode: usize,
 }
 
-pub enum Modes {
+pub enum Mode {
     LiveEffect,
     LiveLooper,
     SetupLooper,
@@ -73,7 +74,8 @@ pub enum Modes {
 impl Devices {
     pub fn new() -> Self {
         Devices {
-            mode: Modes::LiveEffect,
+            modes: [Mode::LiveEffect, Mode::LiveLooper, Mode::SetupLooper],
+            current_mode: 0,
             rc500: RC500::default(),
             audio: PedalboardAudio::default(),
             plethora: Plethora {},
@@ -83,19 +85,15 @@ impl Devices {
         match event {
             InputEvent::GainButton(e) => match e {
                 Activate => {
-                    let mode_color = match self.mode {
-                        Modes::LiveEffect => {
-                            self.mode = Modes::LiveLooper;
-                            RED
-                        }
-                        Modes::LiveLooper => {
-                            self.mode = Modes::SetupLooper;
-                            ORANGE
-                        }
-                        Modes::SetupLooper => {
-                            self.mode = Modes::LiveEffect;
-                            WHITE
-                        }
+                    self.current_mode += 1;
+                    if self.current_mode == self.modes.len() {
+                        self.current_mode = 0
+                    }
+
+                    let mode_color = match self.modes[self.current_mode] {
+                        Mode::LiveEffect => RED,
+                        Mode::LiveLooper => ORANGE,
+                        Mode::SetupLooper => WHITE,
                     };
                     let mut animations = Animations::none();
                     animations.push(On(Led::Mode, mode_color));
@@ -104,10 +102,10 @@ impl Devices {
                 }
                 Deactivate => Actions::default(),
             },
-            _ => match self.mode {
-                Modes::LiveEffect => self.map_live_effect(event),
-                Modes::LiveLooper => self.map_live_looper(event),
-                Modes::SetupLooper => self.map_setup_looper(event),
+            _ => match self.modes[self.current_mode] {
+                Mode::LiveEffect => self.map_live_effect(event),
+                Mode::LiveLooper => self.map_live_looper(event),
+                Mode::SetupLooper => self.map_setup_looper(event),
             },
         }
     }
