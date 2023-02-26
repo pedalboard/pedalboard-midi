@@ -48,10 +48,8 @@ impl RC500 {
     pub fn midi_messages(&mut self, event: RC500Action) -> MidiMessages {
         match event {
             RC500Action::Memory(nr) => program_change(Program::new(nr - 1)),
-            RC500Action::Mem(dir) => match dir {
-                Direction::Up => control_toggle(1),
-                Direction::Down => control_toggle(2),
-            },
+            RC500Action::Mem(Direction::Up) => control_toggle(1),
+            RC500Action::Mem(Direction::Down) => control_toggle(2),
             RC500Action::ClearCurrent() => control_toggle(3),
             RC500Action::ToggleRhythm() => control_toggle(4),
             RC500Action::RhythmVariation() => control_toggle(5),
