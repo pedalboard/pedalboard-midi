@@ -99,6 +99,7 @@ impl Devices {
                     };
                     let mut animations = Animations::none();
                     animations.push(On(Led::Mode, mode_color));
+                    animations.all_button_leds_off();
                     Actions::new(MidiMessages::none(), animations)
                 }
                 Deactivate => Actions::default(),

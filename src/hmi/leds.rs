@@ -37,17 +37,6 @@ type AnimationVec = Vec<Animation, 8>;
 pub struct Animations(AnimationVec);
 
 impl Animations {
-    pub fn push(&mut self, a: Animation) -> &mut Animations {
-        if self.0.push(a).is_err() {
-            error!("failed pushing ainimation")
-        };
-        self
-    }
-
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-
     pub fn none() -> Self {
         Animations(Vec::new())
     }
@@ -56,6 +45,25 @@ impl Animations {
         let mut animations = Animations::none();
         animations.push(a);
         animations
+    }
+
+    pub fn push(&mut self, a: Animation) {
+        if self.0.push(a).is_err() {
+            error!("failed pushing ainimation")
+        };
+    }
+
+    pub fn all_button_leds_off(&mut self) {
+        self.push(Animation::Off(Led::A));
+        self.push(Animation::Off(Led::B));
+        self.push(Animation::Off(Led::C));
+        self.push(Animation::Off(Led::D));
+        self.push(Animation::Off(Led::E));
+        self.push(Animation::Off(Led::F));
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 
     pub fn animations(self) -> AnimationVec {
