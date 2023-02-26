@@ -18,22 +18,16 @@ impl Plethora {
     pub fn midi_messages(&self, act: PlethoraAction) -> MidiMessages {
         let mut messages: MidiMessages = MidiMessages::none();
         match act {
-            PlethoraAction::Board(dir) => match dir {
-                Direction::Up => {
-                    messages.push(MidiMessage::ControlChange(
-                        PLETHORA_CHANNEL,
-                        Control::new(95),
-                        MAX_V7,
-                    ));
-                }
-                Direction::Down => {
-                    messages.push(MidiMessage::ControlChange(
-                        PLETHORA_CHANNEL,
-                        Control::new(94),
-                        MAX_V7,
-                    ));
-                }
-            },
+            PlethoraAction::Board(Direction::Up) => messages.push(MidiMessage::ControlChange(
+                PLETHORA_CHANNEL,
+                Control::new(95),
+                MAX_V7,
+            )),
+            PlethoraAction::Board(Direction::Down) => messages.push(MidiMessage::ControlChange(
+                PLETHORA_CHANNEL,
+                Control::new(94),
+                MAX_V7,
+            )),
             PlethoraAction::GoToBoard(nr) => {
                 messages.push(MidiMessage::ControlChange(
                     PLETHORA_CHANNEL,
