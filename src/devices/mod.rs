@@ -19,9 +19,9 @@ use crate::hmi::leds::{
     Animations, Led,
 };
 
-use self::pedalboardaudio::{PAEvent, PedalboardAudio};
-use self::plethora::{Plethora, PlethoraEvent};
-use self::rc500::{RC500Event, RC500};
+use self::pedalboardaudio::{PAAction, PedalboardAudio};
+use self::plethora::{Plethora, PlethoraAction};
+use self::rc500::{RC500Action, RC500};
 
 type MidiMessageVec = Vec<MidiMessage, 8>;
 
@@ -120,26 +120,26 @@ impl Devices {
         match event {
             InputEvent::ButtonA(Activate) => {
                 animations.push(On(Led::A, BLUE));
-                Actions::new(self.plethora(PlethoraEvent::GoToBoard(1)), animations)
+                Actions::new(self.plethora(PlethoraAction::GoToBoard(1)), animations)
             }
             InputEvent::ButtonB(Activate) => {
                 animations.push(On(Led::B, SEA_GREEN));
-                Actions::new(self.plethora(PlethoraEvent::GoToBoard(2)), animations)
+                Actions::new(self.plethora(PlethoraAction::GoToBoard(2)), animations)
             }
             InputEvent::ButtonC(Activate) => {
                 animations.push(On(Led::C, GREEN));
-                Actions::new(self.plethora(PlethoraEvent::GoToBoard(3)), animations)
+                Actions::new(self.plethora(PlethoraAction::GoToBoard(3)), animations)
             }
             InputEvent::ButtonF(Activate) => {
                 animations.push(On(Led::F, VIOLET));
-                Actions::new(self.plethora(PlethoraEvent::GoToBoard(4)), animations)
+                Actions::new(self.plethora(PlethoraAction::GoToBoard(4)), animations)
             }
             InputEvent::ButtonD(Activate) => Actions::new(
-                self.plethora(PlethoraEvent::Board(Direction::Up)),
+                self.plethora(PlethoraAction::Board(Direction::Up)),
                 animations,
             ),
             InputEvent::ButtonE(Activate) => Actions::new(
-                self.plethora(PlethoraEvent::Board(Direction::Down)),
+                self.plethora(PlethoraAction::Board(Direction::Down)),
                 animations,
             ),
             InputEvent::ExpessionPedal(val) => {
@@ -148,7 +148,7 @@ impl Devices {
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
                 animations.push(On(Led::Clip, color));
-                Actions::new(self.audio(PAEvent::OutputLevel(val)), animations)
+                Actions::new(self.audio(PAAction::OutputLevel(val)), animations)
             }
             _ => Actions::default(),
         }
@@ -156,25 +156,25 @@ impl Devices {
     fn map_live_looper(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => {
-                Actions::new(self.rc500(RC500Event::ToggleRhythm()), Animations::none())
+                Actions::new(self.rc500(RC500Action::ToggleRhythm()), Animations::none())
             }
             InputEvent::ButtonB(Activate) => Actions::new(
-                self.rc500(RC500Event::RhythmVariation()),
+                self.rc500(RC500Action::RhythmVariation()),
                 Animations::none(),
             ),
             InputEvent::ButtonD(Activate) => Actions::new(
-                self.rc500(RC500Event::Mem(Direction::Up)),
+                self.rc500(RC500Action::Mem(Direction::Up)),
                 Animations::none(),
             ),
             InputEvent::ButtonE(Activate) => Actions::new(
-                self.rc500(RC500Event::Mem(Direction::Down)),
+                self.rc500(RC500Action::Mem(Direction::Down)),
                 Animations::none(),
             ),
             InputEvent::ButtonF(Activate) => {
-                Actions::new(self.rc500(RC500Event::ClearCurrent()), Animations::none())
+                Actions::new(self.rc500(RC500Action::ClearCurrent()), Animations::none())
             }
             InputEvent::ExpessionPedal(val) => Actions::new(
-                self.rc500(RC500Event::CurrentChannelLevel(val)),
+                self.rc500(RC500Action::CurrentChannelLevel(val)),
                 Animations::none(),
             ),
             _ => Actions::default(),
@@ -183,34 +183,34 @@ impl Devices {
     fn map_setup_looper(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => Actions::new(
-                self.rc500(RC500Event::RhythmPattern(Direction::Up)),
+                self.rc500(RC500Action::RhythmPattern(Direction::Up)),
                 Animations::none(),
             ),
             InputEvent::ButtonB(Activate) => Actions::new(
-                self.rc500(RC500Event::RhythmPattern(Direction::Down)),
+                self.rc500(RC500Action::RhythmPattern(Direction::Down)),
                 Animations::none(),
             ),
             InputEvent::ButtonD(Activate) => Actions::new(
-                self.rc500(RC500Event::DrumKit(Direction::Up)),
+                self.rc500(RC500Action::DrumKit(Direction::Up)),
                 Animations::none(),
             ),
             InputEvent::ButtonE(Activate) => Actions::new(
-                self.rc500(RC500Event::DrumKit(Direction::Down)),
+                self.rc500(RC500Action::DrumKit(Direction::Down)),
                 Animations::none(),
             ),
             _ => Actions::default(),
         }
     }
 
-    fn plethora(&mut self, event: PlethoraEvent) -> MidiMessages {
+    fn plethora(&mut self, event: PlethoraAction) -> MidiMessages {
         self.plethora.midi_messages(event)
     }
 
-    fn rc500(&mut self, event: RC500Event) -> MidiMessages {
+    fn rc500(&mut self, event: RC500Action) -> MidiMessages {
         self.rc500.midi_messages(event)
     }
-    fn audio(&mut self, event: PAEvent) -> MidiMessages {
-        self.audio.midi_messages(event)
+    fn audio(&mut self, act: PAAction) -> MidiMessages {
+        self.audio.midi_messages(act)
     }
 }
 
