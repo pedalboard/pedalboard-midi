@@ -184,8 +184,7 @@ mod app {
 
         blink::spawn().unwrap();
 
-        let mut animations: Animations = Animations::none();
-        animations.push(Animation::On(Led::Mode, WHITE));
+        let animations = Animations::with_only(Animation::On(Led::Mode, WHITE));
         led_strip::spawn(animations).unwrap();
 
         poll_input::spawn().unwrap();
@@ -227,9 +226,8 @@ mod app {
             .usb_dev
             .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
         let color = if configured { GREEN } else { RED };
-        let mut next_animations: Animations = Animations::none();
-        next_animations.push(Animation::Flash(Led::Mon, color));
-        led_strip::spawn(next_animations).unwrap();
+        let animations = Animations::with_only(Animation::Flash(Led::Mon, color));
+        led_strip::spawn(animations).unwrap();
 
         if !configured {
             return;
@@ -305,8 +303,7 @@ mod app {
                 .unwrap();
 
             if next.is_some() {
-                let mut next_animations: Animations = Animations::none();
-                next_animations.push(next.unwrap());
+                let next_animations = Animations::with_only(next.unwrap());
                 led_strip::spawn_after(Duration::millis(50), next_animations).unwrap();
             }
         }

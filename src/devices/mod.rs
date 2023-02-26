@@ -73,10 +73,10 @@ pub enum Modes {
 impl Devices {
     pub fn new() -> Self {
         Devices {
+            mode: Modes::LiveEffect,
             rc500: RC500::default(),
             audio: PedalboardAudio::default(),
             plethora: Plethora {},
-            mode: Modes::LiveEffect,
         }
     }
     pub fn map(&mut self, event: InputEvent) -> Actions {
@@ -97,7 +97,7 @@ impl Devices {
                             WHITE
                         }
                     };
-                    let mut animations: Animations = Animations::none();
+                    let mut animations = Animations::none();
                     animations.push(On(Led::Mode, mode_color));
                     Actions::new(MidiMessages::none(), animations)
                 }
@@ -112,7 +112,7 @@ impl Devices {
     }
 
     fn map_live_effect(&mut self, event: InputEvent) -> Actions {
-        let mut animations: Animations = Animations::none();
+        let mut animations = Animations::none();
         animations.push(Off(Led::A));
         animations.push(Off(Led::B));
         animations.push(Off(Led::C));

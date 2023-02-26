@@ -37,10 +37,11 @@ type AnimationVec = Vec<Animation, 8>;
 pub struct Animations(AnimationVec);
 
 impl Animations {
-    pub fn push(&mut self, a: crate::hmi::leds::Animation) {
+    pub fn push(&mut self, a: Animation) -> &mut Animations {
         if self.0.push(a).is_err() {
             error!("failed pushing ainimation")
         };
+        self
     }
 
     pub fn clear(&mut self) {
@@ -49,6 +50,12 @@ impl Animations {
 
     pub fn none() -> Self {
         Animations(Vec::new())
+    }
+
+    pub fn with_only(a: Animation) -> Self {
+        let mut animations = Animations::none();
+        animations.push(a);
+        animations
     }
 
     pub fn animations(self) -> AnimationVec {
