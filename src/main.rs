@@ -12,15 +12,13 @@ use rtic::app;
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
-    use crate::devices::Animations;
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
-    use crate::hmi::leds::{Animation, Led, Leds};
+    use crate::hmi::leds::{Animation, Animations, Led, Leds};
     use defmt::*;
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
     use fugit::RateExtU32;
-    use heapless::Vec;
 
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
@@ -186,8 +184,8 @@ mod app {
 
         blink::spawn().unwrap();
 
-        let mut animations: Animations = Vec::new();
-        animations.push(Animation::On(Led::Mode, WHITE)).unwrap();
+        let mut animations: Animations = Animations::none();
+        animations.push(Animation::On(Led::Mode, WHITE));
         led_strip::spawn(animations).unwrap();
 
         poll_input::spawn().unwrap();
@@ -228,10 +226,8 @@ mod app {
             .usb_dev
             .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
         let color = if configured { GREEN } else { RED };
-        let mut next_animations: Animations = Vec::new();
-        next_animations
-            .push(Animation::Flash(Led::Mon, color))
-            .unwrap();
+        let mut next_animations: Animations = Animations::none();
+        next_animations.push(Animation::Flash(Led::Mon, color));
         led_strip::spawn(next_animations).unwrap();
 
         if !configured {
@@ -300,7 +296,7 @@ mod app {
     #[task(capacity = 5, local = [ws, leds])]
     fn led_strip(ctx: led_strip::Context, animations: Animations) {
         let leds = ctx.local.leds;
-        for a in animations {
+        for a in animations.animations() {
             let (data, next) = leds.animate(a);
             ctx.local
                 .ws
@@ -308,8 +304,8 @@ mod app {
                 .unwrap();
 
             if next.is_some() {
-                let mut next_animations: Animations = Vec::new();
-                next_animations.push(next.unwrap()).unwrap();
+                let mut next_animations: Animations = Animations::none();
+                next_animations.push(next.unwrap());
                 led_strip::spawn_after(Duration::millis(50), next_animations).unwrap();
             }
         }

@@ -15,7 +15,7 @@ use smart_leds::{
 
 use crate::hmi::leds::{
     Animation::{Off, On},
-    Led,
+    Animations, Led,
 };
 
 use self::pedalboardaudio::{PAEvent, PedalboardAudio};
@@ -23,10 +23,8 @@ use self::plethora::{Plethora, PlethoraEvent};
 use self::rc500::{RC500Event, RC500};
 
 pub type MidiMessages = Vec<MidiMessage, 8>;
-pub type Animations = Vec<crate::hmi::leds::Animation, 8>;
 
 const NO_MESSAGE: MidiMessages = Vec::new();
-const NO_ANIMATIONS: Animations = Vec::new();
 
 pub enum Direction {
     Up,
@@ -73,8 +71,8 @@ impl Devices {
                             WHITE
                         }
                     };
-                    let mut animations: Animations = Vec::new();
-                    animations.push(On(Led::Mode, mode_color)).unwrap();
+                    let mut animations: Animations = Animations::none();
+                    animations.push(On(Led::Mode, mode_color));
                     Actions::new(NO_MESSAGE, animations)
                 }
                 Deactivate => Actions::default(),
@@ -88,26 +86,26 @@ impl Devices {
     }
 
     fn map_live_effect(&mut self, event: InputEvent) -> Actions {
-        let mut animations: Animations = Vec::new();
-        animations.push(Off(Led::A)).unwrap();
-        animations.push(Off(Led::B)).unwrap();
-        animations.push(Off(Led::C)).unwrap();
-        animations.push(Off(Led::F)).unwrap();
+        let mut animations: Animations = Animations::none();
+        animations.push(Off(Led::A));
+        animations.push(Off(Led::B));
+        animations.push(Off(Led::C));
+        animations.push(Off(Led::F));
         match event {
             InputEvent::ButtonA(Activate) => {
-                animations.push(On(Led::A, BLUE)).unwrap();
+                animations.push(On(Led::A, BLUE));
                 Actions::new(self.plethora(PlethoraEvent::GoToBoard(1)), animations)
             }
             InputEvent::ButtonB(Activate) => {
-                animations.push(On(Led::B, SEA_GREEN)).unwrap();
+                animations.push(On(Led::B, SEA_GREEN));
                 Actions::new(self.plethora(PlethoraEvent::GoToBoard(2)), animations)
             }
             InputEvent::ButtonC(Activate) => {
-                animations.push(On(Led::C, GREEN)).unwrap();
+                animations.push(On(Led::C, GREEN));
                 Actions::new(self.plethora(PlethoraEvent::GoToBoard(3)), animations)
             }
             InputEvent::ButtonF(Activate) => {
-                animations.push(On(Led::F, VIOLET)).unwrap();
+                animations.push(On(Led::F, VIOLET));
                 Actions::new(self.plethora(PlethoraEvent::GoToBoard(4)), animations)
             }
             InputEvent::ButtonD(Activate) => Actions::new(
@@ -123,7 +121,7 @@ impl Devices {
                 let v: u8 = val.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
-                animations.push(On(Led::Clip, color)).unwrap();
+                animations.push(On(Led::Clip, color));
                 Actions::new(self.audio(PAEvent::OutputLevel(val)), animations)
             }
             _ => Actions::default(),
@@ -132,23 +130,26 @@ impl Devices {
     fn map_live_looper(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => {
-                Actions::new(self.rc500(RC500Event::ToggleRhythm()), NO_ANIMATIONS)
+                Actions::new(self.rc500(RC500Event::ToggleRhythm()), Animations::none())
             }
-            InputEvent::ButtonB(Activate) => {
-                Actions::new(self.rc500(RC500Event::RhythmVariation()), NO_ANIMATIONS)
-            }
-            InputEvent::ButtonD(Activate) => {
-                Actions::new(self.rc500(RC500Event::Mem(Direction::Up)), NO_ANIMATIONS)
-            }
-            InputEvent::ButtonE(Activate) => {
-                Actions::new(self.rc500(RC500Event::Mem(Direction::Down)), NO_ANIMATIONS)
-            }
+            InputEvent::ButtonB(Activate) => Actions::new(
+                self.rc500(RC500Event::RhythmVariation()),
+                Animations::none(),
+            ),
+            InputEvent::ButtonD(Activate) => Actions::new(
+                self.rc500(RC500Event::Mem(Direction::Up)),
+                Animations::none(),
+            ),
+            InputEvent::ButtonE(Activate) => Actions::new(
+                self.rc500(RC500Event::Mem(Direction::Down)),
+                Animations::none(),
+            ),
             InputEvent::ButtonF(Activate) => {
-                Actions::new(self.rc500(RC500Event::ClearCurrent()), NO_ANIMATIONS)
+                Actions::new(self.rc500(RC500Event::ClearCurrent()), Animations::none())
             }
             InputEvent::ExpessionPedal(val) => Actions::new(
                 self.rc500(RC500Event::CurrentChannelLevel(val)),
-                NO_ANIMATIONS,
+                Animations::none(),
             ),
             _ => Actions::default(),
         }
@@ -157,19 +158,19 @@ impl Devices {
         match event {
             InputEvent::ButtonA(Activate) => Actions::new(
                 self.rc500(RC500Event::RhythmPattern(Direction::Up)),
-                NO_ANIMATIONS,
+                Animations::none(),
             ),
             InputEvent::ButtonB(Activate) => Actions::new(
                 self.rc500(RC500Event::RhythmPattern(Direction::Down)),
-                NO_ANIMATIONS,
+                Animations::none(),
             ),
             InputEvent::ButtonD(Activate) => Actions::new(
                 self.rc500(RC500Event::DrumKit(Direction::Up)),
-                NO_ANIMATIONS,
+                Animations::none(),
             ),
             InputEvent::ButtonE(Activate) => Actions::new(
                 self.rc500(RC500Event::DrumKit(Direction::Down)),
-                NO_ANIMATIONS,
+                Animations::none(),
             ),
             _ => Actions::default(),
         }
@@ -206,6 +207,6 @@ impl Actions {
         }
     }
     fn default() -> Self {
-        Actions::new(NO_MESSAGE, NO_ANIMATIONS)
+        Actions::new(NO_MESSAGE, Animations::none())
     }
 }
