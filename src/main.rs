@@ -3,8 +3,10 @@
 
 mod devices;
 mod hmi;
+mod usb;
 
-use panic_halt as _;
+use defmt_rtt as _;
+use panic_probe as _;
 use rtic::app;
 
 #[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
@@ -13,11 +15,13 @@ mod app {
     use crate::devices::Animations;
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use crate::hmi::leds::{Animation, Led, Leds};
+    use defmt::*;
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
     use fugit::RateExtU32;
     use heapless::Vec;
+
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
@@ -37,8 +41,9 @@ mod app {
         pac::UART0,
         Pins,
     };
-    use smart_leds::colors::{GREEN, WHITE};
+    use smart_leds::colors::{GREEN, RED, WHITE};
     use smart_leds::{brightness, SmartLedsWrite};
+    use usb_device::prelude::UsbDeviceState;
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
@@ -59,13 +64,14 @@ mod app {
     type Rp2040Mono = Rp2040Monotonic;
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        usb_midi: MidiClass<'static, UsbBus>,
+        usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
+    }
 
     #[local]
     struct Local {
         led: Pin<Gpio25, PushPullOutput>,
-        usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        usb_midi: MidiClass<'static, UsbBus>,
         midi_out: MidiOut,
         inputs: Inputs,
         devices: crate::devices::Devices,
@@ -186,11 +192,9 @@ mod app {
 
         poll_input::spawn().unwrap();
         (
-            Shared {},
+            Shared { usb_midi, usb_dev },
             Local {
                 led,
-                usb_dev,
-                usb_midi,
                 midi_out,
                 inputs,
                 devices: crate::devices::Devices::default(),
@@ -212,17 +216,38 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
-    #[task(local = [midi_out])]
-    fn midi_out(ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
+    #[task(local = [midi_out], shared = [usb_midi, usb_dev])]
+    fn midi_out(mut ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
         let midi_out = ctx.local.midi_out;
         for message in messages.iter() {
             midi_out.write(message).unwrap();
         }
+
+        let configured = ctx
+            .shared
+            .usb_dev
+            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+        let color = if configured { GREEN } else { RED };
         let mut next_animations: Animations = Vec::new();
         next_animations
-            .push(Animation::Flash(Led::Mon, GREEN))
+            .push(Animation::Flash(Led::Mon, color))
             .unwrap();
         led_strip::spawn(next_animations).unwrap();
+
+        if !configured {
+            return;
+        }
+
+        for message in messages.into_iter() {
+            if let Some(mm) = crate::usb::map_midi(message) {
+                ctx.shared
+                    .usb_midi
+                    .lock(|midi| match midi.send_message(mm) {
+                        Ok(_) => debug!("message sent to usb"),
+                        Err(_) => error!("failed to send message"),
+                    });
+            }
+        }
     }
 
     #[task(local = [inputs, devices])]
@@ -242,34 +267,34 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [usb_midi, usb_dev])]
-    fn usb_rx(cx: usb_rx::Context) {
-        let usb_dev = cx.local.usb_dev;
-        let usb_midi = cx.local.usb_midi;
-
-        // Check for new data
-        if !usb_dev.poll(&mut [usb_midi]) {
-            return;
-        }
-
-        let mut buffer = [0; 64];
-
-        if let Ok(size) = usb_midi.read(&mut buffer) {
-            let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-            for packet in buffer_reader.flatten() {
-                #[allow(clippy::single_match)]
-                match packet.message {
-                    usbd_midi::data::midi::message::Message::NoteOff(
-                        usbd_midi::data::midi::channel::Channel::Channel16,
-                        usbd_midi::data::midi::notes::Note::C1m,
-                        ..,
-                    ) => {
-                        reset_to_usb_boot(0, 0);
-                    }
-                    _ => {}
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev])]
+    fn usb_rx(mut cx: usb_rx::Context) {
+        cx.shared.usb_dev.lock(|usb_dev| {
+            cx.shared.usb_midi.lock(|usb_midi| {
+                // Check for new data
+                if !usb_dev.poll(&mut [usb_midi]) {
+                    return;
                 }
-            }
-        }
+
+                let mut buffer = [0; 64];
+                if let Ok(size) = usb_midi.read(&mut buffer) {
+                    let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+                    for packet in buffer_reader.flatten() {
+                        #[allow(clippy::single_match)]
+                        match packet.message {
+                            usbd_midi::data::midi::message::Message::NoteOff(
+                                usbd_midi::data::midi::channel::Channel::Channel16,
+                                usbd_midi::data::midi::notes::Note::C1m,
+                                ..,
+                            ) => {
+                                reset_to_usb_boot(0, 0);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            });
+        });
     }
 
     #[task(capacity = 5, local = [ws, leds])]

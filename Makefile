@@ -18,7 +18,10 @@ run: ## build and run
 bootsel: ## restart the RP2040 in bootsel mode
 	amidi -S '8F 00 00' -p 'hw:1,0,0'
 
-deploy: bootsel mount run ## mount and deploy to RP2040
+install: bootsel mount run ## mount and install code to RP2040
+
+log-midi: ## log the midi traffic coming from USB
+	@amidi -p hw:1,0,0 -d	 
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
