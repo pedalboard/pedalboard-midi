@@ -13,7 +13,6 @@ use rtic::app;
 mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
-    use crate::hmi::leds::{Animation, Animations, Led, Leds};
     use defmt::*;
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
@@ -39,7 +38,6 @@ mod app {
         pac::UART0,
         Pins,
     };
-    use smart_leds::colors::{GREEN, RED, WHITE};
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::prelude::UsbDeviceState;
     use usb_device::{
@@ -65,6 +63,7 @@ mod app {
     struct Shared {
         usb_midi: MidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
+        devices: crate::devices::Devices,
     }
 
     #[local]
@@ -72,9 +71,7 @@ mod app {
         led: Pin<Gpio25, PushPullOutput>,
         midi_out: MidiOut,
         inputs: Inputs,
-        devices: crate::devices::Devices,
         ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
-        leds: Leds,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -183,20 +180,19 @@ mod app {
         let ws = Ws2812::new(spi);
 
         blink::spawn().unwrap();
-
-        let animations = Animations::with_only(Animation::On(Led::Mode, WHITE));
-        led_strip::spawn(animations).unwrap();
-
+        led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
         (
-            Shared { usb_midi, usb_dev },
+            Shared {
+                usb_midi,
+                usb_dev,
+                devices: crate::devices::Devices::default(),
+            },
             Local {
                 led,
                 midi_out,
                 inputs,
-                devices: crate::devices::Devices::default(),
                 ws,
-                leds: crate::hmi::leds::Leds::default(),
             },
             init::Monotonics(mono),
         )
@@ -225,10 +221,6 @@ mod app {
             .shared
             .usb_dev
             .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-        let color = if configured { GREEN } else { RED };
-        let animations = Animations::with_only(Animation::Flash(Led::Mon, color));
-        led_strip::spawn(animations).unwrap();
-
         if !configured {
             return;
         }
@@ -245,19 +237,17 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, devices])]
-    fn poll_input(ctx: poll_input::Context) {
+    #[task(local = [inputs], shared = [devices])]
+    fn poll_input(mut ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
-        let devices = ctx.local.devices;
 
         if let Some(event) = inputs.update() {
-            let actions = devices.map(event);
-            if !actions.midi_messages.is_empty() {
-                midi_out::spawn(actions.midi_messages).unwrap();
-            }
-            if !actions.animations.is_empty() {
-                led_strip::spawn(actions.animations).unwrap();
-            }
+            ctx.shared.devices.lock(|devices| {
+                let actions = devices.map(event);
+                if !actions.midi_messages.is_empty() {
+                    midi_out::spawn(actions.midi_messages).unwrap();
+                }
+            });
         };
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
@@ -292,20 +282,15 @@ mod app {
         });
     }
 
-    #[task(capacity = 5, local = [ws, leds])]
-    fn led_strip(ctx: led_strip::Context, animations: Animations) {
-        let leds = ctx.local.leds;
-        for a in animations.animations() {
-            let (data, next) = leds.animate(a);
+    #[task(local = [ws], shared =[devices])]
+    fn led_strip(mut ctx: led_strip::Context) {
+        ctx.shared.devices.lock(|devices| {
+            let data = devices.leds().animate();
             ctx.local
                 .ws
                 .write(brightness(data.iter().cloned(), 32))
                 .unwrap();
-
-            if next.is_some() {
-                let next_animations = Animations::with_only(next.unwrap());
-                led_strip::spawn_after(Duration::millis(50), next_animations).unwrap();
-            }
-        }
+        });
+        led_strip::spawn_after(Duration::millis(50)).unwrap();
     }
 }
