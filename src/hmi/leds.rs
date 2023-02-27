@@ -44,8 +44,7 @@ impl Leds {
         let mut data: LedData = [RGB8::default(); NUM_LEDS];
         self.sawtooth.next();
 
-        let mut led: usize = 0;
-        for a in self.animations {
+        for (led, a) in self.animations.into_iter().enumerate() {
             match a {
                 Animation::On(c) => {
                     data[led].r = c.r;
@@ -80,7 +79,6 @@ impl Leds {
                     data[led].b = c.b;
                 }
             };
-            led += 1
         }
         data
     }
