@@ -38,7 +38,7 @@ impl Leds {
     pub fn animate(&mut self) -> LedData {
         let mut data: LedData = [RGB8::default(); NUM_LEDS];
 
-        let led: usize = 0;
+        let mut led: usize = 0;
         for a in self.animations {
             match a {
                 Animation::On(c) => {
@@ -58,6 +58,7 @@ impl Leds {
                     self.animations[led] = Animation::Off
                 }
             };
+            led += 1
         }
         data
     }
