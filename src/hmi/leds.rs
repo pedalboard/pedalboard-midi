@@ -89,6 +89,7 @@ struct Sawtooth {
     value: usize,
     rising: bool,
     max: usize,
+    min: usize,
 }
 
 impl Sawtooth {
@@ -96,7 +97,7 @@ impl Sawtooth {
         if self.value == self.max {
             self.rising = false;
         }
-        if self.value == 0 {
+        if self.value == self.min {
             self.rising = true;
         }
         if self.rising {
@@ -108,9 +109,10 @@ impl Sawtooth {
     }
     fn new() -> Self {
         Sawtooth {
-            value: 0,
+            value: 8,
             rising: true,
             max: 16,
+            min: 8,
         }
     }
 }
