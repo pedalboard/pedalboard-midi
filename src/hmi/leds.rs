@@ -23,6 +23,7 @@ pub type LedData = [RGB8; NUM_LEDS];
 pub enum Animation {
     On(RGB8),
     Off,
+    Toggle(RGB8, bool),
     Flash(RGB8),
     Rainbow(Gradient),
 }
@@ -56,6 +57,16 @@ impl Leds {
                     data[led].g = 0;
                     data[led].b = 0;
                 }
+                Animation::Toggle(c, true) => {
+                    data[led].r = c.r;
+                    data[led].g = c.g;
+                    data[led].b = c.b;
+                }
+                Animation::Toggle(_, false) => {
+                    data[led].r = 0;
+                    data[led].g = 0;
+                    data[led].b = 0;
+                }
                 Animation::Flash(c) => {
                     data[led].r = c.r;
                     data[led].g = c.g;
@@ -75,7 +86,22 @@ impl Leds {
     }
 
     pub fn set(&mut self, a: Animation, l: Led) {
-        self.animations[l as usize] = a
+        let index = l as usize;
+        match a {
+            Animation::Toggle(c, _) => {
+                let current_animation = self.animations[index];
+                match current_animation {
+                    Animation::Toggle(_, true) => {
+                        self.animations[index] = Animation::Toggle(c, false)
+                    }
+                    Animation::Toggle(_, false) => {
+                        self.animations[index] = Animation::Toggle(c, true)
+                    }
+                    _ => self.animations[index] = a,
+                };
+            }
+            _ => self.animations[index] = a,
+        }
     }
 }
 

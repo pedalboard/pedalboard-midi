@@ -12,7 +12,7 @@ use smart_leds::{
 };
 
 use crate::hmi::leds::{
-    Animation::{Flash, Off, On, Rainbow},
+    Animation::{Flash, Off, On, Rainbow, Toggle},
     Led, Leds,
 };
 
@@ -162,9 +162,14 @@ impl Devices {
     }
 
     fn map_live_looper(&mut self, event: InputEvent) -> Actions {
+        let leds = self.leds();
         match event {
-            InputEvent::ButtonA(Activate) => Actions::new(self.rc500(RC500Action::ToggleRhythm())),
+            InputEvent::ButtonA(Activate) => {
+                leds.set(Toggle(BLUE, true), Led::C);
+                Actions::new(self.rc500(RC500Action::ToggleRhythm()))
+            }
             InputEvent::ButtonB(Activate) => {
+                leds.set(Toggle(BLUE, true), Led::C);
                 Actions::new(self.rc500(RC500Action::RhythmVariation()))
             }
             InputEvent::ButtonD(Activate) => {
@@ -216,7 +221,12 @@ impl Devices {
                 self.leds().set(Rainbow(colorous::BLUES), Led::E);
                 WHITE
             }
-            Mode::LiveLooper => RED,
+            Mode::LiveLooper => {
+                self.leds().set(Rainbow(colorous::REDS), Led::D);
+                self.leds().set(Rainbow(colorous::BLUES), Led::E);
+                self.leds().set(Rainbow(colorous::ORANGE_RED), Led::F);
+                RED
+            }
             Mode::SetupLooper => ORANGE,
         };
         self.leds().set(On(mode_color), Led::Mode);
