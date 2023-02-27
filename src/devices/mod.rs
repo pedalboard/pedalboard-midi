@@ -165,11 +165,11 @@ impl Devices {
         let leds = self.leds();
         match event {
             InputEvent::ButtonA(Activate) => {
-                leds.set(Toggle(BLUE, true), Led::C);
+                leds.set(Toggle(BLUE, true), Led::A);
                 Actions::new(self.rc500(RC500Action::ToggleRhythm()))
             }
             InputEvent::ButtonB(Activate) => {
-                leds.set(Toggle(BLUE, true), Led::C);
+                leds.set(Toggle(BLUE, true), Led::B);
                 Actions::new(self.rc500(RC500Action::RhythmVariation()))
             }
             InputEvent::ButtonD(Activate) => {
