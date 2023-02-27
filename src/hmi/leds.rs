@@ -64,7 +64,8 @@ impl Leds {
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
-                    let c = gradient.eval_rational(self.iteration as usize, core::u8::MAX as usize);
+                    let c = gradient
+                        .eval_rational(self.iteration as usize * 4, core::u8::MAX as usize / 4);
                     data[led].r = c.r;
                     data[led].g = c.g;
                     data[led].b = c.b;
