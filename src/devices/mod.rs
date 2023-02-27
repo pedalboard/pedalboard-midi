@@ -179,8 +179,8 @@ impl Devices {
                 Actions::new(self.rc500(RC500Action::Mem(Direction::Down)))
             }
             InputEvent::ButtonF(Activate) => {
+                leds.set(Off, Led::A);
                 leds.set(Off, Led::B);
-                leds.set(Off, Led::C);
                 Actions::new(self.rc500(RC500Action::ClearCurrent()))
             }
             InputEvent::ExpessionPedal(val) => {
