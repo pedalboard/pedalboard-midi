@@ -90,6 +90,7 @@ impl Devices {
                 if self.current_mode == self.modes.len() {
                     self.current_mode = 0
                 }
+                self.change_mode();
                 Actions::none()
             }
             _ => match self.current_mode() {
