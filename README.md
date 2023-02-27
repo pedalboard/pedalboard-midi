@@ -8,9 +8,9 @@ The midi devices are daisy chained with MIDI cables in the following order:
 MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
 ```
 
-The XTONE case is used to host the hardware.
+## Prototype Hardware 
 
-## Hardware 
+The XTONE case is used to host the protype.
 
 ### BOM
 
@@ -22,6 +22,10 @@ The XTONE case is used to host the hardware.
 ### Wiring 
 
 ![Breadboard Wiring](doc/wiring.png)
+
+
+## Open Hardware
+see https://github.com/laenzlinger/pedalboard-hw
 
 ## Development
 This project was generated with the [RP2040 Project Template](https://github.com/rp-rs/rp2040-project-template)
