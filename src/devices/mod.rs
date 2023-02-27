@@ -178,7 +178,11 @@ impl Devices {
             InputEvent::ButtonE(Activate) => {
                 Actions::new(self.rc500(RC500Action::Mem(Direction::Down)))
             }
-            InputEvent::ButtonF(Activate) => Actions::new(self.rc500(RC500Action::ClearCurrent())),
+            InputEvent::ButtonF(Activate) => {
+                leds.set(Off, Led::B);
+                leds.set(Off, Led::C);
+                Actions::new(self.rc500(RC500Action::ClearCurrent()))
+            }
             InputEvent::ExpessionPedal(val) => {
                 Actions::new(self.rc500(RC500Action::CurrentChannelLevel(val)))
             }
@@ -224,7 +228,7 @@ impl Devices {
             Mode::LiveLooper => {
                 self.leds().set(Rainbow(colorous::REDS), Led::D);
                 self.leds().set(Rainbow(colorous::BLUES), Led::E);
-                self.leds().set(Rainbow(colorous::ORANGE_RED), Led::F);
+                self.leds().set(On(ORANGE), Led::F);
                 RED
             }
             Mode::SetupLooper => ORANGE,
