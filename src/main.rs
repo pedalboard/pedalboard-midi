@@ -288,7 +288,7 @@ mod app {
             let data = devices.leds().animate();
             ctx.local
                 .ws
-                .write(brightness(data.iter().cloned(), 100))
+                .write(brightness(data.iter().cloned(), 32))
                 .unwrap();
         });
         led_strip::spawn_after(Duration::millis(50)).unwrap();
