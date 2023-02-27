@@ -1,3 +1,4 @@
+use colorous::Gradient;
 use smart_leds::RGB8;
 
 const NUM_LEDS: usize = 10;
@@ -23,19 +24,24 @@ pub enum Animation {
     On(RGB8),
     Off,
     Flash(RGB8),
+    Rainbow(Gradient),
 }
 
 pub struct Leds {
+    iteration: u16,
     animations: [Animation; NUM_LEDS],
 }
 
 impl Leds {
     pub fn new() -> Self {
         Leds {
+            iteration: 0,
             animations: [Animation::Off; NUM_LEDS],
         }
     }
     pub fn animate(&mut self) -> LedData {
+        self.iteration += 1;
+
         let mut data: LedData = [RGB8::default(); NUM_LEDS];
 
         let mut led: usize = 0;
@@ -56,6 +62,13 @@ impl Leds {
                     data[led].g = c.g;
                     data[led].b = c.b;
                     self.animations[led] = Animation::Off
+                }
+                Animation::Rainbow(gradient) => {
+                    let c =
+                        gradient.eval_rational(self.iteration as usize, core::u16::MAX as usize);
+                    data[led].r = c.r;
+                    data[led].g = c.g;
+                    data[led].b = c.b;
                 }
             };
             led += 1

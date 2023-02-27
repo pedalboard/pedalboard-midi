@@ -3,6 +3,7 @@ mod plethora;
 mod rc500;
 
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
+use colorous::Gradient;
 use defmt::error;
 use heapless::Vec;
 use midi_types::MidiMessage;
@@ -12,7 +13,7 @@ use smart_leds::{
 };
 
 use crate::hmi::leds::{
-    Animation::{Flash, Off, On},
+    Animation::{Flash, Off, On, Rainbow},
     Led, Leds,
 };
 
@@ -71,12 +72,13 @@ pub enum Mode {
 
 impl Devices {
     pub fn new() -> Self {
+        let leds = Leds::default();
         let mut d = Devices {
             modes: [Mode::LiveEffect, Mode::LiveLooper, Mode::SetupLooper],
             current_mode: 0,
             rc500: RC500::default(),
             audio: PedalboardAudio::default(),
-            leds: [Leds::default(), Leds::default(), Leds::default()],
+            leds: [leds, Leds::default(), Leds::default()],
             plethora: Plethora {},
         };
         d.change_mode();
@@ -208,12 +210,16 @@ impl Devices {
     }
 
     fn change_mode(&mut self) {
-        let color = match self.current_mode() {
-            Mode::LiveEffect => WHITE,
+        let mode_color = match self.current_mode() {
+            Mode::LiveEffect => {
+                self.leds().set(Rainbow(colorous::REDS), Led::D);
+                self.leds().set(Rainbow(colorous::BLUES), Led::E);
+                WHITE
+            }
             Mode::LiveLooper => RED,
             Mode::SetupLooper => ORANGE,
         };
-        self.leds().set(On(color), Led::Mode);
+        self.leds().set(On(mode_color), Led::Mode);
     }
 }
 
