@@ -40,7 +40,7 @@ impl Leds {
         }
     }
     pub fn animate(&mut self) -> LedData {
-        self.iteration += 1;
+        self.iteration += 16;
 
         let mut data: LedData = [RGB8::default(); NUM_LEDS];
 
@@ -64,10 +64,7 @@ impl Leds {
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
-                    let c = gradient.eval_rational(
-                        ((self.iteration * 4).rem_euclid(core::u8::MAX)) as usize,
-                        core::u8::MAX as usize,
-                    );
+                    let c = gradient.eval_rational(self.iteration as usize, core::u8::MAX as usize);
                     data[led].r = c.r;
                     data[led].g = c.g;
                     data[led].b = c.b;
