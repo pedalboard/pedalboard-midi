@@ -28,21 +28,20 @@ pub enum Animation {
 }
 
 pub struct Leds {
-    iteration: u8,
+    sawtooth: Sawtooth,
     animations: [Animation; NUM_LEDS],
 }
 
 impl Leds {
     pub fn new() -> Self {
         Leds {
-            iteration: 0,
+            sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
         }
     }
     pub fn animate(&mut self) -> LedData {
-        self.iteration += 16;
-
         let mut data: LedData = [RGB8::default(); NUM_LEDS];
+        self.sawtooth.next();
 
         let mut led: usize = 0;
         for a in self.animations {
@@ -64,7 +63,7 @@ impl Leds {
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
-                    let c = gradient.eval_rational(self.iteration as usize, core::u8::MAX as usize);
+                    let c = gradient.eval_rational(self.sawtooth.value, self.sawtooth.max);
                     data[led].r = c.r;
                     data[led].g = c.g;
                     data[led].b = c.b;
@@ -83,5 +82,35 @@ impl Leds {
 impl Default for Leds {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+struct Sawtooth {
+    value: usize,
+    rising: bool,
+    max: usize,
+}
+
+impl Sawtooth {
+    fn next(&mut self) -> u8 {
+        if self.value == self.max {
+            self.rising = false;
+        }
+        if self.value == 0 {
+            self.rising = true;
+        }
+        if self.rising {
+            self.value += 1
+        } else {
+            self.value -= 1
+        }
+        self.value as u8
+    }
+    fn new() -> Self {
+        Sawtooth {
+            value: 0,
+            rising: true,
+            max: 16,
+        }
     }
 }
