@@ -231,7 +231,11 @@ impl Devices {
                 self.leds().set(On(ORANGE), Led::F);
                 RED
             }
-            Mode::SetupLooper => ORANGE,
+            Mode::SetupLooper => {
+                self.leds().set(Rainbow(colorous::REDS), Led::D);
+                self.leds().set(Rainbow(colorous::BLUES), Led::E);
+                ORANGE
+            }
         };
         self.leds().set(On(mode_color), Led::Mode);
     }
