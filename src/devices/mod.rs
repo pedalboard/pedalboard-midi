@@ -7,12 +7,12 @@ use defmt::error;
 use heapless::Vec;
 use midi_types::MidiMessage;
 use smart_leds::{
-    colors::{BLUE, GREEN, ORANGE, RED, SEA_GREEN, VIOLET, WHITE},
+    colors::{BLUE, DARK_GREEN, GREEN, ORANGE, RED, SEA_GREEN, VIOLET, WHITE},
     RGB8,
 };
 
 use crate::hmi::leds::{
-    Animation::{Off, On},
+    Animation::{Flash, Off, On},
     Led, Leds,
 };
 
@@ -83,7 +83,7 @@ impl Devices {
         d
     }
     pub fn map(&mut self, event: InputEvent) -> Actions {
-        match event {
+        let actions = match event {
             InputEvent::GainButton(Activate) => {
                 self.current_mode += 1;
                 if self.current_mode == self.modes.len() {
@@ -96,7 +96,12 @@ impl Devices {
                 Mode::LiveLooper => self.map_live_looper(event),
                 Mode::SetupLooper => self.map_setup_looper(event),
             },
+        };
+        if !actions.midi_messages.is_empty() {
+            self.leds().set(Flash(DARK_GREEN), Led::Mon);
         }
+
+        actions
     }
     pub fn leds(&mut self) -> &mut Leds {
         &mut self.leds[self.current_mode]
