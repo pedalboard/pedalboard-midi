@@ -92,7 +92,7 @@ struct Sawtooth {
 }
 
 impl Sawtooth {
-    fn next(&mut self) -> u8 {
+    fn next(&mut self) -> usize {
         if self.value == self.max {
             self.rising = false;
         }
@@ -104,7 +104,7 @@ impl Sawtooth {
         } else {
             self.value -= 1
         }
-        self.value as u8
+        self.value
     }
     fn new() -> Self {
         Sawtooth {
