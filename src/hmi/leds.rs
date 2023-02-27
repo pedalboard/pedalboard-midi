@@ -65,7 +65,7 @@ impl Leds {
                 }
                 Animation::Rainbow(gradient) => {
                     let c = gradient.eval_rational(
-                        ((self.iteration * 4) % core::u8::MAX) as usize,
+                        ((self.iteration * 4).rem_euclid(core::u8::MAX)) as usize,
                         core::u8::MAX as usize,
                     );
                     data[led].r = c.r;
