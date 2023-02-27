@@ -71,14 +71,16 @@ pub enum Mode {
 
 impl Devices {
     pub fn new() -> Self {
-        Devices {
+        let mut d = Devices {
             modes: [Mode::LiveEffect, Mode::LiveLooper, Mode::SetupLooper],
             current_mode: 0,
             rc500: RC500::default(),
             audio: PedalboardAudio::default(),
             leds: [Leds::default(), Leds::default(), Leds::default()],
             plethora: Plethora {},
-        }
+        };
+        d.change_mode();
+        d
     }
     pub fn map(&mut self, event: InputEvent) -> Actions {
         match event {
@@ -87,12 +89,6 @@ impl Devices {
                 if self.current_mode == self.modes.len() {
                     self.current_mode = 0
                 }
-                let color = match self.current_mode() {
-                    Mode::LiveEffect => WHITE,
-                    Mode::LiveLooper => RED,
-                    Mode::SetupLooper => ORANGE,
-                };
-                self.leds().push(On(color), Led::Mode);
                 Actions::none()
             }
             _ => match self.current_mode() {
@@ -114,31 +110,31 @@ impl Devices {
         let leds = self.leds();
         match event {
             InputEvent::ButtonA(Activate) => {
-                leds.push(On(BLUE), Led::A);
-                leds.push(Off, Led::B);
-                leds.push(Off, Led::C);
-                leds.push(Off, Led::F);
+                leds.set(On(BLUE), Led::A);
+                leds.set(Off, Led::B);
+                leds.set(Off, Led::C);
+                leds.set(Off, Led::F);
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(1)))
             }
             InputEvent::ButtonB(Activate) => {
-                leds.push(Off, Led::A);
-                leds.push(On(SEA_GREEN), Led::B);
-                leds.push(Off, Led::C);
-                leds.push(Off, Led::F);
+                leds.set(Off, Led::A);
+                leds.set(On(SEA_GREEN), Led::B);
+                leds.set(Off, Led::C);
+                leds.set(Off, Led::F);
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(2)))
             }
             InputEvent::ButtonC(Activate) => {
-                leds.push(Off, Led::A);
-                leds.push(Off, Led::B);
-                leds.push(On(GREEN), Led::C);
-                leds.push(Off, Led::F);
+                leds.set(Off, Led::A);
+                leds.set(Off, Led::B);
+                leds.set(On(GREEN), Led::C);
+                leds.set(Off, Led::F);
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(3)))
             }
             InputEvent::ButtonF(Activate) => {
-                leds.push(Off, Led::A);
-                leds.push(Off, Led::B);
-                leds.push(Off, Led::C);
-                leds.push(On(VIOLET), Led::F);
+                leds.set(Off, Led::A);
+                leds.set(Off, Led::B);
+                leds.set(Off, Led::C);
+                leds.set(On(VIOLET), Led::F);
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(4)))
             }
             InputEvent::ButtonD(Activate) => {
@@ -151,7 +147,7 @@ impl Devices {
                 let v: u8 = val.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
-                leds.push(On(color), Led::Clip);
+                leds.set(On(color), Led::Clip);
                 Actions::new(self.audio(PAAction::OutputLevel(val)))
             }
             _ => Actions::none(),
@@ -204,6 +200,15 @@ impl Devices {
     }
     fn audio(&mut self, act: PAAction) -> MidiMessages {
         self.audio.midi_messages(act)
+    }
+
+    fn change_mode(&mut self) {
+        let color = match self.current_mode() {
+            Mode::LiveEffect => WHITE,
+            Mode::LiveLooper => RED,
+            Mode::SetupLooper => ORANGE,
+        };
+        self.leds().set(On(color), Led::Mode);
     }
 }
 

@@ -63,7 +63,7 @@ impl Leds {
         data
     }
 
-    pub fn push(&mut self, a: Animation, l: Led) {
+    pub fn set(&mut self, a: Animation, l: Led) {
         self.animations[l as usize] = a
     }
 }
