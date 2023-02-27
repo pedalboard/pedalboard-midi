@@ -3,7 +3,6 @@ mod plethora;
 mod rc500;
 
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
-use colorous::Gradient;
 use defmt::error;
 use heapless::Vec;
 use midi_types::MidiMessage;

@@ -28,7 +28,7 @@ pub enum Animation {
 }
 
 pub struct Leds {
-    iteration: u16,
+    iteration: u8,
     animations: [Animation; NUM_LEDS],
 }
 
@@ -64,8 +64,7 @@ impl Leds {
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
-                    let c =
-                        gradient.eval_rational(self.iteration as usize, core::u16::MAX as usize);
+                    let c = gradient.eval_rational(self.iteration as usize, core::u8::MAX as usize);
                     data[led].r = c.r;
                     data[led].g = c.g;
                     data[led].b = c.b;
