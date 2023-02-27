@@ -228,7 +228,7 @@ impl Devices {
             Mode::LiveLooper => {
                 self.leds().set(Rainbow(colorous::REDS), Led::D);
                 self.leds().set(Rainbow(colorous::BLUES), Led::E);
-                self.leds().set(On(ORANGE), Led::F);
+                self.leds().set(On(RED), Led::F);
                 RED
             }
             Mode::SetupLooper => {
