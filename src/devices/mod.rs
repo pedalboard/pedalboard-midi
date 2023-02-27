@@ -234,6 +234,8 @@ impl Devices {
             Mode::SetupLooper => {
                 self.leds().set(Rainbow(colorous::REDS), Led::D);
                 self.leds().set(Rainbow(colorous::BLUES), Led::E);
+                self.leds().set(Rainbow(colorous::REDS), Led::A);
+                self.leds().set(Rainbow(colorous::BLUES), Led::B);
                 ORANGE
             }
         };
