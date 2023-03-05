@@ -27,6 +27,12 @@ install: bootsel mount run ## mount and install code to RP2040
 log-midi: device ## log the midi traffic coming from USB
 	@amidi -p "$(DEVICE)" -d	 
 
+release:
+	cargo clean
+	cargo release
+	cargo build --release
+	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
+
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
