@@ -29,7 +29,7 @@ log-midi: device ## log the midi traffic coming from USB
 
 release:
 	cargo clean
-	cargo release --no-publish minor
+	cargo release --no-publish patch
 	cargo build --release
 	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
