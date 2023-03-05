@@ -8,6 +8,8 @@ The midi devices are daisy chained with MIDI cables in the following order:
 MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
 ```
 
+A prototype can be easyly assembled
+
 ## Prototype Hardware 
 
 The XTONE case is used to host the protype.
@@ -19,7 +21,7 @@ The XTONE case is used to host the protype.
 * 2 x SensorKit [KY-40 Rotary Encoder](https://sensorkit.joy-it.net/en/sensors/ky-040)
 * 1 x Adafruit [NeoPixel Strand](https://www.adafruit.com/product/3631) (only 10 pixels are used)
 
-### Wiring 
+### Wiring (Frizing)
 
 ![Breadboard Wiring](doc/wiring.png)
 
