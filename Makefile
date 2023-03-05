@@ -22,7 +22,10 @@ device:
 bootsel: device ## restart the RP2040 in bootsel mode
 	amidi -S '8F 00 00' -p "$(DEVICE)"
 
-install: bootsel mount run ## mount and install code to RP2040
+install-latest:
+	curl https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o /mnt/pico/pm.uf2
+
+install: bootsel mount install-latest ## mount and install code to RP2040
 
 log-midi: device ## log the midi traffic coming from USB
 	@amidi -p "$(DEVICE)" -d	 
