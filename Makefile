@@ -23,7 +23,7 @@ bootsel: device ## restart the RP2040 in bootsel mode
 	amidi -S '8F 00 00' -p "$(DEVICE)"
 
 install-latest:
-	curl https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o /mnt/pico/pm.uf2
+	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o /mnt/pico/pm.uf3
 
 install: bootsel mount install-latest ## mount and install code to RP2040
 
