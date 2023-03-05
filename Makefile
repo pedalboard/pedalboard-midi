@@ -3,6 +3,7 @@
 
 .DEFAULT_GOAL := help
 
+
 mount: ## mount the RP2040 in bootsel mode
 	@while [ ! -L /dev/disk/by-label/RPI-RP2 ] ; \
 	do \
@@ -15,13 +16,16 @@ mount: ## mount the RP2040 in bootsel mode
 run: ## build and run
 	cargo run --release
 
-bootsel: ## restart the RP2040 in bootsel mode
-	amidi -S '8F 00 00' -p 'hw:1,0,0'
+device:
+	$(eval DEVICE := $(shell amidi -l | grep pedalboard-midi |  awk '{ print $$2 }'))
+
+bootsel: device ## restart the RP2040 in bootsel mode
+	amidi -S '8F 00 00' -p "$(DEVICE)"
 
 install: bootsel mount run ## mount and install code to RP2040
 
-log-midi: ## log the midi traffic coming from USB
-	@amidi -p hw:1,0,0 -d	 
+log-midi: device ## log the midi traffic coming from USB
+	@amidi -p "$(DEVICE)" -d	 
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
