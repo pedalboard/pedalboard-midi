@@ -5,6 +5,9 @@ version = "0.0.1"
 readme = "README.md"
 description = "Midi Pedalboard based on rp2040"
 license-file = "LICENSE.md"
+documentation = "README.md"
+homepage = "https://github.com/pedalboard"
+repository = "https://github.com/pedalboard/pedalboard-midi"
 
 [dependencies]
 cortex-m = "0.7"
