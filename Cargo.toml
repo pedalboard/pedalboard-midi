@@ -3,6 +3,8 @@ edition = "2021"
 name = "pedalboard-midi"
 version = "0.0.1"
 readme = "README.md"
+description = "Midi Pedalboard based on rp2040"
+
 
 [dependencies]
 cortex-m = "0.7"
