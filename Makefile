@@ -3,6 +3,7 @@
 
 .DEFAULT_GOAL := help
 
+MOUNT_POINT = "/mnt/pico"
 
 mount: ## mount the RP2040 in bootsel mode
 	@while [ ! -L /dev/disk/by-label/RPI-RP2 ] ; \
@@ -11,7 +12,8 @@ mount: ## mount the RP2040 in bootsel mode
 		echo -n '.'; \
 	done
 	@echo ""
-	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 /mnt/pico/
+	sudo mkdir -p 4(MOUNT_POINT)
+	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 $(MOUNT_POINT)
 
 run: ## build and run
 	cargo run --release
@@ -23,7 +25,7 @@ bootsel: device ## restart the RP2040 in bootsel mode
 	amidi -S '8F 00 00' -p "$(DEVICE)"
 
 install-latest:
-	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o /mnt/pico/pm.uf3
+	curl https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
 
 install: bootsel mount install-latest ## mount and install code to RP2040
 
