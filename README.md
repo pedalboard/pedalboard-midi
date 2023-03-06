@@ -28,7 +28,7 @@ The XTONE case is used to host the protype.
 
 ## Open Hardware
 After building a prototype some improvments and more professional hardware is built as part of the 
-[Pedalboard HW](https://github.com/pedalboard/pedalboard-hw)project
+[Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) project
 
 ## Development
 This project was generated with the [RP2040 Project Template](https://github.com/rp-rs/rp2040-project-template)
