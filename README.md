@@ -12,7 +12,7 @@ A prototype can be easyly assembled
 
 ## Prototype Hardware 
 
-The XTONE case is used to host the protype.
+To test and prototype the firmware, the following setup can be used:
 
 ### BOM
 
