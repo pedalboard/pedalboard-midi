@@ -47,8 +47,8 @@ impl Leds {
         for (led, a) in self.animations.into_iter().enumerate() {
             match a {
                 Animation::On(c) => {
-                    data[led].r = c.r;
-                    data[led].g = c.g;
+                    data[led].r = c.g;
+                    data[led].g = c.r;
                     data[led].b = c.b;
                 }
                 Animation::Off => {
@@ -57,8 +57,8 @@ impl Leds {
                     data[led].b = 0;
                 }
                 Animation::Toggle(c, true) => {
-                    data[led].r = c.r;
-                    data[led].g = c.g;
+                    data[led].r = c.g;
+                    data[led].g = c.r;
                     data[led].b = c.b;
                 }
                 Animation::Toggle(_, false) => {
@@ -67,15 +67,15 @@ impl Leds {
                     data[led].b = 0;
                 }
                 Animation::Flash(c) => {
-                    data[led].r = c.r;
-                    data[led].g = c.g;
+                    data[led].r = c.g;
+                    data[led].g = c.r;
                     data[led].b = c.b;
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
                     let c = gradient.eval_rational(self.sawtooth.value, self.sawtooth.max);
-                    data[led].r = c.r;
-                    data[led].g = c.g;
+                    data[led].r = c.g;
+                    data[led].g = c.r;
                     data[led].b = c.b;
                 }
             };
