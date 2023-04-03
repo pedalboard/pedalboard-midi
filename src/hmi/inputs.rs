@@ -160,12 +160,12 @@ pub struct Inputs {
     vol_rotary: Rotary<Gpio17, Gpio16>,
     button_gain: Button<Gpio21>,
     gain_rotary: Rotary<Gpio20, Gpio19>,
-    button_a: Button<Gpio2>,
-    button_b: Button<Gpio3>,
-    button_c: Button<Gpio4>,
-    button_d: Button<Gpio5>,
-    button_e: Button<Gpio6>,
-    button_f: Button<Gpio7>,
+    button_a: Button<Gpio7>,
+    button_b: Button<Gpio5>,
+    button_c: Button<Gpio2>,
+    button_d: Button<Gpio6>,
+    button_e: Button<Gpio4>,
+    button_f: Button<Gpio3>,
     exp: ExpressionPedal,
 }
 
@@ -181,12 +181,12 @@ where
 }
 
 pub struct ButtonPins(
-    pub PullUpInputPin<Gpio2>,
-    pub PullUpInputPin<Gpio3>,
-    pub PullUpInputPin<Gpio4>,
-    pub PullUpInputPin<Gpio5>,
-    pub PullUpInputPin<Gpio6>,
     pub PullUpInputPin<Gpio7>,
+    pub PullUpInputPin<Gpio5>,
+    pub PullUpInputPin<Gpio2>,
+    pub PullUpInputPin<Gpio6>,
+    pub PullUpInputPin<Gpio4>,
+    pub PullUpInputPin<Gpio3>,
 );
 
 impl Inputs {

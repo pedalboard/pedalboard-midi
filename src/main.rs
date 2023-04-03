@@ -152,12 +152,12 @@ mod app {
         };
 
         let button_pins = ButtonPins(
-            pins.gpio2.into_pull_up_input(),
-            pins.gpio3.into_pull_up_input(),
-            pins.gpio4.into_pull_up_input(),
-            pins.gpio5.into_pull_up_input(),
-            pins.gpio6.into_pull_up_input(),
             pins.gpio7.into_pull_up_input(),
+            pins.gpio5.into_pull_up_input(),
+            pins.gpio2.into_pull_up_input(),
+            pins.gpio6.into_pull_up_input(),
+            pins.gpio4.into_pull_up_input(),
+            pins.gpio3.into_pull_up_input(),
         );
 
         // ADC for analog input
