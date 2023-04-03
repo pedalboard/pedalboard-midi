@@ -85,7 +85,7 @@ impl Devices {
     }
     pub fn map(&mut self, event: InputEvent) -> Actions {
         let actions = match event {
-            InputEvent::GainButton(Activate) => {
+            InputEvent::VolButton(Activate) => {
                 self.current_mode += 1;
                 if self.current_mode == self.modes.len() {
                     self.current_mode = 0
