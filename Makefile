@@ -12,7 +12,7 @@ mount: ## mount the RP2040 in bootsel mode
 		echo -n '.'; \
 	done
 	@echo ""
-	sudo mkdir -p 4(MOUNT_POINT)
+	sudo mkdir -p $(MOUNT_POINT)
 	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 $(MOUNT_POINT)
 
 run: ## build and run
