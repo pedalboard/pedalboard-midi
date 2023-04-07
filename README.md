@@ -1,12 +1,14 @@
 # Pedalboard Midi Controller
 
-This project implements a MIDI controller for my pedalboard
-
-The midi devices are daisy chained with MIDI cables in the following order:
+The firmware is currently very specific to this use case:
 
 ```
     MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2) 
 ```
+
+The project currenly can be used as a starting point for your own pedalboard.
+
+It is planned to split the reusable parts into a library or make the firmware more configurable.
 
 ## Open Hardware
 
