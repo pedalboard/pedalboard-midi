@@ -5,30 +5,14 @@ This project implements a MIDI controller for my pedalboard
 The midi devices are daisy chained with MIDI cables in the following order:
 
 ```
-MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
+    MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2) 
 ```
 
-A prototype can be easyly assembled
-
-## Prototype Hardware 
-
-To test and prototype the firmware, the following setup can be used:
-
-### BOM
-
-* 1 x Rasperry PI [Pico](https://www.raspberrypi.com/products/raspberry-pi-pico/)
-* 1 x Adafruit [MIDI Feather Wing](https://www.adafruit.com/product/4740) 
-* 2 x SensorKit [KY-40 Rotary Encoder](https://sensorkit.joy-it.net/en/sensors/ky-040)
-* 1 x Adafruit [NeoPixel Strand](https://www.adafruit.com/product/3631) (only 10 pixels are used)
-
-### Wiring (Frizing)
-
-![Breadboard Wiring](doc/wiring.png)
-
-
 ## Open Hardware
-After building a prototype some improvments and more professional hardware is built as part of the 
-[Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) project
+
+see [Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) for more details.
+
+![Schematic](https://pedalboard.github.io/pedalboard-hw-site/Schematic/pedalboard-hw-MIDI.svg)
 
 ## Development
 This project was generated with the [RP2040 Project Template](https://github.com/rp-rs/rp2040-project-template)
