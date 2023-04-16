@@ -114,7 +114,7 @@ impl Devices {
                 let v: u8 = vel.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
-                self.leds().set(On(color), Led::Clip);
+                self.leds().set(On(color), Led::L48V);
             }
             _ => {}
         }
