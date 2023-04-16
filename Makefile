@@ -27,7 +27,7 @@ bootsel: device ## restart the RP2040 in bootsel mode
 	aconnect 128:1 16:0
 
 install-latest:
-	curl https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
+	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
 
 install: bootsel mount install-latest ## mount and install code to RP2040
 
