@@ -108,7 +108,9 @@ impl Devices {
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
         match m {
-            MidiMessage::NoteOn(_, Note::C1, vel) => {
+            // currently omni channel handling
+            // see https://github.com/pedalboard/db-meter.lv2/blob/main/README.md
+            MidiMessage::NoteOn(_, Note::D1, vel) => {
                 let v: u8 = vel.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
