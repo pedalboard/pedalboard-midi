@@ -22,7 +22,7 @@ device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard-midi |  awk '{ print $$2 }'))
 
 bootsel: device ## restart the RP2040 in bootsel mode
-	aconnect -d 128:1 16:0 
+	-aconnect -d 128:1 16:0 
 	amidi -S '8F 00 00' -p "$(DEVICE)"
 	aconnect 128:1 16:0
 
