@@ -107,8 +107,7 @@ impl Devices {
         actions
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
-        if let MidiMessage::NoteOn(_, Note::D1, vel) = m {
-            self.leds().set(On(GREEN), Led::L48V);
+        if let MidiMessage::NoteOff(_, Note::D1, vel) = m {
             let v: u8 = vel.into();
             let c = colorous::REDS.eval_rational(v as usize, 127);
             let color = RGB8::new(c.r, c.g, c.b);
