@@ -108,7 +108,7 @@ impl Devices {
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
         // see https://github.com/pedalboard/db-meter.lv2
-        if let MidiMessage::NoteOff(_, Note::D1, vel) = m {
+        if let MidiMessage::NoteOff(_, Note::C1, vel) = m {
             let v: u8 = vel.into();
             let c = colorous::REDS.eval_rational(v as usize, 127);
             let color = RGB8::new(c.r, c.g, c.b);
