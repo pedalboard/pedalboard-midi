@@ -7,7 +7,7 @@ use defmt::error;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
 use smart_leds::{
-    colors::{BLUE, DARK_GREEN, GREEN, ORANGE, RED, SEA_GREEN, VIOLET, WHITE},
+    colors::{BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
     RGB8,
 };
 
@@ -251,7 +251,7 @@ impl Devices {
                 self.leds().set(Rainbow(colorous::BLUES), Led::E);
                 self.leds().set(Rainbow(colorous::REDS), Led::A);
                 self.leds().set(Rainbow(colorous::BLUES), Led::B);
-                ORANGE
+                YELLOW
             }
         };
         self.leds().set(On(mode_color), Led::Mode);
