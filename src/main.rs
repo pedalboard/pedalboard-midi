@@ -243,7 +243,7 @@ mod app {
 
         if let Some(event) = inputs.update() {
             ctx.shared.devices.lock(|devices| {
-                let actions = devices.map(event);
+                let actions = devices.process_human_input(event);
                 if !actions.midi_messages.is_empty() {
                     midi_out::spawn(actions.midi_messages).unwrap();
                 }
@@ -252,7 +252,7 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,devices])]
     fn usb_rx(mut cx: usb_rx::Context) {
         cx.shared.usb_dev.lock(|usb_dev| {
             cx.shared.usb_midi.lock(|usb_midi| {
@@ -273,6 +273,16 @@ mod app {
                                 ..,
                             ) => {
                                 reset_to_usb_boot(0, 0);
+                            }
+                            usbd_midi::data::midi::message::Message::NoteOff(ch, note, vel) => {
+                                cx.shared.devices.lock(|devices| {
+                                    let vv: u8 = vel.into();
+                                    devices.process_midi_input(midi_types::MidiMessage::NoteOff(
+                                        midi_types::Channel::from(ch as u8),
+                                        midi_types::Note::from(note as u8),
+                                        midi_types::Value7::from(vv),
+                                    ));
+                                });
                             }
                             _ => {}
                         }

@@ -5,7 +5,7 @@ mod rc500;
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::error;
 use heapless::Vec;
-use midi_types::MidiMessage;
+use midi_types::{MidiMessage, Note};
 use smart_leds::{
     colors::{BLUE, DARK_GREEN, GREEN, ORANGE, RED, SEA_GREEN, VIOLET, WHITE},
     RGB8,
@@ -83,7 +83,8 @@ impl Devices {
         d.change_mode();
         d
     }
-    pub fn map(&mut self, event: InputEvent) -> Actions {
+
+    pub fn process_human_input(&mut self, event: InputEvent) -> Actions {
         let actions = match event {
             InputEvent::VolButton(Activate) => {
                 self.current_mode += 1;
@@ -105,6 +106,18 @@ impl Devices {
 
         actions
     }
+    pub fn process_midi_input(&mut self, m: MidiMessage) {
+        match m {
+            MidiMessage::NoteOn(_, Note::C1, vel) => {
+                let v: u8 = vel.into();
+                let c = colorous::REDS.eval_rational(v as usize, 127);
+                let color = RGB8::new(c.r, c.g, c.b);
+                self.leds().set(On(color), Led::Clip);
+            }
+            _ => {}
+        }
+    }
+
     pub fn leds(&mut self) -> &mut Leds {
         &mut self.leds[self.current_mode]
     }
