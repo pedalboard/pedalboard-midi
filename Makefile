@@ -1,5 +1,5 @@
 
-.PHONY: help install restart stop start status sushi-logs
+.PHONY: help install install-latest restart stop start status sushi-logs device
 
 .DEFAULT_GOAL := help
 
