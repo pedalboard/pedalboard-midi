@@ -179,7 +179,7 @@ mod app {
 
         let ws = Ws2812::new(spi);
 
-        // blink::spawn().unwrap();
+        blink::spawn().unwrap();
         led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
         (
@@ -275,7 +275,6 @@ mod app {
                             }
                             usbd_midi::data::midi::message::Message::NoteOff(ch, note, vel) => {
                                 cx.shared.devices.lock(|devices| {
-                                    blink::spawn().unwrap();
                                     let vv: u8 = vel.into();
                                     devices.process_midi_input(midi_types::MidiMessage::NoteOff(
                                         midi_types::Channel::from(ch as u8),
