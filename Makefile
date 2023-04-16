@@ -24,7 +24,7 @@ device:
 bootsel: device ## restart the RP2040 in bootsel mode
 	-aconnect -d 128:1 16:0 
 	amidi -S '8F 00 00' -p "$(DEVICE)"
-	aconnect 128:1 16:0
+	-aconnect 128:1 16:0
 
 install-latest:
 	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
