@@ -216,11 +216,13 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
-    #[task(binds = UART0_IRQ, local = [midi_in])]
-    fn midi_in(ctx: midi_in::Context) {
+    #[task(binds = UART0_IRQ, local = [midi_in], shared = [devices])]
+    fn midi_in(mut ctx: midi_in::Context) {
         match ctx.local.midi_in.read() {
-            Ok(_m) => {
-                // FIXME handle midi messages
+            Ok(m) => {
+                ctx.shared.devices.lock(|devices| {
+                    devices.process_midi_input(m);
+                });
             }
             Err(nb::Error::WouldBlock) => {}
             Err(_) => error!("failed to receive midi message"),

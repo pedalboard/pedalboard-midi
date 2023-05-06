@@ -7,7 +7,7 @@ use defmt::error;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
 use smart_leds::{
-    colors::{BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
+    colors::{BLUE, DARK_BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
     RGB8,
 };
 
@@ -101,18 +101,25 @@ impl Devices {
             },
         };
         if !actions.midi_messages.is_empty() {
+            // MIDI-out indicator
             self.leds().set(Flash(DARK_GREEN), Led::Mon);
         }
 
         actions
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
-        // see https://github.com/pedalboard/db-meter.lv2
-        if let MidiMessage::NoteOff(_, Note::C1, vel) = m {
-            let v: u8 = vel.into();
-            let c = colorous::REDS.eval_rational(v as usize, 127);
-            let color = RGB8::new(c.r, c.g, c.b);
-            self.leds().set(On(color), Led::L48V);
+        match m {
+            // see https://github.com/pedalboard/db-meter.lv2
+            MidiMessage::NoteOff(_, Note::C1, vel) => {
+                let v: u8 = vel.into();
+                let c = colorous::REDS.eval_rational(v as usize, 127);
+                let color = RGB8::new(c.r, c.g, c.b);
+                self.leds().set(On(color), Led::L48V);
+            }
+            _ => {
+                // MIDI-in indicator
+                self.leds().set(Flash(DARK_BLUE), Led::Mon);
+            }
         }
     }
 
