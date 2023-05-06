@@ -30,7 +30,7 @@ mod app {
             },
             rom_data::reset_to_usb_boot,
             spi::Spi,
-            uart::{DataBits, StopBits, UartConfig, UartPeripheral, Writer},
+            uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
             usb::UsbBus,
             Clock, Sio, Watchdog,
         },
@@ -53,6 +53,9 @@ mod app {
     type MidiOut = embedded_midi::MidiOut<
         Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
     >;
+    type MidiIn = embedded_midi::MidiIn<
+        Reader<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
+    >;
 
     const SYS_HZ: u32 = 125_000_000_u32;
 
@@ -70,6 +73,7 @@ mod app {
     struct Local {
         led: Pin<Gpio25, PushPullOutput>,
         midi_out: MidiOut,
+        midi_in: MidiIn,
         inputs: Inputs,
         ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
     }
@@ -136,8 +140,10 @@ mod app {
         let uart = UartPeripheral::new(cx.device.UART0, uart_pins, &mut resets)
             .enable(conf, clocks.peripheral_clock.freq())
             .unwrap();
-        let (_rx, tx) = uart.split();
+        let (mut rx, tx) = uart.split();
+        rx.enable_rx_interrupt();
         let midi_out = MidiOut::new(tx);
+        let midi_in = MidiIn::new(rx);
 
         let vol_pins = RotaryPins {
             clk: pins.gpio16.into_pull_up_input(),
@@ -191,6 +197,7 @@ mod app {
             Local {
                 led,
                 midi_out,
+                midi_in,
                 inputs,
                 ws,
             },
@@ -207,6 +214,17 @@ mod app {
             ctx.local.led.set_low().ok().unwrap();
         }
         blink::spawn_after(Duration::millis(500)).unwrap();
+    }
+
+    #[task(binds = UART0_IRQ, local = [midi_in])]
+    fn midi_in(ctx: midi_in::Context) {
+        match ctx.local.midi_in.read() {
+            Ok(_m) => {
+                // FIXME handle midi messages
+            }
+            Err(nb::Error::WouldBlock) => {}
+            Err(_) => error!("failed to receive midi message"),
+        }
     }
 
     #[task(local = [midi_out], shared = [usb_midi, usb_dev])]

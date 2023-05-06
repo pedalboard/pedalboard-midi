@@ -33,11 +33,14 @@ install: bootsel mount install-latest ## mount and install code to RP2040
 log-midi: device ## log the midi traffic coming from USB
 	@amidi -p "$(DEVICE)" -d	 
 
+uf2:
+	cargo build --release
+	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
+
 release:
 	cargo clean
 	cargo release --no-publish --execute patch
-	cargo build --release
-	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
+	$(MAKE) uf2
 	gh release create --latest --generate-notes $$(git describe --tags --abbrev=0) ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 
 help:
