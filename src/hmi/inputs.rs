@@ -197,6 +197,12 @@ impl Inputs {
         adc: Adc,
         exp_pin: FloatingInputPin<Gpio28>,
     ) -> Self {
+        let (ba, bd) = match () {
+            #[cfg(not(feature = "hw-v1"))]
+            () => (button_pins.3, button_pins.3),
+            #[cfg(feature = "hw-v1")]
+            () => (button_pins.0, button_pins.3),
+        };
         Self {
             button_vol: Button::new(vol_pins.sw),
             vol_rotary: Rotary::new(vol_pins.dt, vol_pins.clk),
@@ -204,10 +210,10 @@ impl Inputs {
             button_gain: Button::new(gain_pins.sw),
             gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
 
-            button_a: Button::new(button_pins.0),
+            button_a: Button::new(ba),
             button_b: Button::new(button_pins.1),
             button_c: Button::new(button_pins.2),
-            button_d: Button::new(button_pins.3),
+            button_d: Button::new(bd),
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
