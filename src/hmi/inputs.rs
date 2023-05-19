@@ -155,6 +155,7 @@ impl ExpressionPedal {
     }
 }
 
+#[cfg(feature = "hw-v1")]
 pub struct Inputs {
     button_vol: Button<Gpio18>,
     vol_rotary: Rotary<Gpio17, Gpio16>,
@@ -164,6 +165,21 @@ pub struct Inputs {
     button_b: Button<Gpio5>,
     button_c: Button<Gpio2>,
     button_d: Button<Gpio6>,
+    button_e: Button<Gpio4>,
+    button_f: Button<Gpio3>,
+    exp: ExpressionPedal,
+}
+
+#[cfg(not(feature = "hw-v1"))]
+pub struct Inputs {
+    button_vol: Button<Gpio18>,
+    vol_rotary: Rotary<Gpio17, Gpio16>,
+    button_gain: Button<Gpio21>,
+    gain_rotary: Rotary<Gpio20, Gpio19>,
+    button_a: Button<Gpio6>,
+    button_b: Button<Gpio5>,
+    button_c: Button<Gpio2>,
+    button_d: Button<Gpio7>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
     exp: ExpressionPedal,
@@ -199,7 +215,7 @@ impl Inputs {
     ) -> Self {
         let (ba, bd) = match () {
             #[cfg(not(feature = "hw-v1"))]
-            () => (button_pins.3, button_pins.3),
+            () => (button_pins.3, button_pins.0),
             #[cfg(feature = "hw-v1")]
             () => (button_pins.0, button_pins.3),
         };
