@@ -112,7 +112,7 @@ impl Devices {
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();
-                let c = colorous::REDS.eval_rational(v as usize, 127);
+                let c = colorous::TURBO.eval_rational(127 - v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
                 self.leds().set(On(color), Led::L48V);
             }
