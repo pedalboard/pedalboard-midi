@@ -188,6 +188,7 @@ mod app {
         blink::spawn().unwrap();
         led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
+        info!("pedalboard-midi initialized");
         (
             Shared {
                 usb_midi,
