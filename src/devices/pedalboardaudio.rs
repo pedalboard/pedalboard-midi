@@ -5,9 +5,10 @@ const CHANNEL: Channel = Channel::new(2);
 
 pub struct PedalboardAudio {}
 
+#[allow(dead_code)]
 pub enum PAAction {
-    #[allow(dead_code)]
     OutputLevel(Value7),
+    BypassProcessor(Control, bool),
 }
 
 impl Default for PedalboardAudio {
@@ -22,7 +23,9 @@ impl PedalboardAudio {
     }
     pub fn midi_messages(&mut self, act: PAAction) -> MidiMessages {
         match act {
-            PAAction::OutputLevel(value) => control_change(Control::new(7), value),
+            PAAction::OutputLevel(value) => control_change(Control::new(100), value),
+            PAAction::BypassProcessor(control, true) => control_change(control, Value7::new(0)),
+            PAAction::BypassProcessor(control, false) => control_change(control, Value7::new(127)),
         }
     }
 }

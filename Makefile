@@ -14,8 +14,11 @@ mount: ## mount the RP2040 in bootsel mode
 	@echo ""
 	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 $(MOUNT_POINT)
 
-run: ## build and run
+run: ## build and run by installing uf2 on the mounted pico
 	cargo run --release
+
+debug: ## build and run by installing uf2 on the mounted pico
+	cargo run --config 'runner = "probe-run --chip RP2040"' --release
 
 device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard-midi |  awk '{ print $$2 }'))

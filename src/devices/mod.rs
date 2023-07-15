@@ -5,7 +5,7 @@ mod rc500;
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::error;
 use heapless::Vec;
-use midi_types::{MidiMessage, Note};
+use midi_types::{Control, MidiMessage, Note};
 use smart_leds::{
     colors::{BLUE, DARK_BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
     RGB8,
@@ -163,10 +163,10 @@ impl Devices {
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(4)))
             }
             InputEvent::ButtonD(Activate) => {
-                Actions::new(self.plethora(PlethoraAction::Board(Direction::Up)))
+                Actions::new(self.audio(PAAction::BypassProcessor(Control::new(3), true)))
             }
             InputEvent::ButtonE(Activate) => {
-                Actions::new(self.plethora(PlethoraAction::Board(Direction::Down)))
+                Actions::new(self.audio(PAAction::BypassProcessor(Control::new(3), false)))
             }
             InputEvent::ExpessionPedal(val) => {
                 let v: u8 = val.into();
