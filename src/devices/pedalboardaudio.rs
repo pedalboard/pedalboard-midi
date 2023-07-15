@@ -2,13 +2,16 @@ use crate::devices::MidiMessages;
 use midi_types::{Channel, Control, MidiMessage, Value7};
 
 const CHANNEL: Channel = Channel::new(2);
+const MAX_PROCESSORS: usize = 10;
 
-pub struct PedalboardAudio {}
+pub struct PedalboardAudio {
+    bypass_status: [bool; MAX_PROCESSORS],
+}
 
 #[allow(dead_code)]
 pub enum PAAction {
     OutputLevel(Value7),
-    BypassProcessor(Control, bool),
+    BypassProcessor(u8),
 }
 
 impl Default for PedalboardAudio {
@@ -19,13 +22,22 @@ impl Default for PedalboardAudio {
 
 impl PedalboardAudio {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            bypass_status: [false; MAX_PROCESSORS],
+        }
     }
     pub fn midi_messages(&mut self, act: PAAction) -> MidiMessages {
         match act {
             PAAction::OutputLevel(value) => control_change(Control::new(100), value),
-            PAAction::BypassProcessor(control, true) => control_change(control, Value7::new(0)),
-            PAAction::BypassProcessor(control, false) => control_change(control, Value7::new(127)),
+            PAAction::BypassProcessor(processor) => {
+                let i = (processor as usize) % MAX_PROCESSORS;
+                self.bypass_status[i] = !self.bypass_status[i];
+                let value = match self.bypass_status[i] {
+                    true => 0,
+                    false => 127,
+                };
+                control_change(Control::new(i as u8), Value7::new(value))
+            }
         }
     }
 }

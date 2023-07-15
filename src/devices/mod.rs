@@ -5,7 +5,7 @@ mod rc500;
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::error;
 use heapless::Vec;
-use midi_types::{Control, MidiMessage, Note};
+use midi_types::{MidiMessage, Note};
 use smart_leds::{
     colors::{BLUE, DARK_BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
     RGB8,
@@ -163,10 +163,8 @@ impl Devices {
                 Actions::new(self.plethora(PlethoraAction::GoToBoard(4)))
             }
             InputEvent::ButtonD(Activate) => {
-                Actions::new(self.audio(PAAction::BypassProcessor(Control::new(3), true)))
-            }
-            InputEvent::ButtonE(Activate) => {
-                Actions::new(self.audio(PAAction::BypassProcessor(Control::new(3), false)))
+                leds.set(Toggle(RED, false), Led::D);
+                Actions::new(self.audio(PAAction::BypassProcessor(1)))
             }
             InputEvent::ExpessionPedal(val) => {
                 let v: u8 = val.into();
@@ -239,8 +237,7 @@ impl Devices {
     fn change_mode(&mut self) {
         let mode_color = match self.current_mode() {
             Mode::LiveEffect => {
-                self.leds().set(Rainbow(colorous::REDS), Led::D);
-                self.leds().set(Rainbow(colorous::BLUES), Led::E);
+                self.leds().set(On(RED), Led::D);
                 WHITE
             }
             Mode::LiveLooper => {
