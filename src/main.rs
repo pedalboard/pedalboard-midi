@@ -3,7 +3,6 @@
 
 mod devices;
 mod hmi;
-mod usb;
 
 use defmt_rtt as _;
 use panic_probe as _;
@@ -45,7 +44,9 @@ mod app {
         device::{UsbDeviceBuilder, UsbVidPid},
     };
     use usbd_midi::data::usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS};
+    use usbd_midi::data::usb_midi::cable_number::CableNumber::Cable0;
     use usbd_midi::data::usb_midi::midi_packet_reader::MidiPacketBufferReader;
+    use usbd_midi::data::usb_midi::usb_midi_event_packet::UsbMidiEventPacket;
     use usbd_midi::midi_device::MidiClass;
     use ws2812_spi::Ws2812;
 
@@ -247,14 +248,11 @@ mod app {
         }
 
         for message in msgs.into_iter() {
-            if let Some(mm) = crate::usb::map_midi(message) {
-                ctx.shared
-                    .usb_midi
-                    .lock(|midi| match midi.send_message(mm) {
-                        Ok(_) => debug!("message sent to usb"),
-                        Err(err) => error!("failed to send message: {}", err),
-                    });
-            }
+            let p = UsbMidiEventPacket::from_midi(Cable0, message);
+            ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
+                Ok(_) => debug!("message sent to usb"),
+                Err(err) => error!("failed to send message: {}", err),
+            });
         }
     }
 
@@ -287,24 +285,18 @@ mod app {
                     let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
                     for packet in buffer_reader.flatten() {
                         match packet.message {
-                            usbd_midi::data::midi::message::Message::NoteOff(
-                                usbd_midi::data::midi::channel::Channel::Channel16,
-                                usbd_midi::data::midi::notes::Note::C1m,
+                            midi_types::MidiMessage::NoteOff(
+                                midi_types::Channel::C16,
+                                midi_types::Note::C2m,
                                 ..,
                             ) => {
                                 reset_to_usb_boot(0, 0);
                             }
-                            usbd_midi::data::midi::message::Message::NoteOff(ch, note, vel) => {
+                            _ => {
                                 cx.shared.devices.lock(|devices| {
-                                    let vv: u8 = vel.into();
-                                    devices.process_midi_input(midi_types::MidiMessage::NoteOff(
-                                        midi_types::Channel::from(ch as u8),
-                                        midi_types::Note::from(note as u8),
-                                        midi_types::Value7::from(vv),
-                                    ));
+                                    devices.process_midi_input(packet.message);
                                 });
                             }
-                            _ => {}
                         }
                     }
                 }
