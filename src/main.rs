@@ -252,7 +252,7 @@ mod app {
                     .usb_midi
                     .lock(|midi| match midi.send_message(mm) {
                         Ok(_) => debug!("message sent to usb"),
-                        Err(_) => error!("failed to send message"),
+                        Err(err) => error!("failed to send message: {}", err),
                     });
             }
         }

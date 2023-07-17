@@ -23,7 +23,7 @@ rp-pico = "0.7"
 cortex-m-rtic = "1.1.4"
 rp2040-monotonic = "1.2.0"
 rp2040-hal = { version = "0.8.1", features = ["eh1_0_alpha", "defmt"] }
-usb-device = "0.2.9"
+usb-device = { version="0.2.9", features = ["defmt"] }
 usbd-midi = { git = "https://github.com/btrepp/usbd-midi", branch = "master" }
 nb = { version="1.1.0" }
 fugit = "0.3"
