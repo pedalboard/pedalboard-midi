@@ -3,6 +3,8 @@
 
 .DEFAULT_GOAL := help
 
+RELEASE_LEVEL ?= patch
+
 MOUNT_POINT = "/mnt/pico"
 
 mount: ## mount the RP2040 in bootsel mode
@@ -40,9 +42,9 @@ uf2: ## build uf2
 	cargo build --release
 	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
-release:
+release: ## create a new release (RELEASE_LEVEL=minor make release)
 	cargo clean
-	cargo release --no-publish --execute patch
+	cargo release --no-publish --execute ${RELEASE_LEVEL}
 	$(MAKE) uf2
 	gh release create --latest --generate-notes $$(git describe --tags --abbrev=0) ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 
