@@ -3,11 +3,14 @@ mod plethora;
 mod rc500;
 
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
-use defmt::error;
+use defmt::*;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
 use smart_leds::{
-    colors::{BLUE, DARK_BLUE, DARK_GREEN, GREEN, RED, SEA_GREEN, VIOLET, WHITE, YELLOW},
+    colors::{
+        BLUE, DARK_BLUE, DARK_GREEN, DARK_ORANGE, DARK_RED, GREEN, LIGHT_BLUE, LIGHT_GREEN, ORANGE,
+        RED, SEA_GREEN, VIOLET, WHITE, YELLOW,
+    },
     RGB8,
 };
 
@@ -112,8 +115,24 @@ impl Devices {
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();
-                let c = colorous::TURBO.eval_rational(127 - v as usize, 115);
-                let color = RGB8::new(c.r, c.g, c.b);
+                debug!("loudness {}", v);
+                let mut color: RGB8 = DARK_RED;
+                if v > 100 {
+                    color = LIGHT_BLUE;
+                } else if v > 60 {
+                    color = LIGHT_GREEN;
+                } else if v > 30 {
+                    color = GREEN;
+                } else if v > 27 {
+                    color = YELLOW;
+                } else if v > 24 {
+                    color = ORANGE;
+                } else if v > 21 {
+                    color = DARK_ORANGE;
+                } else if v > 18 {
+                    color = RED;
+                }
+
                 self.leds().set(On(color), Led::L48V);
             }
             _ => {
