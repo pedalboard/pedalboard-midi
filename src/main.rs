@@ -287,7 +287,7 @@ mod app {
                         match packet.message {
                             midi_types::MidiMessage::NoteOff(
                                 midi_types::Channel::C16,
-                                midi_types::Note::C2m,
+                                midi_types::Note::C1m,
                                 ..,
                             ) => {
                                 reset_to_usb_boot(0, 0);
