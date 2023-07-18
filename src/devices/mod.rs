@@ -115,7 +115,6 @@ impl Devices {
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();
-                debug!("loudness {}", v);
                 let mut color: RGB8 = DARK_RED;
                 if v > 100 {
                     color = LIGHT_BLUE;
@@ -136,6 +135,7 @@ impl Devices {
                 self.leds().set(On(color), Led::L48V);
             }
             _ => {
+                debug!("ignored midi message {}", m);
                 // MIDI-in indicator
                 self.leds().set(Flash(DARK_BLUE), Led::Mon);
             }

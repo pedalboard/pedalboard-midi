@@ -221,11 +221,18 @@ mod app {
     #[task(binds = UART0_IRQ, local = [midi_in], shared = [devices])]
     fn midi_in(mut ctx: midi_in::Context) {
         match ctx.local.midi_in.read() {
-            Ok(m) => {
-                ctx.shared.devices.lock(|devices| {
-                    devices.process_midi_input(m);
-                });
-            }
+            Ok(m) => match m {
+                midi_types::MidiMessage::TimingClock => {
+                    let mut mm = crate::devices::MidiMessages::none();
+                    mm.push(m);
+                    midi_out::spawn(mm).unwrap();
+                }
+                _ => {
+                    ctx.shared.devices.lock(|devices| {
+                        devices.process_midi_input(m);
+                    });
+                }
+            },
             Err(nb::Error::WouldBlock) => {}
             Err(_) => error!("failed to receive midi message"),
         }
