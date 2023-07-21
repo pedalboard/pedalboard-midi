@@ -1,8 +1,8 @@
 use smart_leds::RGB8;
 
-const NUM_LEDS: usize = 12;
+pub const LEDS_PER_RING: usize = 12;
 
-pub type LedData = [RGB8; NUM_LEDS];
+pub type LedData = [RGB8; LEDS_PER_RING];
 
 #[derive(Debug, Clone, Copy)]
 pub enum Animation {
@@ -24,13 +24,13 @@ impl LedRing {
     }
     pub fn animate(&mut self) -> LedData {
         match self.animation {
-            Animation::On(c) => [c; NUM_LEDS],
-            Animation::Off => [RGB8::default(); NUM_LEDS],
-            Animation::Toggle(c, true) => [c; NUM_LEDS],
-            Animation::Toggle(_, false) => [RGB8::default(); NUM_LEDS],
+            Animation::On(c) => [c; LEDS_PER_RING],
+            Animation::Off => [RGB8::default(); LEDS_PER_RING],
+            Animation::Toggle(c, true) => [c; LEDS_PER_RING],
+            Animation::Toggle(_, false) => [RGB8::default(); LEDS_PER_RING],
             Animation::Flash(c) => {
                 self.animation = Animation::Off;
-                [c; NUM_LEDS]
+                [c; LEDS_PER_RING]
             }
         }
     }
