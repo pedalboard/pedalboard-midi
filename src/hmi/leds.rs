@@ -1,6 +1,6 @@
 use super::ledring::LedRing;
 use colorous::Gradient;
-use smart_leds::{colors::GREEN, RGB8};
+use smart_leds::RGB8;
 
 const NUM_LEDS: usize = 10;
 const LED_OUTPUTS: usize = NUM_LEDS + 1 * crate::hmi::ledring::LEDS_PER_RING;
@@ -43,7 +43,7 @@ impl Leds {
             animations: [Animation::Off; NUM_LEDS],
             ledring: LedRing::new(),
         };
-        l.ledring.set(super::ledring::Animation::On(GREEN));
+        l.ledring.set(super::ledring::Animation::Loudness(0.0));
         l
     }
     pub fn animate(&mut self) -> LedData {

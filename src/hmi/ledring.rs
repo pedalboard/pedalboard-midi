@@ -5,11 +5,13 @@ pub const LEDS_PER_RING: usize = 12;
 pub type LedData = [RGB8; LEDS_PER_RING];
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum Animation {
     On(RGB8),
     Off,
     Toggle(RGB8, bool),
     Flash(RGB8),
+    Loudness(f32),
 }
 
 pub struct LedRing {
@@ -31,6 +33,17 @@ impl LedRing {
             Animation::Flash(c) => {
                 self.animation = Animation::Off;
                 [c; LEDS_PER_RING]
+            }
+            Animation::Loudness(lufs) => {
+                let mut data = [RGB8::default(); LEDS_PER_RING];
+                for i in 0..LEDS_PER_RING {
+                    let reference = -72.0 + ((i * 6) as f32);
+                    if lufs > reference {
+                        data[(LEDS_PER_RING - i) % LEDS_PER_RING] =
+                            crate::loudness::loudness_color(reference);
+                    }
+                }
+                data
             }
         }
     }

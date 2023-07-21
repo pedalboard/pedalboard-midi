@@ -3,6 +3,7 @@
 
 mod devices;
 mod hmi;
+mod loudness;
 
 use defmt_rtt as _;
 use panic_probe as _;
