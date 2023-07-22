@@ -38,13 +38,11 @@ pub struct Leds {
 
 impl Leds {
     pub fn new() -> Self {
-        let mut l = Leds {
+        Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
             ledring: LedRing::new(),
-        };
-        l.ledring.set(super::ledring::Animation::Off);
-        l
+        }
     }
     pub fn animate(&mut self) -> LedData {
         let mut data: LedData = [RGB8::default(); LED_OUTPUTS];

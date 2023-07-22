@@ -1,5 +1,4 @@
 use smart_leds::RGB8;
-
 pub const LEDS_PER_RING: usize = 12;
 
 pub type LedData = [RGB8; LEDS_PER_RING];
@@ -21,7 +20,7 @@ pub struct LedRing {
 impl LedRing {
     pub fn new() -> Self {
         LedRing {
-            animation: Animation::Off,
+            animation: Animation::Loudness(-0.),
         }
     }
     pub fn animate(&mut self) -> LedData {
@@ -37,8 +36,8 @@ impl LedRing {
             Animation::Loudness(lufs) => {
                 let mut data = [RGB8::default(); LEDS_PER_RING];
                 for i in 0..LEDS_PER_RING {
-                    let reference = -72.0 + ((i * 6) as f32);
-                    if lufs > reference {
+                    let reference = crate::loudness::loudness_step(i);
+                    if lufs >= reference {
                         data[(LEDS_PER_RING - i) % LEDS_PER_RING] =
                             crate::loudness::loudness_color(reference);
                     }
