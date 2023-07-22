@@ -112,6 +112,8 @@ impl Devices {
                 let lufs = -(v as f32);
                 debug!("loudness {}", lufs);
                 let color = crate::loudness::loudness_color(lufs);
+                self.leds()
+                    .set_ledring(super::hmi::ledring::Animation::Loudness(lufs));
                 self.leds().set(On(color), Led::L48V);
             }
             _ => {

@@ -43,7 +43,7 @@ impl Leds {
             animations: [Animation::Off; NUM_LEDS],
             ledring: LedRing::new(),
         };
-        l.ledring.set(super::ledring::Animation::Loudness(0.0));
+        l.ledring.set(super::ledring::Animation::Off);
         l
     }
     pub fn animate(&mut self) -> LedData {
@@ -110,6 +110,9 @@ impl Leds {
             }
             _ => self.animations[index] = a,
         }
+    }
+    pub fn set_ledring(&mut self, a: super::ledring::Animation) {
+        self.ledring.set(a)
     }
 }
 
