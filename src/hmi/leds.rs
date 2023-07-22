@@ -3,7 +3,7 @@ use colorous::Gradient;
 use smart_leds::RGB8;
 
 const NUM_LEDS: usize = 10;
-const LED_OUTPUTS: usize = NUM_LEDS + 1 * crate::hmi::ledring::LEDS_PER_RING;
+const LED_OUTPUTS: usize = NUM_LEDS + crate::hmi::ledring::LEDS_PER_RING;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {

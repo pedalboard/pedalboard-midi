@@ -14,7 +14,7 @@ pub fn loudness_color(lufs: f32) -> RGB8 {
     } else if lufs < -6.0 {
         return RED;
     }
-    return DARK_RED;
+    DARK_RED
 }
 
 pub fn loudness_step(step: usize) -> f32 {
