@@ -1,7 +1,9 @@
+use super::ledring::LedRing;
 use colorous::Gradient;
 use smart_leds::RGB8;
 
 const NUM_LEDS: usize = 10;
+const LED_OUTPUTS: usize = NUM_LEDS + crate::hmi::ledring::LEDS_PER_RING;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {
@@ -17,7 +19,7 @@ pub enum Led {
     A,
 }
 
-pub type LedData = [RGB8; NUM_LEDS];
+pub type LedData = [RGB8; LED_OUTPUTS];
 
 #[derive(Debug, Clone, Copy)]
 pub enum Animation {
@@ -31,6 +33,7 @@ pub enum Animation {
 pub struct Leds {
     sawtooth: Sawtooth,
     animations: [Animation; NUM_LEDS],
+    ledring: LedRing,
 }
 
 impl Leds {
@@ -38,10 +41,11 @@ impl Leds {
         Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
+            ledring: LedRing::new(),
         }
     }
     pub fn animate(&mut self) -> LedData {
-        let mut data: LedData = [RGB8::default(); NUM_LEDS];
+        let mut data: LedData = [RGB8::default(); LED_OUTPUTS];
         self.sawtooth.next();
 
         for (led, a) in self.animations.into_iter().enumerate() {
@@ -80,6 +84,10 @@ impl Leds {
                 }
             };
         }
+
+        for (led, ring_led) in self.ledring.animate().into_iter().enumerate() {
+            data[NUM_LEDS + led] = ring_led;
+        }
         data
     }
 
@@ -100,6 +108,9 @@ impl Leds {
             }
             _ => self.animations[index] = a,
         }
+    }
+    pub fn set_ledring(&mut self, a: super::ledring::Animation) {
+        self.ledring.set(a)
     }
 }
 

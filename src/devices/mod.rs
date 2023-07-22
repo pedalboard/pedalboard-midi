@@ -6,13 +6,7 @@ use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
-use smart_leds::{
-    colors::{
-        BLUE, DARK_BLUE, DARK_GREEN, DARK_ORANGE, DARK_RED, GREEN, LIGHT_BLUE, LIGHT_GREEN, ORANGE,
-        RED, SEA_GREEN, VIOLET, WHITE, YELLOW,
-    },
-    RGB8,
-};
+use smart_leds::{colors::*, RGB8};
 
 use crate::hmi::leds::{
     Animation::{Flash, Off, On, Rainbow, Toggle},
@@ -115,24 +109,11 @@ impl Devices {
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();
-                debug!("loudness {}", v);
-                let mut color: RGB8 = DARK_RED;
-                if v > 100 {
-                    color = LIGHT_BLUE;
-                } else if v > 60 {
-                    color = LIGHT_GREEN;
-                } else if v > 30 {
-                    color = GREEN;
-                } else if v > 27 {
-                    color = YELLOW;
-                } else if v > 24 {
-                    color = ORANGE;
-                } else if v > 21 {
-                    color = DARK_ORANGE;
-                } else if v > 18 {
-                    color = RED;
-                }
-
+                let lufs = -(v as f32);
+                debug!("loudness {}", lufs);
+                let color = crate::loudness::loudness_color(lufs);
+                self.leds()
+                    .set_ledring(super::hmi::ledring::Animation::Loudness(lufs));
                 self.leds().set(On(color), Led::L48V);
             }
             _ => {
