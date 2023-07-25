@@ -25,7 +25,7 @@ clean: ## clean build results
 build: ## build
 	cargo build --release
 
-lint: ## lint cource code
+lint: ## lint source code
 	cargo clippy
 
 debug: ## build and run by installing uf2 on the mounted pico
