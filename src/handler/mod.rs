@@ -60,9 +60,9 @@ pub trait Handler {
 }
 
 enum HandlerEnum {
-    LiveEffect(self::liveeffect::LiveEffectHandler),
-    LiveLooper(self::livelooper::LiveLooperHandler),
-    SetupLooper(self::setuplooper::SetupLooperHandler),
+    LiveEffect(self::liveeffect::LiveEffect),
+    LiveLooper(self::livelooper::LiveLooper),
+    SetupLooper(self::setuplooper::SetupLooper),
 }
 
 impl Handler for HandlerEnum {
@@ -91,9 +91,9 @@ impl Handlers {
     pub fn new() -> Self {
         Handlers {
             handlers: [
-                HandlerEnum::LiveEffect(self::liveeffect::LiveEffectHandler::new()),
-                HandlerEnum::LiveLooper(self::livelooper::LiveLooperHandler::new()),
-                HandlerEnum::SetupLooper(self::setuplooper::SetupLooperHandler::new()),
+                HandlerEnum::LiveEffect(self::liveeffect::LiveEffect::new()),
+                HandlerEnum::LiveLooper(self::livelooper::LiveLooper::new()),
+                HandlerEnum::SetupLooper(self::setuplooper::SetupLooper::new()),
             ],
             current_mode: 0,
         }

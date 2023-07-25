@@ -9,18 +9,18 @@ use crate::hmi::leds::{
 
 use smart_leds::{colors::*, RGB8};
 
-pub struct LiveEffectHandler {
+pub struct LiveEffect {
     leds: Leds,
     plethora: Plethora,
     audio: PedalboardAudio,
 }
 
-impl LiveEffectHandler {
+impl LiveEffect {
     pub fn new() -> Self {
         let mut leds = Leds::default();
         leds.set(On(RED), Led::D);
         leds.set(On(WHITE), Led::Mode);
-        LiveEffectHandler {
+        LiveEffect {
             leds,
             plethora: Plethora {},
             audio: PedalboardAudio::default(),
@@ -28,7 +28,7 @@ impl LiveEffectHandler {
     }
 }
 
-impl Handler for LiveEffectHandler {
+impl Handler for LiveEffect {
     fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => {

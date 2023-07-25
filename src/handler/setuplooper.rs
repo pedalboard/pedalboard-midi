@@ -9,12 +9,12 @@ use crate::hmi::leds::{
 
 use smart_leds::colors::*;
 
-pub struct SetupLooperHandler {
+pub struct SetupLooper {
     leds: Leds,
     rc500: RC500,
 }
 
-impl SetupLooperHandler {
+impl SetupLooper {
     pub fn new() -> Self {
         let mut leds = Leds::default();
         leds.set(Rainbow(colorous::REDS), Led::D);
@@ -23,14 +23,14 @@ impl SetupLooperHandler {
         leds.set(Rainbow(colorous::BLUES), Led::B);
         leds.set(On(YELLOW), Led::Mode);
 
-        SetupLooperHandler {
+        SetupLooper {
             leds,
             rc500: RC500::default(),
         }
     }
 }
 
-impl Handler for SetupLooperHandler {
+impl Handler for SetupLooper {
     fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => Actions::new(
