@@ -1,4 +1,5 @@
-use crate::devices::{Direction, MidiMessages};
+use crate::devices::Direction;
+use crate::handler::MidiMessages;
 use midi_types::{Channel, Control, MidiMessage, Program, Value7};
 
 pub struct RC500 {

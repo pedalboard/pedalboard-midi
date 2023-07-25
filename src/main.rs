@@ -2,6 +2,7 @@
 #![no_main]
 
 mod devices;
+mod handler;
 mod hmi;
 mod loudness;
 
@@ -68,7 +69,7 @@ mod app {
     struct Shared {
         usb_midi: MidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        devices: crate::devices::Devices,
+        devices: crate::handler::Handlers,
     }
 
     #[local]
@@ -195,7 +196,7 @@ mod app {
             Shared {
                 usb_midi,
                 usb_dev,
-                devices: crate::devices::Devices::default(),
+                devices: crate::handler::Handlers::default(),
             },
             Local {
                 led,
@@ -233,7 +234,7 @@ mod app {
     }
 
     #[task(local = [midi_out], shared = [usb_midi, usb_dev])]
-    fn midi_out(mut ctx: midi_out::Context, messages: crate::devices::MidiMessages) {
+    fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
         let midi_out = ctx.local.midi_out;
         let msgs = messages.messages();
         for message in msgs.iter() {
@@ -263,7 +264,7 @@ mod app {
 
         if let Some(event) = inputs.update() {
             ctx.shared.devices.lock(|devices| {
-                let actions = devices.process_human_input(event);
+                let actions = devices.handle_human_input(event);
                 if !actions.midi_messages.is_empty() {
                     midi_out::spawn(actions.midi_messages).unwrap();
                 }

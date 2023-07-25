@@ -39,7 +39,7 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
-    ExpessionPedal(Value7),
+    ExpressionPedal(Value7),
     VolButton(Edge),
     Vol(Value7),
     GainButton(Edge),
@@ -213,7 +213,7 @@ impl Inputs {
         adc: Adc,
         exp_pin: FloatingInputPin<Gpio28>,
     ) -> Self {
-        let (ba, bd) = match () {
+        let (b_a, b_d) = match () {
             #[cfg(not(feature = "hw-v1"))]
             () => (button_pins.3, button_pins.0),
             #[cfg(feature = "hw-v1")]
@@ -226,10 +226,10 @@ impl Inputs {
             button_gain: Button::new(gain_pins.sw),
             gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
 
-            button_a: Button::new(ba),
+            button_a: Button::new(b_a),
             button_b: Button::new(button_pins.1),
             button_c: Button::new(button_pins.2),
-            button_d: Button::new(bd),
+            button_d: Button::new(b_d),
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
@@ -250,7 +250,7 @@ impl Inputs {
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| self.exp.update().map(InputEvent::ExpessionPedal))
+            .or_else(|| self.exp.update().map(InputEvent::ExpressionPedal))
             .or(None)
     }
 }

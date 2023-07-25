@@ -1,4 +1,4 @@
-use crate::devices::MidiMessages;
+use crate::handler::MidiMessages;
 use midi_types::{Channel, Control, MidiMessage, Value7};
 
 const CHANNEL: Channel = Channel::new(2);
