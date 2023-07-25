@@ -16,8 +16,17 @@ mount: ## mount the RP2040 in bootsel mode
 	@echo ""
 	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 $(MOUNT_POINT)
 
-run: ## build and run by installing uf2 on the mounted pico
+run: ## build and run by using pico_probe
 	cargo run --release
+
+clean: ## clean build results
+	cargo clean
+
+build: ## build
+	cargo build --release
+
+lint: ## lint cource code
+	cargo clippy
 
 debug: ## build and run by installing uf2 on the mounted pico
 	cargo run --config 'runner = "probe-run --chip RP2040"' --release

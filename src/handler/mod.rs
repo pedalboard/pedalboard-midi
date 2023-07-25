@@ -84,7 +84,7 @@ impl Handler for HandlerEnum {
 
 pub struct Handlers {
     handlers: [HandlerEnum; 3],
-    current_mode: usize,
+    current: usize,
 }
 
 impl Handlers {
@@ -95,24 +95,24 @@ impl Handlers {
                 HandlerEnum::LiveLooper(self::live_looper::LiveLooper::new()),
                 HandlerEnum::SetupLooper(self::setup_looper::SetupLooper::new()),
             ],
-            current_mode: 0,
+            current: 0,
         }
     }
 
     pub fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         let actions = match event {
             InputEvent::VolButton(Activate) => {
-                self.current_mode += 1;
-                if self.current_mode == self.handlers.len() {
-                    self.current_mode = 0
+                self.current += 1;
+                if self.current == self.handlers.len() {
+                    self.current = 0
                 }
                 Actions::none()
             }
-            _ => self.current_mode().handle_human_input(event),
+            _ => self.handler().handle_human_input(event),
         };
         if !actions.midi_messages.is_empty() {
             // MIDI-out indicator
-            self.current_mode().leds().set(Flash(DARK_GREEN), Led::Mon);
+            self.leds().set(Flash(DARK_GREEN), Led::Mon);
         }
 
         actions
@@ -125,23 +125,23 @@ impl Handlers {
                 let lufs = -(v as f32);
                 debug!("loudness {}", lufs);
                 let color = crate::loudness::loudness_color(lufs);
-                self.current_mode()
-                    .leds()
+                self.leds()
                     .set_ledring(super::hmi::ledring::Animation::Loudness(lufs));
-                self.current_mode().leds().set(On(color), Led::L48V);
+                self.leds().set(On(color), Led::L48V);
             }
             _ => {
                 // MIDI-in indicator
-                self.current_mode().leds().set(Flash(DARK_BLUE), Led::Mon);
+                self.leds().set(Flash(DARK_BLUE), Led::Mon);
             }
         }
     }
 
-    fn current_mode(&mut self) -> &mut HandlerEnum {
-        &mut self.handlers[self.current_mode]
+    fn handler(&mut self) -> &mut HandlerEnum {
+        &mut self.handlers[self.current]
     }
+
     pub fn leds(&mut self) -> &mut Leds {
-        self.current_mode().leds()
+        self.handler().leds()
     }
 }
 
