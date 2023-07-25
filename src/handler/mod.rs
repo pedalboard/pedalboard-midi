@@ -1,6 +1,6 @@
-mod liveeffect;
-mod livelooper;
-mod setuplooper;
+mod live_effect;
+mod live_looper;
+mod setup_looper;
 
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
@@ -60,9 +60,9 @@ pub trait Handler {
 }
 
 enum HandlerEnum {
-    LiveEffect(self::liveeffect::LiveEffect),
-    LiveLooper(self::livelooper::LiveLooper),
-    SetupLooper(self::setuplooper::SetupLooper),
+    LiveEffect(self::live_effect::LiveEffect),
+    LiveLooper(self::live_looper::LiveLooper),
+    SetupLooper(self::setup_looper::SetupLooper),
 }
 
 impl Handler for HandlerEnum {
@@ -91,9 +91,9 @@ impl Handlers {
     pub fn new() -> Self {
         Handlers {
             handlers: [
-                HandlerEnum::LiveEffect(self::liveeffect::LiveEffect::new()),
-                HandlerEnum::LiveLooper(self::livelooper::LiveLooper::new()),
-                HandlerEnum::SetupLooper(self::setuplooper::SetupLooper::new()),
+                HandlerEnum::LiveEffect(self::live_effect::LiveEffect::new()),
+                HandlerEnum::LiveLooper(self::live_looper::LiveLooper::new()),
+                HandlerEnum::SetupLooper(self::setup_looper::SetupLooper::new()),
             ],
             current_mode: 0,
         }

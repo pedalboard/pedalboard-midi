@@ -1,4 +1,4 @@
-pub mod pedalboardaudio;
+pub mod pedalboard_audio;
 pub mod plethora;
 pub mod rc500;
 

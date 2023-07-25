@@ -1,4 +1,4 @@
-use crate::devices::pedalboardaudio::{PAAction, PedalboardAudio};
+use crate::devices::pedalboard_audio::{PAAction, PedalboardAudio};
 use crate::devices::plethora::{Plethora, PlethoraAction};
 use crate::handler::{Actions, Handler};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
