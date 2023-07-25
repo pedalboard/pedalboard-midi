@@ -6,7 +6,7 @@ The firmware is currently in avery prototype state and specific to a use case:
     MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
 ```
 
-The project currenly can be used as a starting point for your own pedalboard.
+The project currently can be used as a starting point for your own pedalboard.
 
 It is planned to split the reusable parts into a library or make the firmware
 more configurable.
@@ -35,7 +35,8 @@ cargo install elf2uf2-rs
 
 The firmware supports No-Button-Boot (nbb) bootsel mode via USB midi interface.
 
-see `make bootsel` for how to send a midi message to reset the device into bootsel mode.
+see `make bootsel` for how to send a midi message to reset the device into
+bootsel mode.
 
 1. Connect USB C cable to the Pico
 2. Run `make deploy`

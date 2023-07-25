@@ -63,7 +63,7 @@ impl Handler for LiveEffect {
                 self.leds.set(Toggle(RED, false), Led::D);
                 Actions::new(self.audio.midi_messages(PAAction::BypassProcessor(1)))
             }
-            InputEvent::ExpessionPedal(val) => {
+            InputEvent::ExpressionPedal(val) => {
                 let v: u8 = val.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);

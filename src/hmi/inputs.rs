@@ -39,7 +39,7 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
-    ExpessionPedal(Value7),
+    ExpressionPedal(Value7),
     VolButton(Edge),
     Vol(Value7),
     GainButton(Edge),
@@ -250,7 +250,7 @@ impl Inputs {
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| self.exp.update().map(InputEvent::ExpessionPedal))
+            .or_else(|| self.exp.update().map(InputEvent::ExpressionPedal))
             .or(None)
     }
 }

@@ -51,7 +51,7 @@ impl Handler for LiveLooper {
                 self.leds.set(Off, Led::B);
                 Actions::new(self.rc500.midi_messages(RC500Action::ClearCurrent()))
             }
-            InputEvent::ExpessionPedal(val) => Actions::new(
+            InputEvent::ExpressionPedal(val) => Actions::new(
                 self.rc500
                     .midi_messages(RC500Action::CurrentChannelLevel(val)),
             ),
