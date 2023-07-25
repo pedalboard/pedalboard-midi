@@ -51,55 +51,77 @@ pub enum Direction {
     Down,
 }
 
-pub struct Devices {
-    rc500: RC500,
-    plethora: Plethora,
-    audio: PedalboardAudio,
-    modes: [Mode; 3],
-    leds: [Leds; 3],
-    current_mode: usize,
+pub struct Actions {
+    pub midi_messages: MidiMessages,
 }
 
-pub enum Mode {
-    LiveEffect,
-    LiveLooper,
-    SetupLooper,
+impl Actions {
+    fn new(midi_messages: MidiMessages) -> Self {
+        Actions { midi_messages }
+    }
+    fn none() -> Self {
+        Actions::new(MidiMessages::none())
+    }
+}
+pub trait Handler {
+    fn handle_human_input(&mut self, e: InputEvent) -> Actions;
+    fn leds(&mut self) -> &mut Leds;
+}
+
+enum HandlerEnum {
+    LiveEffectHandler(LiveEffectHandler),
+    LiveLooperHandler(LiveLooperHandler),
+    SetupLooperHandler(SetupLooperHandler),
+}
+
+impl Handler for HandlerEnum {
+    fn handle_human_input(&mut self, e: InputEvent) -> Actions {
+        match self {
+            HandlerEnum::LiveEffectHandler(h) => h.handle_human_input(e),
+            HandlerEnum::LiveLooperHandler(h) => h.handle_human_input(e),
+            HandlerEnum::SetupLooperHandler(h) => h.handle_human_input(e),
+        }
+    }
+    fn leds(&mut self) -> &mut Leds {
+        match self {
+            HandlerEnum::LiveEffectHandler(h) => h.leds(),
+            HandlerEnum::LiveLooperHandler(h) => h.leds(),
+            HandlerEnum::SetupLooperHandler(h) => h.leds(),
+        }
+    }
+}
+
+pub struct Devices {
+    handlers: [HandlerEnum; 3],
+    current_mode: usize,
 }
 
 impl Devices {
     pub fn new() -> Self {
-        let leds = Leds::default();
-        let mut d = Devices {
-            modes: [Mode::LiveEffect, Mode::LiveLooper, Mode::SetupLooper],
+        Devices {
+            handlers: [
+                HandlerEnum::LiveEffectHandler(LiveEffectHandler::new()),
+                HandlerEnum::LiveLooperHandler(LiveLooperHandler::new()),
+                HandlerEnum::SetupLooperHandler(SetupLooperHandler::new()),
+            ],
             current_mode: 0,
-            rc500: RC500::default(),
-            audio: PedalboardAudio::default(),
-            leds: [leds, Leds::default(), Leds::default()],
-            plethora: Plethora {},
-        };
-        d.change_mode();
-        d
+        }
     }
 
-    pub fn process_human_input(&mut self, event: InputEvent) -> Actions {
+    pub fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         let actions = match event {
             InputEvent::VolButton(Activate) => {
                 self.current_mode += 1;
-                if self.current_mode == self.modes.len() {
+                if self.current_mode == self.handlers.len() {
                     self.current_mode = 0
                 }
-                self.change_mode();
                 Actions::none()
             }
-            _ => match self.current_mode() {
-                Mode::LiveEffect => self.map_live_effect(event),
-                Mode::LiveLooper => self.map_live_looper(event),
-                Mode::SetupLooper => self.map_setup_looper(event),
-            },
+            _ => self.current_mode().handle_human_input(event),
         };
         if !actions.midi_messages.is_empty() {
             // MIDI-out indicator
-            self.leds().set(Flash(DARK_GREEN), Led::Mon);
+            self.current_mode().leds().set(Flash(DARK_GREEN), Led::Mon);
         }
 
         actions
@@ -112,149 +134,23 @@ impl Devices {
                 let lufs = -(v as f32);
                 debug!("loudness {}", lufs);
                 let color = crate::loudness::loudness_color(lufs);
-                self.leds()
+                self.current_mode()
+                    .leds()
                     .set_ledring(super::hmi::ledring::Animation::Loudness(lufs));
-                self.leds().set(On(color), Led::L48V);
+                self.current_mode().leds().set(On(color), Led::L48V);
             }
             _ => {
                 // MIDI-in indicator
-                self.leds().set(Flash(DARK_BLUE), Led::Mon);
+                self.current_mode().leds().set(Flash(DARK_BLUE), Led::Mon);
             }
         }
     }
 
+    fn current_mode(&mut self) -> &mut HandlerEnum {
+        &mut self.handlers[self.current_mode]
+    }
     pub fn leds(&mut self) -> &mut Leds {
-        &mut self.leds[self.current_mode]
-    }
-
-    fn current_mode(&mut self) -> &Mode {
-        &self.modes[self.current_mode]
-    }
-
-    fn map_live_effect(&mut self, event: InputEvent) -> Actions {
-        let leds = self.leds();
-        match event {
-            InputEvent::ButtonA(Activate) => {
-                leds.set(On(BLUE), Led::A);
-                leds.set(Off, Led::B);
-                leds.set(Off, Led::C);
-                leds.set(Off, Led::F);
-                Actions::new(self.plethora(PlethoraAction::GoToBoard(1)))
-            }
-            InputEvent::ButtonB(Activate) => {
-                leds.set(Off, Led::A);
-                leds.set(On(SEA_GREEN), Led::B);
-                leds.set(Off, Led::C);
-                leds.set(Off, Led::F);
-                Actions::new(self.plethora(PlethoraAction::GoToBoard(2)))
-            }
-            InputEvent::ButtonC(Activate) => {
-                leds.set(Off, Led::A);
-                leds.set(Off, Led::B);
-                leds.set(On(GREEN), Led::C);
-                leds.set(Off, Led::F);
-                Actions::new(self.plethora(PlethoraAction::GoToBoard(3)))
-            }
-            InputEvent::ButtonF(Activate) => {
-                leds.set(Off, Led::A);
-                leds.set(Off, Led::B);
-                leds.set(Off, Led::C);
-                leds.set(On(VIOLET), Led::F);
-                Actions::new(self.plethora(PlethoraAction::GoToBoard(4)))
-            }
-            InputEvent::ButtonD(Activate) => {
-                leds.set(Toggle(RED, false), Led::D);
-                Actions::new(self.audio(PAAction::BypassProcessor(1)))
-            }
-            InputEvent::ExpessionPedal(val) => {
-                let v: u8 = val.into();
-                let c = colorous::REDS.eval_rational(v as usize, 127);
-                let color = RGB8::new(c.r, c.g, c.b);
-                leds.set(On(color), Led::Clip);
-                Actions::new(self.audio(PAAction::OutputLevel(val)))
-            }
-            _ => Actions::none(),
-        }
-    }
-
-    fn map_live_looper(&mut self, event: InputEvent) -> Actions {
-        let leds = self.leds();
-        match event {
-            InputEvent::ButtonA(Activate) => {
-                leds.set(Toggle(BLUE, true), Led::A);
-                Actions::new(self.rc500(RC500Action::ToggleRhythm()))
-            }
-            InputEvent::ButtonB(Activate) => {
-                leds.set(Toggle(BLUE, true), Led::B);
-                Actions::new(self.rc500(RC500Action::RhythmVariation()))
-            }
-            InputEvent::ButtonD(Activate) => {
-                Actions::new(self.rc500(RC500Action::Mem(Direction::Up)))
-            }
-            InputEvent::ButtonE(Activate) => {
-                Actions::new(self.rc500(RC500Action::Mem(Direction::Down)))
-            }
-            InputEvent::ButtonF(Activate) => {
-                leds.set(Off, Led::A);
-                leds.set(Off, Led::B);
-                Actions::new(self.rc500(RC500Action::ClearCurrent()))
-            }
-            InputEvent::ExpessionPedal(val) => {
-                Actions::new(self.rc500(RC500Action::CurrentChannelLevel(val)))
-            }
-            _ => Actions::none(),
-        }
-    }
-    fn map_setup_looper(&mut self, event: InputEvent) -> Actions {
-        match event {
-            InputEvent::ButtonA(Activate) => {
-                Actions::new(self.rc500(RC500Action::RhythmPattern(Direction::Up)))
-            }
-            InputEvent::ButtonB(Activate) => {
-                Actions::new(self.rc500(RC500Action::RhythmPattern(Direction::Down)))
-            }
-            InputEvent::ButtonD(Activate) => {
-                Actions::new(self.rc500(RC500Action::DrumKit(Direction::Up)))
-            }
-            InputEvent::ButtonE(Activate) => {
-                Actions::new(self.rc500(RC500Action::DrumKit(Direction::Down)))
-            }
-            _ => Actions::none(),
-        }
-    }
-
-    fn plethora(&mut self, event: PlethoraAction) -> MidiMessages {
-        self.plethora.midi_messages(event)
-    }
-
-    fn rc500(&mut self, event: RC500Action) -> MidiMessages {
-        self.rc500.midi_messages(event)
-    }
-    fn audio(&mut self, act: PAAction) -> MidiMessages {
-        self.audio.midi_messages(act)
-    }
-
-    fn change_mode(&mut self) {
-        let mode_color = match self.current_mode() {
-            Mode::LiveEffect => {
-                self.leds().set(On(RED), Led::D);
-                WHITE
-            }
-            Mode::LiveLooper => {
-                self.leds().set(Rainbow(colorous::REDS), Led::D);
-                self.leds().set(Rainbow(colorous::BLUES), Led::E);
-                self.leds().set(On(RED), Led::F);
-                RED
-            }
-            Mode::SetupLooper => {
-                self.leds().set(Rainbow(colorous::REDS), Led::D);
-                self.leds().set(Rainbow(colorous::BLUES), Led::E);
-                self.leds().set(Rainbow(colorous::REDS), Led::A);
-                self.leds().set(Rainbow(colorous::BLUES), Led::B);
-                YELLOW
-            }
-        };
-        self.leds().set(On(mode_color), Led::Mode);
+        self.current_mode().leds()
     }
 }
 
@@ -264,15 +160,176 @@ impl Default for Devices {
     }
 }
 
-pub struct Actions {
-    pub midi_messages: MidiMessages,
+struct LiveEffectHandler {
+    leds: Leds,
+    plethora: Plethora,
+    audio: PedalboardAudio,
 }
 
-impl Actions {
-    fn new(midi_messages: MidiMessages) -> Self {
-        Actions { midi_messages }
+impl LiveEffectHandler {
+    fn new() -> Self {
+        let mut leds = Leds::default();
+        leds.set(On(RED), Led::D);
+        leds.set(On(WHITE), Led::Mode);
+        LiveEffectHandler {
+            leds,
+            plethora: Plethora {},
+            audio: PedalboardAudio::default(),
+        }
     }
-    fn none() -> Self {
-        Actions::new(MidiMessages::none())
+}
+
+impl Handler for LiveEffectHandler {
+    fn handle_human_input(&mut self, event: InputEvent) -> Actions {
+        match event {
+            InputEvent::ButtonA(Activate) => {
+                self.leds.set(On(BLUE), Led::A);
+                self.leds.set(Off, Led::B);
+                self.leds.set(Off, Led::C);
+                self.leds.set(Off, Led::F);
+                Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(1)))
+            }
+            InputEvent::ButtonB(Activate) => {
+                self.leds.set(Off, Led::A);
+                self.leds.set(On(SEA_GREEN), Led::B);
+                self.leds.set(Off, Led::C);
+                self.leds.set(Off, Led::F);
+                Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(2)))
+            }
+            InputEvent::ButtonC(Activate) => {
+                self.leds.set(Off, Led::A);
+                self.leds.set(Off, Led::B);
+                self.leds.set(On(GREEN), Led::C);
+                self.leds.set(Off, Led::F);
+                Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(3)))
+            }
+            InputEvent::ButtonF(Activate) => {
+                self.leds.set(Off, Led::A);
+                self.leds.set(Off, Led::B);
+                self.leds.set(Off, Led::C);
+                self.leds.set(On(VIOLET), Led::F);
+                Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(4)))
+            }
+            InputEvent::ButtonD(Activate) => {
+                self.leds.set(Toggle(RED, false), Led::D);
+                Actions::new(self.audio.midi_messages(PAAction::BypassProcessor(1)))
+            }
+            InputEvent::ExpessionPedal(val) => {
+                let v: u8 = val.into();
+                let c = colorous::REDS.eval_rational(v as usize, 127);
+                let color = RGB8::new(c.r, c.g, c.b);
+                self.leds.set(On(color), Led::Clip);
+                Actions::new(self.audio.midi_messages(PAAction::OutputLevel(val)))
+            }
+            _ => Actions::none(),
+        }
+    }
+    fn leds(&mut self) -> &mut Leds {
+        &mut self.leds
+    }
+}
+
+struct LiveLooperHandler {
+    leds: Leds,
+    rc500: RC500,
+}
+
+impl LiveLooperHandler {
+    fn new() -> Self {
+        let mut leds = Leds::default();
+        leds.set(Rainbow(colorous::REDS), Led::D);
+        leds.set(Rainbow(colorous::BLUES), Led::E);
+        leds.set(On(RED), Led::F);
+        leds.set(On(RED), Led::Mode);
+
+        LiveLooperHandler {
+            leds,
+            rc500: RC500::default(),
+        }
+    }
+    fn leds(&mut self) -> &mut Leds {
+        &mut self.leds
+    }
+}
+
+impl Handler for LiveLooperHandler {
+    fn handle_human_input(&mut self, event: InputEvent) -> Actions {
+        match event {
+            InputEvent::ButtonA(Activate) => {
+                self.leds.set(Toggle(BLUE, true), Led::A);
+                Actions::new(self.rc500.midi_messages(RC500Action::ToggleRhythm()))
+            }
+            InputEvent::ButtonB(Activate) => {
+                self.leds.set(Toggle(BLUE, true), Led::B);
+                Actions::new(self.rc500.midi_messages(RC500Action::RhythmVariation()))
+            }
+            InputEvent::ButtonD(Activate) => {
+                Actions::new(self.rc500.midi_messages(RC500Action::Mem(Direction::Up)))
+            }
+            InputEvent::ButtonE(Activate) => {
+                Actions::new(self.rc500.midi_messages(RC500Action::Mem(Direction::Down)))
+            }
+            InputEvent::ButtonF(Activate) => {
+                self.leds.set(Off, Led::A);
+                self.leds.set(Off, Led::B);
+                Actions::new(self.rc500.midi_messages(RC500Action::ClearCurrent()))
+            }
+            InputEvent::ExpessionPedal(val) => Actions::new(
+                self.rc500
+                    .midi_messages(RC500Action::CurrentChannelLevel(val)),
+            ),
+            _ => Actions::none(),
+        }
+    }
+    fn leds(&mut self) -> &mut Leds {
+        &mut self.leds
+    }
+}
+
+struct SetupLooperHandler {
+    leds: Leds,
+    rc500: RC500,
+}
+
+impl SetupLooperHandler {
+    fn new() -> Self {
+        let mut leds = Leds::default();
+        leds.set(Rainbow(colorous::REDS), Led::D);
+        leds.set(Rainbow(colorous::BLUES), Led::E);
+        leds.set(Rainbow(colorous::REDS), Led::A);
+        leds.set(Rainbow(colorous::BLUES), Led::B);
+        leds.set(On(YELLOW), Led::Mode);
+
+        SetupLooperHandler {
+            leds,
+            rc500: RC500::default(),
+        }
+    }
+}
+
+impl Handler for SetupLooperHandler {
+    fn handle_human_input(&mut self, event: InputEvent) -> Actions {
+        match event {
+            InputEvent::ButtonA(Activate) => Actions::new(
+                self.rc500
+                    .midi_messages(RC500Action::RhythmPattern(Direction::Up)),
+            ),
+            InputEvent::ButtonB(Activate) => Actions::new(
+                self.rc500
+                    .midi_messages(RC500Action::RhythmPattern(Direction::Down)),
+            ),
+            InputEvent::ButtonD(Activate) => Actions::new(
+                self.rc500
+                    .midi_messages(RC500Action::DrumKit(Direction::Up)),
+            ),
+            InputEvent::ButtonE(Activate) => Actions::new(
+                self.rc500
+                    .midi_messages(RC500Action::DrumKit(Direction::Down)),
+            ),
+            _ => Actions::none(),
+        }
+    }
+    fn leds(&mut self) -> &mut Leds {
+        &mut self.leds
     }
 }

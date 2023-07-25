@@ -263,7 +263,7 @@ mod app {
 
         if let Some(event) = inputs.update() {
             ctx.shared.devices.lock(|devices| {
-                let actions = devices.process_human_input(event);
+                let actions = devices.handle_human_input(event);
                 if !actions.midi_messages.is_empty() {
                     midi_out::spawn(actions.midi_messages).unwrap();
                 }
