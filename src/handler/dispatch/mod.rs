@@ -1,6 +1,6 @@
-pub mod live_effect;
-pub mod live_looper;
-pub mod setup_looper;
+mod live_effect;
+mod live_looper;
+mod setup_looper;
 
 use crate::handler::{Actions, Handler, HandlerVec};
 use crate::hmi::inputs::InputEvent;
