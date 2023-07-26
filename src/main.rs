@@ -20,7 +20,6 @@ mod app {
     use fugit::HertzU32;
     use fugit::RateExtU32;
 
-    use heapless::Vec;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
@@ -193,23 +192,7 @@ mod app {
         led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
 
-        let mut handlers: crate::handler::HandlerVec<crate::handler::dispatch::HandlerEnum> =
-            Vec::new();
-        handlers
-            .push(crate::handler::dispatch::HandlerEnum::LiveEffect(
-                crate::handler::live_effect::LiveEffect::new(),
-            ))
-            .unwrap();
-        handlers
-            .push(crate::handler::dispatch::HandlerEnum::LiveLooper(
-                crate::handler::live_looper::LiveLooper::new(),
-            ))
-            .unwrap();
-        handlers
-            .push(crate::handler::dispatch::HandlerEnum::SetupLooper(
-                crate::handler::setup_looper::SetupLooper::new(),
-            ))
-            .unwrap();
+        let handlers = crate::handler::dispatch::create();
 
         info!("pedalboard-midi initialized");
         (

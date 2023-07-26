@@ -1,13 +1,18 @@
-use crate::handler::{Actions, Handler};
+pub mod live_effect;
+pub mod live_looper;
+pub mod setup_looper;
+
+use crate::handler::{Actions, Handler, HandlerVec};
 use crate::hmi::inputs::InputEvent;
 use crate::hmi::leds::Leds;
 use core::fmt;
+use heapless::Vec;
 
 /// Enum based static dispatch
 pub enum HandlerEnum {
-    LiveEffect(crate::handler::live_effect::LiveEffect),
-    LiveLooper(crate::handler::live_looper::LiveLooper),
-    SetupLooper(crate::handler::setup_looper::SetupLooper),
+    LiveEffect(self::live_effect::LiveEffect),
+    LiveLooper(self::live_looper::LiveLooper),
+    SetupLooper(self::setup_looper::SetupLooper),
 }
 
 impl Handler for HandlerEnum {
@@ -35,4 +40,25 @@ impl fmt::Debug for HandlerEnum {
             HandlerEnum::SetupLooper(_) => f.debug_tuple("SetupLooper").finish(),
         }
     }
+}
+
+pub fn create() -> HandlerVec<HandlerEnum> {
+    let mut handlers: crate::handler::HandlerVec<crate::handler::dispatch::HandlerEnum> =
+        Vec::new();
+    handlers
+        .push(crate::handler::dispatch::HandlerEnum::LiveEffect(
+            self::live_effect::LiveEffect::new(),
+        ))
+        .unwrap();
+    handlers
+        .push(crate::handler::dispatch::HandlerEnum::LiveLooper(
+            self::live_looper::LiveLooper::new(),
+        ))
+        .unwrap();
+    handlers
+        .push(crate::handler::dispatch::HandlerEnum::SetupLooper(
+            self::setup_looper::SetupLooper::new(),
+        ))
+        .unwrap();
+    handlers
 }

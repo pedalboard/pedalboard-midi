@@ -1,8 +1,4 @@
 pub mod dispatch;
-pub mod live_effect;
-pub mod live_looper;
-pub mod setup_looper;
-
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
 use heapless::Vec;
@@ -14,7 +10,8 @@ use crate::hmi::leds::{
     Led, Leds,
 };
 
-type MidiMessageVec = Vec<MidiMessage, 8>;
+const MAX_MIDI_MESSAGES: usize = 8;
+type MidiMessageVec = Vec<MidiMessage, MAX_MIDI_MESSAGES>;
 
 #[derive(Debug)]
 pub struct MidiMessages(MidiMessageVec);
@@ -59,14 +56,16 @@ pub trait Handler {
 }
 
 const MAX_HANDLERS: usize = 8;
+
+/// The Vec of Handlers to iterate over
 pub type HandlerVec<H> = Vec<H, MAX_HANDLERS>;
 
+/// The router (dispatcher) for human input and midi input
 pub struct Handlers<H: Handler> {
     handlers: HandlerVec<H>,
     current: usize,
 }
 
-/// The router (dispatcher) for human input and midi input
 impl<H> Handlers<H>
 where
     H: Handler,
