@@ -1,8 +1,9 @@
-mod live_effect;
-mod live_looper;
-mod setup_looper;
+pub mod live_effect;
+pub mod live_looper;
+pub mod setup_looper;
 
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
+use core::fmt;
 use defmt::*;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
@@ -59,7 +60,7 @@ pub trait Handler {
     fn leds(&mut self) -> &mut Leds;
 }
 
-enum HandlerEnum {
+pub enum HandlerEnum {
     LiveEffect(self::live_effect::LiveEffect),
     LiveLooper(self::live_looper::LiveLooper),
     SetupLooper(self::setup_looper::SetupLooper),
@@ -82,19 +83,31 @@ impl Handler for HandlerEnum {
     }
 }
 
-pub struct Handlers {
-    handlers: [HandlerEnum; 3],
+impl fmt::Debug for HandlerEnum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HandlerEnum::LiveEffect(_) => f.debug_tuple("LiveEffect").finish(),
+            HandlerEnum::LiveLooper(_) => f.debug_tuple("LiveLooper").finish(),
+            HandlerEnum::SetupLooper(_) => f.debug_tuple("SetupLooper").finish(),
+        }
+    }
+}
+
+const MAX_HANDLERS: usize = 8;
+pub type HandlerVec<H> = Vec<H, MAX_HANDLERS>;
+
+pub struct Handlers<H: Handler> {
+    handlers: HandlerVec<H>,
     current: usize,
 }
 
-impl Handlers {
-    pub fn new() -> Self {
+impl<H> Handlers<H>
+where
+    H: Handler,
+{
+    pub fn new(handlers: Vec<H, MAX_HANDLERS>) -> Self {
         Handlers {
-            handlers: [
-                HandlerEnum::LiveEffect(self::live_effect::LiveEffect::new()),
-                HandlerEnum::LiveLooper(self::live_looper::LiveLooper::new()),
-                HandlerEnum::SetupLooper(self::setup_looper::SetupLooper::new()),
-            ],
+            handlers,
             current: 0,
         }
     }
@@ -136,7 +149,7 @@ impl Handlers {
         }
     }
 
-    fn handler(&mut self) -> &mut HandlerEnum {
+    fn handler(&mut self) -> &mut H {
         &mut self.handlers[self.current]
     }
 
@@ -145,8 +158,11 @@ impl Handlers {
     }
 }
 
-impl Default for Handlers {
+impl<H> Default for Handlers<H>
+where
+    H: Handler,
+{
     fn default() -> Self {
-        Self::new()
+        Self::new(Vec::new())
     }
 }

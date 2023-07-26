@@ -20,6 +20,7 @@ mod app {
     use fugit::HertzU32;
     use fugit::RateExtU32;
 
+    use heapless::Vec;
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
@@ -69,7 +70,7 @@ mod app {
     struct Shared {
         usb_midi: MidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        devices: crate::handler::Handlers,
+        handlers: crate::handler::Handlers<crate::handler::HandlerEnum>,
     }
 
     #[local]
@@ -191,12 +192,30 @@ mod app {
         blink::spawn().unwrap();
         led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
+
+        let mut handlers: crate::handler::HandlerVec<crate::handler::HandlerEnum> = Vec::new();
+        handlers
+            .push(crate::handler::HandlerEnum::LiveEffect(
+                crate::handler::live_effect::LiveEffect::new(),
+            ))
+            .unwrap();
+        handlers
+            .push(crate::handler::HandlerEnum::LiveLooper(
+                crate::handler::live_looper::LiveLooper::new(),
+            ))
+            .unwrap();
+        handlers
+            .push(crate::handler::HandlerEnum::SetupLooper(
+                crate::handler::setup_looper::SetupLooper::new(),
+            ))
+            .unwrap();
+
         info!("pedalboard-midi initialized");
         (
             Shared {
                 usb_midi,
                 usb_dev,
-                devices: crate::handler::Handlers::default(),
+                handlers: crate::handler::Handlers::new(handlers),
             },
             Local {
                 led,
@@ -220,12 +239,12 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
-    #[task(binds = UART0_IRQ, local = [midi_in], shared = [devices])]
+    #[task(binds = UART0_IRQ, local = [midi_in], shared = [handlers])]
     fn midi_in(mut ctx: midi_in::Context) {
         match ctx.local.midi_in.read() {
             Ok(m) => {
-                ctx.shared.devices.lock(|devices| {
-                    devices.process_midi_input(m);
+                ctx.shared.handlers.lock(|handlers| {
+                    handlers.process_midi_input(m);
                 });
             }
             Err(nb::Error::WouldBlock) => {}
@@ -258,13 +277,13 @@ mod app {
         }
     }
 
-    #[task(local = [inputs], shared = [devices])]
+    #[task(local = [inputs], shared = [handlers])]
     fn poll_input(mut ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
 
         if let Some(event) = inputs.update() {
-            ctx.shared.devices.lock(|devices| {
-                let actions = devices.handle_human_input(event);
+            ctx.shared.handlers.lock(|handlers| {
+                let actions = handlers.handle_human_input(event);
                 if !actions.midi_messages.is_empty() {
                     midi_out::spawn(actions.midi_messages).unwrap();
                 }
@@ -273,7 +292,7 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,devices])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
     fn usb_rx(mut cx: usb_rx::Context) {
         cx.shared.usb_dev.lock(|usb_dev| {
             cx.shared.usb_midi.lock(|usb_midi| {
@@ -295,8 +314,8 @@ mod app {
                                 reset_to_usb_boot(0, 0);
                             }
                             _ => {
-                                cx.shared.devices.lock(|devices| {
-                                    devices.process_midi_input(packet.message);
+                                cx.shared.handlers.lock(|handlers| {
+                                    handlers.process_midi_input(packet.message);
                                 });
                             }
                         }
@@ -306,10 +325,10 @@ mod app {
         });
     }
 
-    #[task(local = [ws], shared =[devices])]
+    #[task(local = [ws], shared =[handlers])]
     fn led_strip(mut ctx: led_strip::Context) {
-        ctx.shared.devices.lock(|devices| {
-            let data = devices.leds().animate();
+        ctx.shared.handlers.lock(|handlers| {
+            let data = handlers.leds().animate();
             ctx.local
                 .ws
                 .write(brightness(data.iter().cloned(), 32))
