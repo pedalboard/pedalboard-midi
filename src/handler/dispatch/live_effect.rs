@@ -77,3 +77,9 @@ impl Handler for LiveEffect {
         &mut self.leds
     }
 }
+
+impl Default for LiveEffect {
+    fn default() -> Self {
+        Self::new()
+    }
+}
