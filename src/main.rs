@@ -70,7 +70,7 @@ mod app {
     struct Shared {
         usb_midi: MidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        handlers: crate::handler::Handlers<crate::handler::HandlerEnum>,
+        handlers: crate::handler::Handlers<crate::handler::dispatch::HandlerEnum>,
     }
 
     #[local]
@@ -193,19 +193,20 @@ mod app {
         led_strip::spawn().unwrap();
         poll_input::spawn().unwrap();
 
-        let mut handlers: crate::handler::HandlerVec<crate::handler::HandlerEnum> = Vec::new();
+        let mut handlers: crate::handler::HandlerVec<crate::handler::dispatch::HandlerEnum> =
+            Vec::new();
         handlers
-            .push(crate::handler::HandlerEnum::LiveEffect(
+            .push(crate::handler::dispatch::HandlerEnum::LiveEffect(
                 crate::handler::live_effect::LiveEffect::new(),
             ))
             .unwrap();
         handlers
-            .push(crate::handler::HandlerEnum::LiveLooper(
+            .push(crate::handler::dispatch::HandlerEnum::LiveLooper(
                 crate::handler::live_looper::LiveLooper::new(),
             ))
             .unwrap();
         handlers
-            .push(crate::handler::HandlerEnum::SetupLooper(
+            .push(crate::handler::dispatch::HandlerEnum::SetupLooper(
                 crate::handler::setup_looper::SetupLooper::new(),
             ))
             .unwrap();
