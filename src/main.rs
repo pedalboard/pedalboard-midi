@@ -75,10 +75,10 @@ mod app {
     #[local]
     struct Local {
         led: Pin<Gpio25, PushPullOutput>,
-        midi_out: MidiOut,
-        midi_in: MidiIn,
+        uart_midi_out: MidiOut,
+        uart_midi_in: MidiIn,
         inputs: Inputs,
-        ws: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
+        led_spi: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -145,8 +145,8 @@ mod app {
             .unwrap();
         let (mut rx, tx) = uart.split();
         rx.enable_rx_interrupt();
-        let midi_out = MidiOut::new(tx);
-        let midi_in = MidiIn::new(rx);
+        let uart_midi_out = MidiOut::new(tx);
+        let uart_midi_in = MidiIn::new(rx);
 
         let vol_pins = RotaryPins {
             clk: pins.gpio16.into_pull_up_input(),
@@ -186,10 +186,10 @@ mod app {
             &MODE_0,
         );
 
-        let ws = Ws2812::new(spi);
+        let led_spi = Ws2812::new(spi);
 
         blink::spawn().unwrap();
-        led_strip::spawn().unwrap();
+        led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
 
         let handlers = crate::handler::dispatch::create();
@@ -203,10 +203,10 @@ mod app {
             },
             Local {
                 led,
-                midi_out,
-                midi_in,
+                uart_midi_out,
+                uart_midi_in,
                 inputs,
-                ws,
+                led_spi,
             },
             init::Monotonics(mono),
         )
@@ -223,9 +223,9 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
-    #[task(binds = UART0_IRQ, local = [midi_in], shared = [handlers])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
     fn midi_in(mut ctx: midi_in::Context) {
-        match ctx.local.midi_in.read() {
+        match ctx.local.uart_midi_in.read() {
             Ok(m) => {
                 ctx.shared.handlers.lock(|handlers| {
                     handlers.process_midi_input(m);
@@ -236,14 +236,16 @@ mod app {
         }
     }
 
-    #[task(local = [midi_out], shared = [usb_midi, usb_dev])]
+    #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
     fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
-        let midi_out = ctx.local.midi_out;
+        // always send to UART out
+        let uart_midi_out = ctx.local.uart_midi_out;
         let msgs = messages.messages();
         for message in msgs.iter() {
-            midi_out.write(message).unwrap();
+            uart_midi_out.write(message).unwrap();
         }
 
+        // optionally send to USB if a device is listening
         let configured = ctx
             .shared
             .usb_dev
@@ -251,7 +253,6 @@ mod app {
         if !configured {
             return;
         }
-
         for message in msgs.into_iter() {
             let p = UsbMidiEventPacket::from_midi(Cable0, message);
             ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
@@ -273,6 +274,7 @@ mod app {
                 }
             });
         };
+        // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
@@ -309,15 +311,16 @@ mod app {
         });
     }
 
-    #[task(local = [ws], shared =[handlers])]
-    fn led_strip(mut ctx: led_strip::Context) {
+    #[task(local = [led_spi], shared =[handlers])]
+    fn led_animation(mut ctx: led_animation::Context) {
         ctx.shared.handlers.lock(|handlers| {
             let data = handlers.leds().animate();
             ctx.local
-                .ws
+                .led_spi
                 .write(brightness(data.iter().cloned(), 32))
                 .unwrap();
         });
-        led_strip::spawn_after(Duration::millis(50)).unwrap();
+        // schedule to run this task with 20Hz
+        led_animation::spawn_after(Duration::millis(50)).unwrap();
     }
 }
