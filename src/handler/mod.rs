@@ -1,7 +1,4 @@
-mod live_effect;
-mod live_looper;
-mod setup_looper;
-
+pub mod dispatch;
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
 use heapless::Vec;
@@ -13,16 +10,15 @@ use crate::hmi::leds::{
     Led, Leds,
 };
 
-type MidiMessageVec = Vec<MidiMessage, 8>;
+const MAX_MIDI_MESSAGES: usize = 8;
+type MidiMessageVec = Vec<MidiMessage, MAX_MIDI_MESSAGES>;
 
 #[derive(Debug)]
 pub struct MidiMessages(MidiMessageVec);
 
 impl MidiMessages {
     pub fn push(&mut self, a: MidiMessage) {
-        if self.0.push(a).is_err() {
-            error!("failed pushing midi message")
-        };
+        self.0.push(a).unwrap();
     }
 
     pub fn clear(&mut self) {
@@ -59,42 +55,24 @@ pub trait Handler {
     fn leds(&mut self) -> &mut Leds;
 }
 
-enum HandlerEnum {
-    LiveEffect(self::live_effect::LiveEffect),
-    LiveLooper(self::live_looper::LiveLooper),
-    SetupLooper(self::setup_looper::SetupLooper),
-}
+const MAX_HANDLERS: usize = 8;
 
-impl Handler for HandlerEnum {
-    fn handle_human_input(&mut self, e: InputEvent) -> Actions {
-        match self {
-            HandlerEnum::LiveEffect(h) => h.handle_human_input(e),
-            HandlerEnum::LiveLooper(h) => h.handle_human_input(e),
-            HandlerEnum::SetupLooper(h) => h.handle_human_input(e),
-        }
-    }
-    fn leds(&mut self) -> &mut Leds {
-        match self {
-            HandlerEnum::LiveEffect(h) => h.leds(),
-            HandlerEnum::LiveLooper(h) => h.leds(),
-            HandlerEnum::SetupLooper(h) => h.leds(),
-        }
-    }
-}
+/// The Vec of Handlers to iterate over
+pub type HandlerVec<H> = Vec<H, MAX_HANDLERS>;
 
-pub struct Handlers {
-    handlers: [HandlerEnum; 3],
+/// The router (dispatcher) for human input and midi input
+pub struct Handlers<H: Handler> {
+    handlers: HandlerVec<H>,
     current: usize,
 }
 
-impl Handlers {
-    pub fn new() -> Self {
+impl<H> Handlers<H>
+where
+    H: Handler,
+{
+    pub fn new(handlers: Vec<H, MAX_HANDLERS>) -> Self {
         Handlers {
-            handlers: [
-                HandlerEnum::LiveEffect(self::live_effect::LiveEffect::new()),
-                HandlerEnum::LiveLooper(self::live_looper::LiveLooper::new()),
-                HandlerEnum::SetupLooper(self::setup_looper::SetupLooper::new()),
-            ],
+            handlers,
             current: 0,
         }
     }
@@ -136,7 +114,7 @@ impl Handlers {
         }
     }
 
-    fn handler(&mut self) -> &mut HandlerEnum {
+    fn handler(&mut self) -> &mut H {
         &mut self.handlers[self.current]
     }
 
@@ -145,8 +123,12 @@ impl Handlers {
     }
 }
 
-impl Default for Handlers {
+/// Construct empty Handlers
+impl<H> Default for Handlers<H>
+where
+    H: Handler,
+{
     fn default() -> Self {
-        Self::new()
+        Self::new(Vec::new())
     }
 }

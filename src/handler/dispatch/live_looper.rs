@@ -62,3 +62,9 @@ impl Handler for LiveLooper {
         &mut self.leds
     }
 }
+
+impl Default for LiveLooper {
+    fn default() -> Self {
+        Self::new()
+    }
+}

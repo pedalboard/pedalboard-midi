@@ -56,3 +56,9 @@ impl Handler for SetupLooper {
         &mut self.leds
     }
 }
+
+impl Default for SetupLooper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
