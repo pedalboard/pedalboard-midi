@@ -15,7 +15,7 @@ more configurable.
 
 see [Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) for more details.
 
-![Schematic](https://pedalboard.github.io/pedalboard-hw-site/Schematic/pedalboard-hw-MIDI.svg)
+![Schematic](https://pedalboard.github.io/pedalboard-hw-site/latest/Schematic/pedalboard-hw-MIDI.svg)
 
 ## Development
 
