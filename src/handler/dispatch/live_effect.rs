@@ -2,10 +2,8 @@ use crate::devices::pedalboard_audio::{PAAction, PedalboardAudio};
 use crate::devices::plethora::{Plethora, PlethoraAction};
 use crate::handler::{Actions, Handler};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
-use crate::hmi::leds::{
-    Animation::{Off, On, Toggle},
-    Led, Leds,
-};
+use crate::hmi::ledring;
+use crate::hmi::leds::{Animation::On, Led, LedRings, Leds};
 
 use smart_leds::{colors::*, RGB8};
 
@@ -18,7 +16,7 @@ pub struct LiveEffect {
 impl LiveEffect {
     pub fn new() -> Self {
         let mut leds = Leds::default();
-        leds.set(On(RED), Led::D);
+        leds.set_ledring(ledring::Animation::On(RED), LedRings::D);
         leds.set(On(WHITE), Led::Mode);
         LiveEffect {
             leds,
@@ -32,35 +30,40 @@ impl Handler for LiveEffect {
     fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => {
-                self.leds.set(On(BLUE), Led::A);
-                self.leds.set(Off, Led::B);
-                self.leds.set(Off, Led::C);
-                self.leds.set(Off, Led::F);
+                self.leds
+                    .set_ledring(ledring::Animation::On(BLUE), LedRings::A);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::B);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::C);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
                 Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(1)))
             }
             InputEvent::ButtonB(Activate) => {
-                self.leds.set(Off, Led::A);
-                self.leds.set(On(SEA_GREEN), Led::B);
-                self.leds.set(Off, Led::C);
-                self.leds.set(Off, Led::F);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::A);
+                self.leds
+                    .set_ledring(ledring::Animation::On(SEA_GREEN), LedRings::B);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::C);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
                 Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(2)))
             }
             InputEvent::ButtonC(Activate) => {
-                self.leds.set(Off, Led::A);
-                self.leds.set(Off, Led::B);
-                self.leds.set(On(GREEN), Led::C);
-                self.leds.set(Off, Led::F);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::A);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::B);
+                self.leds
+                    .set_ledring(ledring::Animation::On(GREEN), LedRings::C);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
                 Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(3)))
             }
             InputEvent::ButtonF(Activate) => {
-                self.leds.set(Off, Led::A);
-                self.leds.set(Off, Led::B);
-                self.leds.set(Off, Led::C);
-                self.leds.set(On(VIOLET), Led::F);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::A);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::B);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::C);
+                self.leds
+                    .set_ledring(ledring::Animation::On(VIOLET), LedRings::F);
                 Actions::new(self.plethora.midi_messages(PlethoraAction::GoToBoard(4)))
             }
             InputEvent::ButtonD(Activate) => {
-                self.leds.set(Toggle(RED, false), Led::D);
+                self.leds
+                    .set_ledring(ledring::Animation::Toggle(RED, false), LedRings::D);
                 Actions::new(self.audio.midi_messages(PAAction::BypassProcessor(1)))
             }
             InputEvent::ExpressionPedal(val) => {

@@ -2,10 +2,8 @@ use crate::devices::rc500::{RC500Action, RC500};
 use crate::devices::Direction;
 use crate::handler::{Actions, Handler};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
-use crate::hmi::leds::{
-    Animation::{Off, On, Rainbow, Toggle},
-    Led, Leds,
-};
+use crate::hmi::ledring;
+use crate::hmi::leds::{Animation::On, Led, LedRings, Leds};
 
 use smart_leds::colors::*;
 
@@ -17,9 +15,10 @@ pub struct LiveLooper {
 impl LiveLooper {
     pub fn new() -> Self {
         let mut leds = Leds::default();
-        leds.set(Rainbow(colorous::REDS), Led::D);
-        leds.set(Rainbow(colorous::BLUES), Led::E);
-        leds.set(On(RED), Led::F);
+        // FIXME better +/- animation
+        leds.set_ledring(ledring::Animation::On(RED), LedRings::D);
+        leds.set_ledring(ledring::Animation::On(BLUE), LedRings::E);
+        leds.set_ledring(ledring::Animation::On(RED), LedRings::F);
         leds.set(On(RED), Led::Mode);
 
         LiveLooper {
@@ -33,11 +32,13 @@ impl Handler for LiveLooper {
     fn handle_human_input(&mut self, event: InputEvent) -> Actions {
         match event {
             InputEvent::ButtonA(Activate) => {
-                self.leds.set(Toggle(BLUE, true), Led::A);
+                self.leds
+                    .set_ledring(ledring::Animation::Toggle(BLUE, false), LedRings::A);
                 Actions::new(self.rc500.midi_messages(RC500Action::ToggleRhythm()))
             }
             InputEvent::ButtonB(Activate) => {
-                self.leds.set(Toggle(BLUE, true), Led::B);
+                self.leds
+                    .set_ledring(ledring::Animation::Toggle(BLUE, false), LedRings::B);
                 Actions::new(self.rc500.midi_messages(RC500Action::RhythmVariation()))
             }
             InputEvent::ButtonD(Activate) => {
@@ -47,8 +48,8 @@ impl Handler for LiveLooper {
                 Actions::new(self.rc500.midi_messages(RC500Action::Mem(Direction::Down)))
             }
             InputEvent::ButtonF(Activate) => {
-                self.leds.set(Off, Led::A);
-                self.leds.set(Off, Led::B);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::A);
+                self.leds.set_ledring(ledring::Animation::Off, LedRings::B);
                 Actions::new(self.rc500.midi_messages(RC500Action::ClearCurrent()))
             }
             InputEvent::ExpressionPedal(val) => Actions::new(

@@ -1,9 +1,11 @@
 use super::ledring::LedRing;
+use crate::hmi::ledring::LEDS_PER_RING;
 use colorous::Gradient;
 use smart_leds::RGB8;
 
-const NUM_LEDS: usize = 10;
-const LED_OUTPUTS: usize = NUM_LEDS + crate::hmi::ledring::LEDS_PER_RING;
+const NUM_LEDS: usize = 4;
+const NUM_LED_RINGS: usize = 6;
+const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {
@@ -11,6 +13,10 @@ pub enum Led {
     Mon,
     L48V,
     Clip,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LedRings {
     F,
     C,
     B,
@@ -33,7 +39,7 @@ pub enum Animation {
 pub struct Leds {
     sawtooth: Sawtooth,
     animations: [Animation; NUM_LEDS],
-    ledring: LedRing,
+    ledrings: [LedRing; NUM_LED_RINGS],
 }
 
 impl Leds {
@@ -41,7 +47,7 @@ impl Leds {
         Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
-            ledring: LedRing::new(),
+            ledrings: [LedRing::new(); NUM_LED_RINGS],
         }
     }
     pub fn animate(&mut self) -> LedData {
@@ -85,8 +91,10 @@ impl Leds {
             };
         }
 
-        for (led, ring_led) in self.ledring.animate().into_iter().enumerate() {
-            data[NUM_LEDS + led] = ring_led;
+        for (ring_index, mut ring) in self.ledrings.into_iter().enumerate() {
+            for (led_index, ring_led) in ring.animate().into_iter().enumerate() {
+                data[NUM_LEDS + ring_index * LEDS_PER_RING + led_index] = ring_led;
+            }
         }
         data
     }
@@ -109,8 +117,9 @@ impl Leds {
             _ => self.animations[index] = a,
         }
     }
-    pub fn set_ledring(&mut self, a: super::ledring::Animation) {
-        self.ledring.set(a)
+    pub fn set_ledring(&mut self, a: super::ledring::Animation, r: LedRings) {
+        let ri = r as usize;
+        self.ledrings[ri].set(a)
     }
 }
 

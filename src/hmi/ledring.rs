@@ -13,6 +13,7 @@ pub enum Animation {
     Loudness(f32),
 }
 
+#[derive(Copy, Clone)]
 pub struct LedRing {
     animation: Animation,
 }

@@ -7,7 +7,7 @@ use smart_leds::colors::*;
 
 use crate::hmi::leds::{
     Animation::{Flash, On},
-    Led, Leds,
+    Led, LedRings, Leds,
 };
 
 const MAX_MIDI_MESSAGES: usize = 8;
@@ -104,7 +104,7 @@ where
                 debug!("loudness {}", lufs);
                 let color = crate::loudness::loudness_color(lufs);
                 self.leds()
-                    .set_ledring(super::hmi::ledring::Animation::Loudness(lufs));
+                    .set_ledring(super::hmi::ledring::Animation::Loudness(lufs), LedRings::A);
                 self.leds().set(On(color), Led::L48V);
             }
             _ => {

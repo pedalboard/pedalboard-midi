@@ -2,10 +2,7 @@ use crate::devices::rc500::{RC500Action, RC500};
 use crate::devices::Direction;
 use crate::handler::{Actions, Handler};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
-use crate::hmi::leds::{
-    Animation::{On, Rainbow},
-    Led, Leds,
-};
+use crate::hmi::leds::{Animation::On, Led, Leds};
 
 use smart_leds::colors::*;
 
@@ -17,10 +14,10 @@ pub struct SetupLooper {
 impl SetupLooper {
     pub fn new() -> Self {
         let mut leds = Leds::default();
-        leds.set(Rainbow(colorous::REDS), Led::D);
-        leds.set(Rainbow(colorous::BLUES), Led::E);
-        leds.set(Rainbow(colorous::REDS), Led::A);
-        leds.set(Rainbow(colorous::BLUES), Led::B);
+        //        leds.set(Rainbow(colorous::REDS), Led::D);
+        //        leds.set(Rainbow(colorous::BLUES), Led::E);
+        //        leds.set(Rainbow(colorous::REDS), Led::A);
+        //        leds.set(Rainbow(colorous::BLUES), Led::B);
         leds.set(On(YELLOW), Led::Mode);
 
         SetupLooper {
