@@ -8,21 +8,18 @@ use embedded_hal::digital::v2::InputPin;
 use movavg::MovAvg;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp_pico::hal::{
-    adc::Adc,
+    adc::{Adc, AdcPin},
     gpio::{
-        pin::{
-            bank0::{
-                Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio28, Gpio3, Gpio4, Gpio5,
-                Gpio6, Gpio7,
-            },
-            PinId,
+        bank0::{
+            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio28, Gpio3, Gpio4, Gpio5,
+            Gpio6, Gpio7,
         },
-        Floating, Input, Pin, PullUp,
+        FunctionSioInput, Pin, PinId, PullNone, PullUp,
     },
 };
 
-type PullUpInputPin<I> = Pin<I, Input<PullUp>>;
-type FloatingInputPin<I> = Pin<I, Input<Floating>>;
+type PullUpInputPin<I> = Pin<I, FunctionSioInput, PullUp>;
+type AdcInputPin = AdcPin<Pin<Gpio28, FunctionSioInput, PullNone>>;
 type Sma = MovAvg<u16, u32, 10>;
 
 use midi_types::Value7;
@@ -119,13 +116,13 @@ where
 pub struct ExpressionPedal {
     current: u8,
     adc: Adc,
-    exp_pin: FloatingInputPin<Gpio28>,
+    exp_pin: AdcInputPin,
     avg: Sma,
     sample_rate_reduction: u8,
 }
 
 impl ExpressionPedal {
-    fn new(adc: Adc, exp_pin: FloatingInputPin<Gpio28>) -> Self {
+    fn new(adc: Adc, exp_pin: AdcInputPin) -> Self {
         ExpressionPedal {
             adc,
             exp_pin,
@@ -211,7 +208,7 @@ impl Inputs {
         gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
         button_pins: ButtonPins,
         adc: Adc,
-        exp_b_pin: FloatingInputPin<Gpio28>,
+        exp_b_pin: AdcInputPin,
     ) -> Self {
         let (b_a, b_d) = match () {
             #[cfg(not(feature = "hw-v1"))]

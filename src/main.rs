@@ -15,7 +15,6 @@ mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use defmt::*;
-    use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
     use fugit::RateExtU32;
@@ -23,14 +22,14 @@ mod app {
     use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
-            adc::Adc,
+            adc::{Adc, AdcPin},
             clocks::init_clocks_and_plls,
             gpio::{
-                pin::bank0::{Gpio0, Gpio1, Gpio25},
-                Function, FunctionSpi, FunctionUart, Pin, PushPullOutput, Uart,
+                bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
+                FunctionSpi, FunctionUart, Pin, PullDown,
             },
             rom_data::reset_to_usb_boot,
-            spi::Spi,
+            spi::{Enabled, Spi},
             uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
             usb::UsbBus,
             Clock, Sio, Watchdog,
@@ -54,10 +53,22 @@ mod app {
 
     type Duration = fugit::TimerDurationU64<1_000_000>;
     type MidiOut = embedded_midi::MidiOut<
-        Writer<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
+        Writer<
+            UART0,
+            (
+                Pin<Gpio0, FunctionUart, PullDown>,
+                Pin<Gpio1, FunctionUart, PullDown>,
+            ),
+        >,
     >;
     type MidiIn = embedded_midi::MidiIn<
-        Reader<UART0, (Pin<Gpio0, Function<Uart>>, Pin<Gpio1, Function<Uart>>)>,
+        Reader<
+            UART0,
+            (
+                Pin<Gpio0, FunctionUart, PullDown>,
+                Pin<Gpio1, FunctionUart, PullDown>,
+            ),
+        >,
     >;
 
     const SYS_HZ: u32 = 125_000_000_u32;
@@ -74,11 +85,20 @@ mod app {
 
     #[local]
     struct Local {
-        led: Pin<Gpio25, PushPullOutput>,
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: Inputs,
-        led_spi: Ws2812<Spi<rp_pico::hal::spi::Enabled, SPI1, 8>>,
+        led_spi: Ws2812<
+            Spi<
+                Enabled,
+                SPI1,
+                (
+                    Pin<Gpio11, FunctionSpi, PullDown>,
+                    Pin<Gpio12, FunctionSpi, PullDown>,
+                    Pin<Gpio10, FunctionSpi, PullDown>,
+                ),
+            >,
+        >,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -108,9 +128,6 @@ mod app {
             &mut resets,
         );
 
-        // Pins
-        let led = pins.led.into_push_pull_output();
-
         // USB
         let usb_bus: &'static _ = cx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
             cx.device.USBCTRL_REGS,
@@ -131,8 +148,8 @@ mod app {
 
         // UART Midi
         let uart_pins = (
-            pins.gpio0.into_mode::<FunctionUart>(),
-            pins.gpio1.into_mode::<FunctionUart>(),
+            pins.gpio0.into_function::<FunctionUart>(),
+            pins.gpio1.into_function::<FunctionUart>(),
         );
         let conf = UartConfig::new(
             HertzU32::from_raw(31250),
@@ -171,15 +188,15 @@ mod app {
 
         // ADC for analog input
         let adc = Adc::new(cx.device.ADC, &mut resets);
-        let exp_pin = pins.gpio28.into_floating_input();
+        let exp_pin = AdcPin::new(pins.gpio28.into_floating_input());
 
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
 
         // These are implicitly used by the spi driver if they are in the correct mode
-        let _spi_sclk = pins.gpio10.into_mode::<FunctionSpi>();
-        let _spi_mosi = pins.gpio11.into_mode::<FunctionSpi>();
-        let _spi_miso = pins.gpio12.into_mode::<FunctionSpi>();
-        let spi = Spi::<_, _, 8>::new(cx.device.SPI1).init(
+        let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
+        let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
+        let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
+        let spi = Spi::<_, _, _, 8u8>::new(cx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
             &mut resets,
             SYS_HZ.Hz(),
             3_000_000u32.Hz(),
@@ -188,7 +205,6 @@ mod app {
 
         let led_spi = Ws2812::new(spi);
 
-        blink::spawn().unwrap();
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
 
@@ -202,7 +218,6 @@ mod app {
                 handlers: crate::handler::Handlers::new(handlers),
             },
             Local {
-                led,
                 uart_midi_out,
                 uart_midi_in,
                 inputs,
@@ -210,17 +225,6 @@ mod app {
             },
             init::Monotonics(mono),
         )
-    }
-
-    #[task(local = [led, state: bool = false])]
-    fn blink(ctx: blink::Context) {
-        *ctx.local.state = !*ctx.local.state;
-        if *ctx.local.state {
-            ctx.local.led.set_high().ok().unwrap();
-        } else {
-            ctx.local.led.set_low().ok().unwrap();
-        }
-        blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
     #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
