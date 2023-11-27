@@ -52,7 +52,7 @@ impl Handler for LiveLooper {
                 self.leds.set_ledring(ledring::Animation::Off, LedRings::B);
                 Actions::new(self.rc500.midi_messages(RC500Action::ClearCurrent()))
             }
-            InputEvent::ExpressionPedal(val) => Actions::new(
+            InputEvent::ExpressionPedalB(val) => Actions::new(
                 self.rc500
                     .midi_messages(RC500Action::CurrentChannelLevel(val)),
             ),

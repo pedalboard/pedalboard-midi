@@ -39,7 +39,7 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
-    ExpressionPedal(Value7),
+    ExpressionPedalB(Value7),
     VolButton(Edge),
     Vol(Value7),
     GainButton(Edge),
@@ -167,7 +167,7 @@ pub struct Inputs {
     button_d: Button<Gpio6>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
-    exp: ExpressionPedal,
+    exp_b: ExpressionPedal,
 }
 
 #[cfg(not(feature = "hw-v1"))]
@@ -182,7 +182,7 @@ pub struct Inputs {
     button_d: Button<Gpio7>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
-    exp: ExpressionPedal,
+    exp_b: ExpressionPedal,
 }
 
 pub struct RotaryPins<DT, CLK, SW>
@@ -211,7 +211,7 @@ impl Inputs {
         gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
         button_pins: ButtonPins,
         adc: Adc,
-        exp_pin: FloatingInputPin<Gpio28>,
+        exp_b_pin: FloatingInputPin<Gpio28>,
     ) -> Self {
         let (b_a, b_d) = match () {
             #[cfg(not(feature = "hw-v1"))]
@@ -233,7 +233,7 @@ impl Inputs {
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
-            exp: ExpressionPedal::new(adc, exp_pin),
+            exp_b: ExpressionPedal::new(adc, exp_b_pin),
         }
     }
 
@@ -250,7 +250,7 @@ impl Inputs {
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| self.exp.update().map(InputEvent::ExpressionPedal))
+            .or_else(|| self.exp_b.update().map(InputEvent::ExpressionPedalB))
             .or(None)
     }
 }
