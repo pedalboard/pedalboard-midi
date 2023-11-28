@@ -11,15 +11,15 @@ use rp_pico::hal::{
     adc::{Adc, AdcPin},
     gpio::{
         bank0::{
-            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio28, Gpio3, Gpio4, Gpio5,
-            Gpio6, Gpio7,
+            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio27, Gpio28, Gpio3, Gpio4,
+            Gpio5, Gpio6, Gpio7,
         },
         FunctionSioInput, Pin, PinId, PullNone, PullUp,
     },
 };
 
 type PullUpInputPin<I> = Pin<I, FunctionSioInput, PullUp>;
-type AdcInputPin = AdcPin<Pin<Gpio28, FunctionSioInput, PullNone>>;
+type AdcInputPin<I> = AdcPin<Pin<I, FunctionSioInput, PullNone>>;
 type Sma = MovAvg<u16, u32, 10>;
 
 use midi_types::Value7;
@@ -36,6 +36,7 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
+    ExpressionPedalA(Value7),
     ExpressionPedalB(Value7),
     VolButton(Edge),
     Vol(Value7),
@@ -113,35 +114,55 @@ where
     }
 }
 
-pub struct ExpressionPedal {
-    current: u8,
+pub struct ExpressionPedals {
     adc: Adc,
-    exp_pin: AdcInputPin,
-    avg: Sma,
+    exp_a_pin: AdcInputPin<Gpio27>,
+    exp_b_pin: AdcInputPin<Gpio28>,
     sample_rate_reduction: u8,
+    exp_a: ExpressionPedal,
+    exp_b: ExpressionPedal,
 }
 
-impl ExpressionPedal {
-    fn new(adc: Adc, exp_pin: AdcInputPin) -> Self {
-        ExpressionPedal {
+impl ExpressionPedals {
+    fn new(adc: Adc, exp_a_pin: AdcInputPin<Gpio27>, exp_b_pin: AdcInputPin<Gpio28>) -> Self {
+        ExpressionPedals {
             adc,
-            exp_pin,
-            current: 0,
-            avg: MovAvg::new(),
+            exp_a_pin,
+            exp_b_pin,
             sample_rate_reduction: 0,
+            exp_a: ExpressionPedal::new(),
+            exp_b: ExpressionPedal::new(),
         }
     }
 
-    fn update(&mut self) -> Option<Value7> {
+    fn update(&mut self) -> (Option<Value7>, Option<Value7>) {
         self.sample_rate_reduction += 1;
         if self.sample_rate_reduction <= 25 {
-            return None;
+            return (None, None);
         }
         self.sample_rate_reduction = 0;
 
-        let pin_adc_counts: u16 = self.adc.read(&mut self.exp_pin).unwrap();
+        let exp_a: u16 = self.adc.read(&mut self.exp_a_pin).unwrap();
+        let exp_b: u16 = self.adc.read(&mut self.exp_b_pin).unwrap();
+        (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
+    }
+}
 
-        let new = (self.avg.feed(pin_adc_counts) >> 5) as u8;
+pub struct ExpressionPedal {
+    current: u8,
+    avg: Sma,
+}
+
+impl ExpressionPedal {
+    fn new() -> Self {
+        ExpressionPedal {
+            current: 0,
+            avg: MovAvg::new(),
+        }
+    }
+
+    fn update(&mut self, value: u16) -> Option<Value7> {
+        let new = (self.avg.feed(value) >> 5) as u8;
 
         if self.current.abs_diff(new) > 2 {
             self.current = new;
@@ -164,7 +185,7 @@ pub struct Inputs {
     button_d: Button<Gpio6>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
-    exp_b: ExpressionPedal,
+    exp_b: ExpressionPedals,
 }
 
 #[cfg(not(feature = "hw-v1"))]
@@ -179,7 +200,7 @@ pub struct Inputs {
     button_d: Button<Gpio7>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
-    exp_b: ExpressionPedal,
+    exp: ExpressionPedals,
 }
 
 pub struct RotaryPins<DT, CLK, SW>
@@ -208,7 +229,8 @@ impl Inputs {
         gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
         button_pins: ButtonPins,
         adc: Adc,
-        exp_b_pin: AdcInputPin,
+        exp_a_pin: AdcInputPin<Gpio27>,
+        exp_b_pin: AdcInputPin<Gpio28>,
     ) -> Self {
         let (b_a, b_d) = match () {
             #[cfg(not(feature = "hw-v1"))]
@@ -230,11 +252,12 @@ impl Inputs {
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
-            exp_b: ExpressionPedal::new(adc, exp_b_pin),
+            exp: ExpressionPedals::new(adc, exp_a_pin, exp_b_pin),
         }
     }
 
     pub fn update(&mut self) -> Option<InputEvent> {
+        let (exp_a, exp_b) = self.exp.update();
         self.button_a
             .update()
             .map(InputEvent::ButtonA)
@@ -247,7 +270,8 @@ impl Inputs {
             .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| self.exp_b.update().map(InputEvent::ExpressionPedalB))
+            .or_else(|| exp_a.map(InputEvent::ExpressionPedalA))
+            .or_else(|| exp_b.map(InputEvent::ExpressionPedalB))
             .or(None)
     }
 }

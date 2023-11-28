@@ -188,9 +188,10 @@ mod app {
 
         // ADC for analog input
         let adc = Adc::new(cx.device.ADC, &mut resets);
-        let exp_pin = AdcPin::new(pins.gpio28.into_floating_input());
+        let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input());
+        let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input());
 
-        let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_pin);
+        let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
         // These are implicitly used by the spi driver if they are in the correct mode
         let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
