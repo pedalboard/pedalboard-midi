@@ -185,7 +185,7 @@ pub struct Inputs {
     button_d: Button<Gpio6>,
     button_e: Button<Gpio4>,
     button_f: Button<Gpio3>,
-    exp_b: ExpressionPedals,
+    exp: ExpressionPedals,
 }
 
 #[cfg(not(feature = "hw-v1"))]
