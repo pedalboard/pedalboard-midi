@@ -70,6 +70,17 @@ mod app {
             ),
         >,
     >;
+    type LedSpi = Ws2812<
+        Spi<
+            Enabled,
+            SPI1,
+            (
+                Pin<Gpio11, FunctionSpi, PullDown>,
+                Pin<Gpio12, FunctionSpi, PullDown>,
+                Pin<Gpio10, FunctionSpi, PullDown>,
+            ),
+        >,
+    >;
 
     const SYS_HZ: u32 = 125_000_000_u32;
 
@@ -88,17 +99,7 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: Inputs,
-        led_spi: Ws2812<
-            Spi<
-                Enabled,
-                SPI1,
-                (
-                    Pin<Gpio11, FunctionSpi, PullDown>,
-                    Pin<Gpio12, FunctionSpi, PullDown>,
-                    Pin<Gpio10, FunctionSpi, PullDown>,
-                ),
-            >,
-        >,
+        led_spi: LedSpi,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -201,7 +202,7 @@ mod app {
             &mut resets,
             SYS_HZ.Hz(),
             3_000_000u32.Hz(),
-            &MODE_0,
+            MODE_0,
         );
 
         let led_spi = Ws2812::new(spi);
