@@ -26,7 +26,7 @@ build: ## build
 	cargo build --release
 
 lint: ## lint source code
-	cargo clippy
+	cargo clippy --all-features
 
 debug: ## build and run by installing uf2 on the mounted pico
 	cargo run --config 'runner = "probe-run --chip RP2040"' --release
