@@ -15,12 +15,14 @@ pub enum Animation {
 
 #[derive(Copy, Clone)]
 pub struct LedRing {
+    rotation: u8,
     animation: Animation,
 }
 
 impl LedRing {
-    pub fn new() -> Self {
+    pub fn new(rotation: u8) -> Self {
         LedRing {
+            rotation,
             animation: Animation::Loudness(-0.),
         }
     }
@@ -39,7 +41,7 @@ impl LedRing {
                 for i in 0..LEDS_PER_RING {
                     let reference = crate::loudness::loudness_step(i);
                     if lufs >= reference {
-                        data[(LEDS_PER_RING - i) % LEDS_PER_RING] =
+                        data[(self.rotation as usize + LEDS_PER_RING - i) % LEDS_PER_RING] =
                             crate::loudness::loudness_color(reference);
                     }
                 }
@@ -65,6 +67,6 @@ impl LedRing {
 
 impl Default for LedRing {
     fn default() -> Self {
-        Self::new()
+        Self::new(0)
     }
 }

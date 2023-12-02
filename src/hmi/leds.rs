@@ -47,7 +47,14 @@ impl Leds {
         Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
-            ledrings: [LedRing::new(); NUM_LED_RINGS],
+            ledrings: [
+                LedRing::default(),
+                LedRing::new(6),
+                LedRing::default(),
+                LedRing::new(6),
+                LedRing::default(),
+                LedRing::new(6),
+            ],
         }
     }
     pub fn animate(&mut self) -> LedData {
