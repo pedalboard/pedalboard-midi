@@ -61,8 +61,8 @@ impl Handler for Test {
                 Actions::none()
             }
             InputEvent::GainButton(Activate) => {
+                // send loudness value
                 let mut messages: MidiMessages = MidiMessages::none();
-                self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
                 messages.push(midi_types::MidiMessage::NoteOff(
                     midi_types::Channel::C15,
                     midi_types::Note::C1,
