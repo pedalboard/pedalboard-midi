@@ -303,6 +303,7 @@ mod app {
                                 midi_types::Note::C1m,
                                 ..,
                             ) => {
+                                debug!("reset to usb boot");
                                 reset_to_usb_boot(0, 0);
                             }
                             _ => {

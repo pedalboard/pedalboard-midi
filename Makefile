@@ -36,7 +36,7 @@ device:
 
 bootsel: device ## restart the RP2040 in bootsel mode
 	-aconnect -d 128:1 16:0 
-	amidi -S '8F 00 00' -p "$(DEVICE)"
+	amidi -S '8F 0C 0F' -p "$(DEVICE)"
 	-aconnect 128:1 16:0
 
 install-latest:
