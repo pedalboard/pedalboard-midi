@@ -56,36 +56,18 @@ impl Leds {
 
         for (led, a) in self.animations.into_iter().enumerate() {
             match a {
-                Animation::On(c) => {
-                    data[led].r = c.g;
-                    data[led].g = c.r;
-                    data[led].b = c.b;
-                }
-                Animation::Off => {
-                    data[led].r = 0;
-                    data[led].g = 0;
-                    data[led].b = 0;
-                }
-                Animation::Toggle(c, true) => {
-                    data[led].r = c.g;
-                    data[led].g = c.r;
-                    data[led].b = c.b;
-                }
-                Animation::Toggle(_, false) => {
-                    data[led].r = 0;
-                    data[led].g = 0;
-                    data[led].b = 0;
-                }
+                Animation::On(c) => data[led] = c,
+                Animation::Off => data[led] = RGB8::default(),
+                Animation::Toggle(c, true) => data[led] = c,
+                Animation::Toggle(_, false) => data[led] = RGB8::default(),
                 Animation::Flash(c) => {
-                    data[led].r = c.g;
-                    data[led].g = c.r;
-                    data[led].b = c.b;
+                    data[led] = c;
                     self.animations[led] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
                     let c = gradient.eval_rational(self.sawtooth.value, self.sawtooth.max);
-                    data[led].r = c.g;
-                    data[led].g = c.r;
+                    data[led].r = c.r;
+                    data[led].g = c.g;
                     data[led].b = c.b;
                 }
             };
