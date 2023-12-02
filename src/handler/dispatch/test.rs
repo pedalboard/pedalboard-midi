@@ -1,4 +1,4 @@
-use crate::handler::{Actions, Handler};
+use crate::handler::{Actions, Handler, MidiMessages};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use crate::hmi::ledring;
 use crate::hmi::leds::{Animation::On, Led, LedRings, Leds};
@@ -61,8 +61,14 @@ impl Handler for Test {
                 Actions::none()
             }
             InputEvent::GainButton(Activate) => {
+                let mut messages: MidiMessages = MidiMessages::none();
                 self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
-                Actions::none()
+                messages.push(midi_types::MidiMessage::NoteOff(
+                    midi_types::Channel::C15,
+                    midi_types::Note::C1,
+                    midi_types::Value7::new(50u8),
+                ));
+                Actions::new(messages)
             }
             InputEvent::ExpressionPedalA(v) => {
                 let uv: u8 = v.into();
