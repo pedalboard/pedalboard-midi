@@ -3,24 +3,24 @@ use crate::hmi::ledring::LEDS_PER_RING;
 use colorous::Gradient;
 use smart_leds::RGB8;
 
-const NUM_LEDS: usize = 4;
-const NUM_LED_RINGS: usize = 6;
+const NUM_LEDS: usize = 2;
+const NUM_LED_RINGS: usize = 8;
 const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {
     Mode,
     Mon,
-    L48V,
-    Clip,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum LedRings {
+    Gain,
     F,
     C,
     B,
     E,
+    Volume,
     D,
     A,
 }
@@ -48,9 +48,11 @@ impl Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
             ledrings: [
+                LedRing::new(6),
                 LedRing::default(),
                 LedRing::new(6),
                 LedRing::default(),
+                LedRing::new(6),
                 LedRing::new(6),
                 LedRing::default(),
                 LedRing::new(6),

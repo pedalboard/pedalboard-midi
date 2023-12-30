@@ -70,7 +70,9 @@ impl Handler for LiveEffect {
                 let v: u8 = val.into();
                 let c = colorous::REDS.eval_rational(v as usize, 127);
                 let color = RGB8::new(c.r, c.g, c.b);
-                self.leds.set(On(color), Led::Clip);
+                // FIXME improve level display
+                self.leds
+                    .set_ledring(ledring::Animation::On(color), LedRings::Gain);
                 Actions::new(self.audio.midi_messages(PAAction::OutputLevel(val)))
             }
             _ => Actions::none(),

@@ -5,10 +5,7 @@ use heapless::Vec;
 use midi_types::{MidiMessage, Note};
 use smart_leds::colors::*;
 
-use crate::hmi::leds::{
-    Animation::{Flash, On},
-    Led, LedRings, Leds,
-};
+use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 
 const MAX_MIDI_MESSAGES: usize = 8;
 type MidiMessageVec = Vec<MidiMessage, MAX_MIDI_MESSAGES>;
@@ -102,10 +99,10 @@ where
                 let v: u8 = vel.into();
                 let lufs = -(v as f32);
                 debug!("loudness {}", lufs);
-                let color = crate::loudness::loudness_color(lufs);
-                self.leds()
-                    .set_ledring(super::hmi::ledring::Animation::Loudness(lufs), LedRings::A);
-                self.leds().set(On(color), Led::L48V);
+                self.leds().set_ledring(
+                    super::hmi::ledring::Animation::Loudness(lufs),
+                    LedRings::Volume,
+                );
             }
             _ => {
                 // MIDI-in indicator
