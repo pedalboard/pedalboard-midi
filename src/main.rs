@@ -140,7 +140,7 @@ mod app {
 
         let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
-            .manufacturer("laenzlinger")
+            .manufacturer("github.com/pedalboard")
             .product("pedalboard-midi")
             .serial_number("0.0.1")
             .device_class(USB_AUDIO_CLASS)
