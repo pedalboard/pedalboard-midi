@@ -104,7 +104,7 @@ impl Handler for Test {
                 messages.push(midi_types::MidiMessage::NoteOff(
                     midi_types::Channel::C15,
                     midi_types::Note::C1,
-                    midi_types::Value7::new(26u8),
+                    midi_types::Value7::new(80u8),
                 ));
                 Actions::new(messages)
             }
