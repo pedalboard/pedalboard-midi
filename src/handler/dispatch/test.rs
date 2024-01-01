@@ -13,6 +13,14 @@ impl Test {
     pub fn new() -> Self {
         let mut leds = Leds::default();
         leds.set(On(BLUE), Led::Mode);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::A);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::B);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::C);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::D);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::E);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::F);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::Vol);
+        leds.set_ledring(ledring::Animation::Loudness(-0.), LedRings::Gain);
         Test { leds }
     }
 }
