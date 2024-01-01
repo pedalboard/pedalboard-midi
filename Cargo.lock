@@ -487,7 +487,6 @@ dependencies = [
  "rotary-encoder-embedded",
  "rp-pico",
  "rp2040-hal",
- "rp2040-monotonic",
  "smart-leds",
  "usb-device",
  "usbd-midi",
@@ -614,6 +613,7 @@ dependencies = [
  "rand_core",
  "rp2040-hal-macros",
  "rp2040-pac",
+ "rtic-monotonic",
  "usb-device",
  "vcell",
  "void",
@@ -627,17 +627,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.38",
-]
-
-[[package]]
-name = "rp2040-monotonic"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "351ef3955b606b13b597382de0743392075772335586fb630d93cf8d1d5f69e3"
-dependencies = [
- "fugit",
- "rp2040-pac",
- "rtic-monotonic",
 ]
 
 [[package]]

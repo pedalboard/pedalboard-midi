@@ -19,7 +19,6 @@ mod app {
     use fugit::HertzU32;
     use fugit::RateExtU32;
 
-    use rp2040_monotonic::Rp2040Monotonic;
     use rp_pico::{
         hal::{
             adc::{Adc, AdcPin},
@@ -30,6 +29,7 @@ mod app {
             },
             rom_data::reset_to_usb_boot,
             spi::{Enabled, Spi},
+            timer::{monotonic::Monotonic, Alarm0, Timer},
             uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
             usb::UsbBus,
             Clock, Sio, Watchdog,
@@ -85,7 +85,7 @@ mod app {
     const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
-    type Rp2040Mono = Rp2040Monotonic;
+    type MyMono = Monotonic<Alarm0>;
 
     #[shared]
     struct Shared {
@@ -119,8 +119,9 @@ mod app {
         .ok()
         .unwrap();
 
-        let timer = cx.device.TIMER;
-        let mono = Rp2040Monotonic::new(timer);
+        let mut timer = Timer::new(cx.device.TIMER, &mut resets, &clocks);
+        let mono = Monotonic::new(timer, timer.alarm_0().unwrap());
+
         let sio = Sio::new(cx.device.SIO);
         let pins = Pins::new(
             cx.device.IO_BANK0,
