@@ -38,8 +38,9 @@ mod app {
         clocks::init_clocks_and_plls,
         gpio::{
             bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
-            FunctionSpi, FunctionUart, Pin, Pins, PullDown,
+            FunctionI2C, FunctionSpi, FunctionUart, Pin, Pins, PullDown,
         },
+        i2c::I2C,
         pac::SPI1,
         pac::UART0,
         rom_data::reset_to_usb_boot,
@@ -49,6 +50,7 @@ mod app {
         usb::UsbBus,
         Clock, Sio, Watchdog,
     };
+    use sh1106::mode::GraphicsMode;
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::prelude::UsbDeviceState;
     use usb_device::{
@@ -61,6 +63,13 @@ mod app {
     use usbd_midi::data::usb_midi::usb_midi_event_packet::UsbMidiEventPacket;
     use usbd_midi::midi_device::MidiClass;
     use ws2812_spi::Ws2812;
+
+    use embedded_graphics::{
+        mono_font::{ascii::FONT_6X10, MonoTextStyle},
+        pixelcolor::BinaryColor,
+        prelude::*,
+        text::Text,
+    };
 
     type Duration = fugit::TimerDurationU64<1_000_000>;
     type MidiOut = embedded_midi::MidiOut<
@@ -178,6 +187,7 @@ mod app {
         let uart_midi_out = MidiOut::new(tx);
         let uart_midi_in = MidiIn::new(rx);
 
+        // Digital input
         let vol_pins = RotaryPins {
             clk: pins.gpio16.into_pull_up_input(),
             dt: pins.gpio17.into_pull_up_input(),
@@ -206,7 +216,7 @@ mod app {
 
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
-        // These are implicitly used by the spi driver if they are in the correct mode
+        // LED SPI
         let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
         let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
@@ -216,9 +226,35 @@ mod app {
             3_000_000u32.Hz(),
             MODE_0,
         );
-
         let led_spi = Ws2812::new(spi);
 
+        // I2C displays
+        let i2c_sda = pins.gpio24.into_function::<FunctionI2C>();
+        let i2c_scl = pins.gpio25.into_function::<FunctionI2C>();
+        let i2c = I2C::i2c0(
+            cx.device.I2C0,
+            i2c_sda,
+            i2c_scl,
+            400.kHz(),
+            &mut resets,
+            &clocks.system_clock,
+        );
+
+        let mut disp: GraphicsMode<_> = sh1106::Builder::new().connect_i2c(i2c).into();
+
+        disp.init().unwrap();
+        disp.flush().unwrap();
+
+        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+
+        // Create a text at position (20, 30) and draw it using the previously defined style
+        Text::new("Hello Rust!", Point::new(20, 30), style)
+            .draw(&mut disp)
+            .unwrap();
+
+        disp.flush().unwrap();
+
+        // spawn tasks
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
 
