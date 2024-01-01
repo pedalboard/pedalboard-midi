@@ -37,6 +37,9 @@ smart-leds = "0.3.0"
 ws2812-spi = "0.4.0"
 colorous = {version = "1.0.12", default-features = false }
 
+[patch.crates-io]
+rp2040-hal = { git = "https://github.com/pedalboard/rp-hal", branch = "debug-xosc" }
+
 # [dev-dependencies]
 
 [features]

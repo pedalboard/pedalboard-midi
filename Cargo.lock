@@ -596,8 +596,7 @@ dependencies = [
 [[package]]
 name = "rp2040-hal"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08f21deadb5f29f05be9e665049c9c6d6385c6ed3437574c995658a041f71453"
+source = "git+https://github.com/pedalboard/rp-hal?branch=debug-xosc#4a1e3ce4d9ec84bae67a6f22152bc48aae9b486c"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -623,13 +622,11 @@ dependencies = [
 [[package]]
 name = "rp2040-hal-macros"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86479063e497efe1ae81995ef9071f54fd1c7427e04d6c5b84cde545ff672a5e"
+source = "git+https://github.com/pedalboard/rp-hal?branch=debug-xosc#4a1e3ce4d9ec84bae67a6f22152bc48aae9b486c"
 dependencies = [
- "cortex-m-rt",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.38",
 ]
 
 [[package]]
