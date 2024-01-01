@@ -1,5 +1,5 @@
 use crate::handler::{Actions, Handler, MidiMessages};
-use crate::hmi::inputs::{Edge::Activate, InputEvent};
+use crate::hmi::inputs::{Edge::Activate, Edge::Deactivate, InputEvent};
 use crate::hmi::ledring;
 use crate::hmi::leds::{Animation::On, Led, LedRings, Leds};
 
@@ -44,11 +44,41 @@ impl Handler for Test {
                 self.leds.set_ledring(ledring::Animation::Off, LedRings::F);
                 Actions::none()
             }
+            InputEvent::ButtonA(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::A);
+                Actions::none()
+            }
+            InputEvent::ButtonB(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::B);
+                Actions::none()
+            }
+            InputEvent::ButtonC(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::C);
+                Actions::none()
+            }
+            InputEvent::ButtonD(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::D);
+                Actions::none()
+            }
+            InputEvent::ButtonE(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::E);
+                Actions::none()
+            }
+            InputEvent::ButtonF(Deactivate) => {
+                self.leds
+                    .set_ledring(ledring::Animation::Loudness(-0.), LedRings::F);
+                Actions::none()
+            }
             InputEvent::Vol(v) => {
                 let uv: u8 = v.into();
                 self.leds.set_ledring(
                     ledring::Animation::Loudness(-100.0 + (uv as f32) * 6.0),
-                    LedRings::D,
+                    LedRings::Vol,
                 );
                 Actions::none()
             }
@@ -56,7 +86,7 @@ impl Handler for Test {
                 let uv: u8 = v.into();
                 self.leds.set_ledring(
                     ledring::Animation::Loudness(-100.0 + (uv as f32) * 6.0),
-                    LedRings::F,
+                    LedRings::Gain,
                 );
                 Actions::none()
             }
@@ -74,7 +104,7 @@ impl Handler for Test {
                 let uv: u8 = v.into();
                 self.leds.set_ledring(
                     ledring::Animation::Loudness(-100.0 + (uv as f32) * 6.0),
-                    LedRings::A,
+                    LedRings::D,
                 );
                 Actions::none()
             }
@@ -82,7 +112,7 @@ impl Handler for Test {
                 let uv: u8 = v.into();
                 self.leds.set_ledring(
                     ledring::Animation::Loudness(-100.0 + (uv as f32) * 6.0),
-                    LedRings::C,
+                    LedRings::F,
                 );
                 Actions::none()
             }

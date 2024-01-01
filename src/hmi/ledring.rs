@@ -23,7 +23,7 @@ impl LedRing {
     pub fn new(rotation: u8) -> Self {
         LedRing {
             rotation,
-            animation: Animation::Loudness(-0.),
+            animation: Animation::Off,
         }
     }
     pub fn animate(&mut self) -> LedData {

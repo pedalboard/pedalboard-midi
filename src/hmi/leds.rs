@@ -20,7 +20,7 @@ pub enum LedRings {
     C,
     B,
     E,
-    Volume,
+    Vol,
     D,
     A,
 }

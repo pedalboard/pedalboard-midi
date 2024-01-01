@@ -101,7 +101,7 @@ where
                 debug!("loudness {}", lufs);
                 self.leds().set_ledring(
                     super::hmi::ledring::Animation::Loudness(lufs),
-                    LedRings::Volume,
+                    LedRings::Vol,
                 );
             }
             _ => {
