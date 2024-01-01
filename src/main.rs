@@ -8,35 +8,46 @@ mod loudness;
 
 use defmt_rtt as _;
 use panic_probe as _;
+
 use rtic::app;
 
-#[app(device = rp_pico::hal::pac, dispatchers = [SW0_IRQ])]
+/// The linker will place this boot block at the start of our program image. We
+/// need this to help the ROM bootloader get our code up and running.
+/// Note: This boot block is not necessary when using a rp-hal based BSP
+/// as the BSPs already perform this step.
+#[link_section = ".boot2"]
+#[used]
+pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_GENERIC_03H;
+
+/// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
+/// if your board has a different frequency
+const XTAL_FREQ_HZ: u32 = 12_000_000u32;
+
+#[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
+    use crate::XTAL_FREQ_HZ;
     use defmt::*;
     use embedded_hal::spi::MODE_0;
     use fugit::HertzU32;
     use fugit::RateExtU32;
 
-    use rp_pico::{
-        hal::{
-            adc::{Adc, AdcPin},
-            clocks::init_clocks_and_plls,
-            gpio::{
-                bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
-                FunctionSpi, FunctionUart, Pin, PullDown,
-            },
-            rom_data::reset_to_usb_boot,
-            spi::{Enabled, Spi},
-            timer::{monotonic::Monotonic, Alarm0, Timer},
-            uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
-            usb::UsbBus,
-            Clock, Sio, Watchdog,
+    use rp2040_hal::{
+        adc::{Adc, AdcPin},
+        clocks::init_clocks_and_plls,
+        gpio::{
+            bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
+            FunctionSpi, FunctionUart, Pin, Pins, PullDown,
         },
         pac::SPI1,
         pac::UART0,
-        Pins,
+        rom_data::reset_to_usb_boot,
+        spi::{Enabled, Spi},
+        timer::{monotonic::Monotonic, Alarm0, Timer},
+        uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
+        usb::UsbBus,
+        Clock, Sio, Watchdog,
     };
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::prelude::UsbDeviceState;
@@ -108,7 +119,7 @@ mod app {
         let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
-            rp_pico::XOSC_CRYSTAL_FREQ,
+            XTAL_FREQ_HZ,
             cx.device.XOSC,
             cx.device.CLOCKS,
             cx.device.PLL_SYS,

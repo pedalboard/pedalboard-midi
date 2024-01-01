@@ -485,7 +485,7 @@ dependencies = [
  "nb 1.1.0",
  "panic-probe",
  "rotary-encoder-embedded",
- "rp-pico",
+ "rp2040-boot2",
  "rp2040-hal",
  "smart-leds",
  "usb-device",
@@ -571,23 +571,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rp-pico"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6341771e6f8e5d130b2b3cbc23435b7847761adf198af09f4b2a60407d43bd56"
-dependencies = [
- "cortex-m-rt",
- "fugit",
- "rp2040-boot2",
- "rp2040-hal",
- "usb-device",
-]
-
-[[package]]
 name = "rp2040-boot2"
-version = "0.3.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c92f344f63f950ee36cf4080050e4dce850839b9175da38f9d2ffb69b4dbb21"
+checksum = "3c773ec49b836077aa144b58dc7654a243e1eecdb6cf0d25361ae7c7600fabd8"
 dependencies = [
  "crc-any",
 ]

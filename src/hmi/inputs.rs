@@ -7,7 +7,7 @@ use embedded_hal::adc::OneShot;
 use embedded_hal::digital::v2::InputPin;
 use movavg::MovAvg;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
-use rp_pico::hal::{
+use rp2040_hal::{
     adc::{Adc, AdcPin},
     gpio::{
         bank0::{
