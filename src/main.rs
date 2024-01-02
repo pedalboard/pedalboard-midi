@@ -19,8 +19,7 @@ use rtic::app;
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_GENERIC_03H;
 
-/// External high-speed crystal on the Raspberry Pi Pico board is 12 MHz. Adjust
-/// if your board has a different frequency
+/// External crystal on the pedalboard-hw board is 12 MHz.
 const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
