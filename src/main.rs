@@ -27,15 +27,13 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
-    use crate::XTAL_FREQ_HZ;
     use defmt::*;
     use embedded_hal::spi::MODE_0;
-    use fugit::HertzU32;
-    use fugit::RateExtU32;
 
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
+        fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
             bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
             FunctionI2C, FunctionSpi, FunctionUart, Pin, Pins, PullDown,
@@ -52,16 +50,21 @@ mod app {
     };
     use sh1106::mode::GraphicsMode;
     use smart_leds::{brightness, SmartLedsWrite};
-    use usb_device::prelude::UsbDeviceState;
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
+        prelude::UsbDeviceState,
     };
-    use usbd_midi::data::usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS};
-    use usbd_midi::data::usb_midi::cable_number::CableNumber::Cable0;
-    use usbd_midi::data::usb_midi::midi_packet_reader::MidiPacketBufferReader;
-    use usbd_midi::data::usb_midi::usb_midi_event_packet::UsbMidiEventPacket;
-    use usbd_midi::midi_device::MidiClass;
+    use usbd_midi::{
+        data::{
+            usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS},
+            usb_midi::{
+                cable_number::CableNumber::Cable0, midi_packet_reader::MidiPacketBufferReader,
+                usb_midi_event_packet::UsbMidiEventPacket,
+            },
+        },
+        midi_device::MidiClass,
+    };
     use ws2812_spi::Ws2812;
 
     use embedded_graphics::{
@@ -71,7 +74,7 @@ mod app {
         text::Text,
     };
 
-    type Duration = fugit::TimerDurationU64<1_000_000>;
+    type Duration = TimerDurationU64<1_000_000>;
     type MidiOut = embedded_midi::MidiOut<
         Writer<
             UART0,
@@ -128,7 +131,7 @@ mod app {
         let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
-            XTAL_FREQ_HZ,
+            crate::XTAL_FREQ_HZ,
             cx.device.XOSC,
             cx.device.CLOCKS,
             cx.device.PLL_SYS,
