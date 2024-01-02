@@ -24,7 +24,6 @@ rp2040-boot2 = "0.3.0"
 usb-device = { version="0.2.9", features = ["defmt"] }
 usbd-midi = { git = "https://github.com/rust-midi/usbd-midi", branch = "main" }
 nb = { version="1.1.0" }
-fugit = "0.3"
 embedded-midi = { git = "https://github.com/rust-midi/embedded-midi", branch = "main" }
 midi-types = { version = "0.1.7", features = ["defmt"] }
 debouncr = "0.2.2"

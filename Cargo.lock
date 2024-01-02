@@ -497,7 +497,6 @@ dependencies = [
  "defmt-rtt",
  "embedded-hal 0.2.7",
  "embedded-midi",
- "fugit",
  "heapless 0.8.0",
  "midi-types",
  "movavg",
