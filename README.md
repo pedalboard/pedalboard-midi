@@ -32,7 +32,7 @@ cargo install elf2uf2-rs
 cargo install probe-rs --features cli
 ```
 
-## Deployment (from Linux Host)
+## Installation (from Linux Host)
 
 The firmware supports No-Button-Boot (nbb) bootsel mode via USB midi interface.
 
@@ -40,5 +40,5 @@ see `make bootsel` for how to send a midi message to reset the device into
 bootsel mode.
 
 1. Connect USB C cable to the Pico
-2. Run `make deploy`
+2. Run `make uf2 install`
 3. Remove USB C cable from the Pico
