@@ -1,5 +1,7 @@
 # Pedalboard Midi Controller
 
+THIS BRANCH is for V2 Boards. Its not planned to be further maintained
+
 The firmware is currently in avery prototype state and specific to a use case:
 
 ```txt
