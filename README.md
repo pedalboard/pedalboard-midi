@@ -29,6 +29,7 @@ rustup target add thumbv6m-none-eabi
 cargo install flip-link
 sudo apt-get install libudev-dev
 cargo install elf2uf2-rs
+cargo install probe-rs --features cli
 ```
 
 ## Deployment (from Linux Host)
