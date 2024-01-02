@@ -48,16 +48,21 @@ mod app {
         Clock, Sio, Watchdog,
     };
     use smart_leds::{brightness, SmartLedsWrite};
-    use usb_device::prelude::UsbDeviceState;
     use usb_device::{
         class_prelude::UsbBusAllocator,
         device::{UsbDeviceBuilder, UsbVidPid},
+        prelude::UsbDeviceState,
     };
-    use usbd_midi::data::usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS};
-    use usbd_midi::data::usb_midi::cable_number::CableNumber::Cable0;
-    use usbd_midi::data::usb_midi::midi_packet_reader::MidiPacketBufferReader;
-    use usbd_midi::data::usb_midi::usb_midi_event_packet::UsbMidiEventPacket;
-    use usbd_midi::midi_device::MidiClass;
+    use usbd_midi::{
+        data::{
+            usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS},
+            usb_midi::{
+                cable_number::CableNumber::Cable0, midi_packet_reader::MidiPacketBufferReader,
+                usb_midi_event_packet::UsbMidiEventPacket,
+            },
+        },
+        midi_device::MidiClass,
+    };
     use ws2812_spi::Ws2812;
 
     type Duration = TimerDurationU64<1_000_000>;
