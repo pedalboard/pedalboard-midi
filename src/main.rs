@@ -11,9 +11,9 @@
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
-
 use defmt_rtt as _;
 use panic_probe as _;
+use sh1106::mode::GraphicsMode;
 // Some traits we need
 
 // Alias for our HAL crate
@@ -28,6 +28,13 @@ use hal::fugit::RateExtU32;
 use hal::{
     gpio::{FunctionI2C, Pin, PinState, PullUp},
     pac,
+};
+
+use embedded_graphics::{
+    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    pixelcolor::BinaryColor,
+    prelude::*,
+    text::Text,
 };
 
 /// The linker will place this boot block at the start of our program image. We
@@ -81,23 +88,38 @@ fn main() -> ! {
     );
 
     defmt::info!("starting");
-    // Configure two pins as being I²C, not GPIO
-    let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
-    let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
+    // Configure two pins as being I²C
+
+    // let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
+    // let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
+
+    let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio8.reconfigure(); // RX on Header J12
+    let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio9.reconfigure(); // TX on Header J12
+
+    let i2c = hal::I2C::i2c0(
+        pac.I2C0,
+        sda_pin,
+        scl_pin,
+        400.kHz(),
+        &mut pac.RESETS,
+        &clocks.system_clock,
+    );
+
+    let mut disp: GraphicsMode<_> = sh1106::Builder::new().connect_i2c(i2c).into();
+
+    disp.init().unwrap();
+    disp.flush().unwrap();
+
+    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+
+    // Create a text at position (20, 30) and draw it using the previously defined style
+    Text::new("Hello Rust!", Point::new(20, 30), style)
+        .draw(&mut disp)
+        .unwrap();
+
+    disp.flush().unwrap();
 
     /*
-        // Create the I²C drive, using the two pre-configured pins. This will fail
-        // at compile time if the pins are in the wrong mode, or if this I²C
-        // peripheral isn't available on these pins!
-        let mut i2c = hal::I2C::i2c0(
-            pac.I2C0,
-            sda_pin,
-            scl_pin, // Try `not_an_scl_pin` here
-            400.kHz(),
-            &mut pac.RESETS,
-            &clocks.system_clock,
-        );
-
         // Scan for devices on the bus by attempting to read from them
         use embedded_hal::prelude::_embedded_hal_blocking_i2c_Read;
         for i in 0..=127 {
@@ -109,14 +131,12 @@ fn main() -> ! {
                 defmt::info!("Device found at address {:?}", i);
             }
         }
-        // Write three bytes to the I²C device with 7-bit address 0x2C
-        //    i2c.write(0x2c, &[1, 2, 3]).unwrap();
-
-        // Demo finish - just loop until reset
-
     */
+    // Write three bytes to the I²C device with 7-bit address 0x2C
+    //   i2c.write(0x3c, &[1, 2, 3]).unwrap();
 
-    defmt::info!("Device not found");
+    // Demo finish - just loop until reset
+    defmt::info!("Display should show Hello Rust now");
     loop {
         cortex_m::asm::wfi();
     }
