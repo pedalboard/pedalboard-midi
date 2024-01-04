@@ -90,11 +90,11 @@ fn main() -> ! {
     defmt::info!("starting");
     // Configure two pins as being I²C
 
-    // let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
-    // let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
+    let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
+    let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
 
-    let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio8.reconfigure(); // RX on Header J12
-    let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio9.reconfigure(); // TX on Header J12
+    //let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio8.reconfigure(); // RX on Header J12
+    //let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio9.reconfigure(); // TX on Header J12
 
     let i2c = hal::I2C::i2c0(
         pac.I2C0,
