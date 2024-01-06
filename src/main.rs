@@ -72,6 +72,7 @@ mod app {
     );
     type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
     type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
+
     const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
@@ -94,37 +95,37 @@ mod app {
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
-    fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
-        let mut resets = cx.device.RESETS;
-        let mut watchdog = Watchdog::new(cx.device.WATCHDOG);
+    fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
+        let mut resets = ctx.device.RESETS;
+        let mut watchdog = Watchdog::new(ctx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
             crate::XTAL_FREQ_HZ,
-            cx.device.XOSC,
-            cx.device.CLOCKS,
-            cx.device.PLL_SYS,
-            cx.device.PLL_USB,
+            ctx.device.XOSC,
+            ctx.device.CLOCKS,
+            ctx.device.PLL_SYS,
+            ctx.device.PLL_USB,
             &mut resets,
             &mut watchdog,
         )
         .ok()
         .unwrap();
 
-        let mut timer = Timer::new(cx.device.TIMER, &mut resets, &clocks);
+        let mut timer = Timer::new(ctx.device.TIMER, &mut resets, &clocks);
         let mono = Monotonic::new(timer, timer.alarm_0().unwrap());
 
-        let sio = Sio::new(cx.device.SIO);
+        let sio = Sio::new(ctx.device.SIO);
         let pins = Pins::new(
-            cx.device.IO_BANK0,
-            cx.device.PADS_BANK0,
+            ctx.device.IO_BANK0,
+            ctx.device.PADS_BANK0,
             sio.gpio_bank0,
             &mut resets,
         );
 
         // USB
-        let usb_bus: &'static _ = cx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
-            cx.device.USBCTRL_REGS,
-            cx.device.USBCTRL_DPRAM,
+        let usb_bus: &'static _ = ctx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
+            ctx.device.USBCTRL_REGS,
+            ctx.device.USBCTRL_DPRAM,
             clocks.usb_clock,
             true,
             &mut resets,
@@ -150,7 +151,7 @@ mod app {
             None,
             StopBits::One,
         );
-        let uart = UartPeripheral::new(cx.device.UART0, uart_pins, &mut resets)
+        let uart = UartPeripheral::new(ctx.device.UART0, uart_pins, &mut resets)
             .enable(conf, clocks.peripheral_clock.freq())
             .unwrap();
         let (mut rx, tx) = uart.split();
@@ -181,7 +182,7 @@ mod app {
         );
 
         // ADC for analog input
-        let adc = Adc::new(cx.device.ADC, &mut resets);
+        let adc = Adc::new(ctx.device.ADC, &mut resets);
         let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input());
         let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input());
 
@@ -191,7 +192,7 @@ mod app {
         let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
         let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
-        let spi = Spi::<_, _, _, 8u8>::new(cx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
+        let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
             &mut resets,
             SYS_HZ.Hz(),
             3_000_000u32.Hz(),
@@ -203,7 +204,7 @@ mod app {
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
         let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
         let i2c = I2C::i2c0(
-            cx.device.I2C0,
+            ctx.device.I2C0,
             sda_pin,
             scl_pin,
             400.kHz(),
@@ -293,9 +294,9 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
-    fn usb_rx(mut cx: usb_rx::Context) {
-        cx.shared.usb_dev.lock(|usb_dev| {
-            cx.shared.usb_midi.lock(|usb_midi| {
+    fn usb_rx(mut ctx: usb_rx::Context) {
+        ctx.shared.usb_dev.lock(|usb_dev| {
+            ctx.shared.usb_midi.lock(|usb_midi| {
                 // Check for new data
                 if !usb_dev.poll(&mut [usb_midi]) {
                     return;
@@ -315,7 +316,7 @@ mod app {
                                 reset_to_usb_boot(0, 0);
                             }
                             _ => {
-                                cx.shared.handlers.lock(|handlers| {
+                                ctx.shared.handlers.lock(|handlers| {
                                     handlers.process_midi_input(packet.message);
                                 });
                             }
