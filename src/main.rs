@@ -235,14 +235,16 @@ mod app {
             &clocks.system_clock,
         );
 
-        let mut display: sh1107::mode::GraphicsMode<_> = sh1107::Builder::new()
+        let mut driver: sh1107::mode::GraphicsMode<_> = sh1107::Builder::new()
             .with_size(sh1107::prelude::DisplaySize::Display128x128)
             .with_rotation(sh1107::displayrotation::DisplayRotation::Rotate180)
             .connect_i2c(i2c)
             .into();
 
-        display.init().unwrap();
-        display.flush().unwrap();
+        driver.init().unwrap();
+        driver.flush().unwrap();
+
+        let display = crate::hmi::display::Display::new(driver);
 
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
@@ -373,7 +375,6 @@ mod app {
     #[task(local = [display])]
     fn display_out(ctx: display_out::Context) {
         let display = ctx.local.display;
-
-        crate::hmi::display::splash_screen(display);
+        display.splash_screen();
     }
 }

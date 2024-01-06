@@ -16,7 +16,7 @@ use embedded_graphics::{
 
 use sh1107 as driver;
 
-pub type Display = driver::mode::GraphicsMode<
+pub type Driver = driver::mode::GraphicsMode<
     driver::interface::I2cInterface<
         I2C<
             I2C0,
@@ -28,16 +28,25 @@ pub type Display = driver::mode::GraphicsMode<
     >,
 >;
 
-pub fn splash_screen(disp: &mut Display) {
-    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+pub struct Display {
+    driver: Driver,
+}
 
-    // Create a text at position (20, 30) and draw it using the previously defined style
-    Text::new("Pedalbaord MIDI", Point::new(0, 10), style)
-        .draw(disp)
-        .unwrap();
-    Text::new("started", Point::new(0, 127), style)
-        .draw(disp)
-        .unwrap();
+impl Display {
+    pub fn new(driver: Driver) -> Self {
+        Display { driver }
+    }
+    pub fn splash_screen(&mut self) {
+        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
-    disp.flush().unwrap();
+        // Create a text at position (20, 30) and draw it using the previously defined style
+        Text::new("Pedalbaord MIDI", Point::new(0, 10), style)
+            .draw(&mut self.driver)
+            .unwrap();
+        Text::new("started", Point::new(0, 127), style)
+            .draw(&mut self.driver)
+            .unwrap();
+
+        self.driver.flush().unwrap();
+    }
 }
