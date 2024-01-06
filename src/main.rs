@@ -73,8 +73,6 @@ mod app {
     type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
     type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
 
-    const SYS_HZ: u32 = 125_000_000_u32;
-
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
 
@@ -194,8 +192,8 @@ mod app {
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
         let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
             &mut resets,
-            SYS_HZ.Hz(),
-            3_000_000u32.Hz(),
+            &clocks.system_clock,
+            3.MHz(),
             MODE_0,
         );
         let led_spi = Ws2812::new(spi);
