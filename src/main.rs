@@ -158,6 +158,7 @@ mod app {
         let uart_midi_out = MidiOut::new(tx);
         let uart_midi_in = MidiIn::new(rx);
 
+        // input pins
         let vol_pins = RotaryPins {
             clk: pins.gpio16.into_pull_up_input(),
             dt: pins.gpio17.into_pull_up_input(),
@@ -196,13 +197,11 @@ mod app {
             3_000_000u32.Hz(),
             MODE_0,
         );
-
         let led_spi = Ws2812::new(spi);
 
         // Configure I²C for OLED display
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
         let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
-
         let i2c = I2C::i2c0(
             cx.device.I2C0,
             sda_pin,
@@ -211,7 +210,6 @@ mod app {
             &mut resets,
             &clocks.system_clock,
         );
-
         let mut display = crate::hmi::display::Display::new(i2c);
         display.splash_screen();
 
@@ -343,7 +341,6 @@ mod app {
 
     #[task(local = [display])]
     fn display_out(ctx: display_out::Context) {
-        let display = ctx.local.display;
-        display.show();
+        ctx.local.display.show();
     }
 }
