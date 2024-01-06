@@ -764,7 +764,7 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 [[package]]
 name = "sh1107"
 version = "0.3.5"
-source = "git+https://github.com/fenax/sh1107?branch=master#bccbe390800301392f8949b001b62c798e2aa83a"
+source = "git+https://github.com/pedalboard/sh1107?branch=master#bccbe390800301392f8949b001b62c798e2aa83a"
 dependencies = [
  "embedded-graphics",
  "embedded-hal 0.2.7",

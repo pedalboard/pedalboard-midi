@@ -34,7 +34,7 @@ smart-leds = "0.3.0"
 ws2812-spi = "0.4.0"
 colorous = {version = "1.0.12", default-features = false }
 embedded-graphics = "0.7"
-sh1107 = { git = "https://github.com/fenax/sh1107", branch = "master" } 
+sh1107 = { git = "https://github.com/pedalboard/sh1107", branch = "master" }
 
 [patch.crates-io]
 rp2040-hal = { git = "https://github.com/pedalboard/rp-hal", branch = "debug-xosc" }

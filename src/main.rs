@@ -111,33 +111,16 @@ fn main() -> ! {
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
     // Create a text at position (20, 30) and draw it using the previously defined style
-    Text::new("Pedalbaord", Point::new(66, 30), style)
+    Text::new("Pedalbaord MIDI", Point::new(50, 10), style)
         .draw(&mut disp)
         .unwrap();
-    Text::new("started", Point::new(66, 40), style)
+    Text::new("started", Point::new(66, 20), style)
         .draw(&mut disp)
         .unwrap();
 
     disp.flush().unwrap();
 
-    /*
-        // Scan for devices on the bus by attempting to read from them
-        use embedded_hal::prelude::_embedded_hal_blocking_i2c_Read;
-        for i in 0..=127 {
-            defmt::info!("triying address {:?}", i);
-            let mut readbuf: [u8; 1] = [0; 1];
-            let result = i2c.read(i, &mut readbuf);
-            if let Ok(_) = result {
-                // Do whatever work you want to do with found devices
-                defmt::info!("Device found at address {:?}", i);
-            }
-        }
-    */
-    // Write three bytes to the I²C device with 7-bit address 0x2C
-    //   i2c.write(0x3c, &[1, 2, 3]).unwrap();
-
-    // Demo finish - just loop until reset
-    defmt::info!("Display should show Hello Rust now");
+    defmt::info!("Display should show Pedalboard info now");
     loop {
         cortex_m::asm::wfi();
     }
