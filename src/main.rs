@@ -13,20 +13,19 @@
 // be linked)
 use defmt_rtt as _;
 use panic_probe as _;
-use sh1106::mode::GraphicsMode;
+use sh1107::mode::GraphicsMode;
 // Some traits we need
 
 // Alias for our HAL crate
 use rp2040_hal as hal;
 
 // Some traits we need
-use embedded_hal::blocking::i2c::Write;
 use hal::fugit::RateExtU32;
 
 // A shorter alias for the Peripheral Access Crate, which provides low-level
 // register access and a gpio related types.
 use hal::{
-    gpio::{FunctionI2C, Pin, PinState, PullUp},
+    gpio::{FunctionI2C, Pin, PullUp},
     pac,
 };
 
@@ -87,14 +86,9 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    defmt::info!("starting");
     // Configure two pins as being I²C
-
     let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
     let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
-
-    //let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio8.reconfigure(); // RX on Header J12
-    //let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio9.reconfigure(); // TX on Header J12
 
     let i2c = hal::I2C::i2c0(
         pac.I2C0,
@@ -105,7 +99,11 @@ fn main() -> ! {
         &clocks.system_clock,
     );
 
-    let mut disp: GraphicsMode<_> = sh1106::Builder::new().connect_i2c(i2c).into();
+    let mut disp: GraphicsMode<_> = sh1107::Builder::new()
+        .with_size(sh1107::prelude::DisplaySize::Display128x128)
+        .with_rotation(sh1107::displayrotation::DisplayRotation::Rotate180)
+        .connect_i2c(i2c)
+        .into();
 
     disp.init().unwrap();
     disp.flush().unwrap();
@@ -113,7 +111,10 @@ fn main() -> ! {
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
     // Create a text at position (20, 30) and draw it using the previously defined style
-    Text::new("Hello Rust!", Point::new(20, 30), style)
+    Text::new("Pedalbaord", Point::new(66, 30), style)
+        .draw(&mut disp)
+        .unwrap();
+    Text::new("started", Point::new(66, 40), style)
         .draw(&mut disp)
         .unwrap();
 
