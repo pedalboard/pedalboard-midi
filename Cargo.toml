@@ -38,7 +38,7 @@ sh1107 = { git = "https://github.com/pedalboard/sh1107", branch = "master" }
 tinybmp = "0.5.0"
 
 [patch.crates-io]
-rp2040-hal = { git = "https://github.com/pedalboard/rp-hal", branch = "debug-xosc" }
+#rp2040-hal = { git = "https://github.com/pedalboard/rp-hal", branch = "debug-xosc" }
 
 # [dev-dependencies]
 
