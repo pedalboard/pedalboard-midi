@@ -235,11 +235,12 @@ mod app {
             &clocks.system_clock,
         );
 
-        let display = crate::hmi::display::Display::new(i2c);
+        let mut display = crate::hmi::display::Display::new(i2c);
+        display.splash_screen();
 
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
-        display_out::spawn().unwrap();
+        display_out::spawn_after(Duration::secs(1)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
 
@@ -366,6 +367,6 @@ mod app {
     #[task(local = [display])]
     fn display_out(ctx: display_out::Context) {
         let display = ctx.local.display;
-        display.splash_screen();
+        display.show();
     }
 }

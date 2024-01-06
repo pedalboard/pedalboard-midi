@@ -51,12 +51,20 @@ impl Display {
     }
     pub fn splash_screen(&mut self) {
         if let Some(disp) = &mut self.driver {
-            let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
             let bmp_data = include_bytes!("../../img/pedalboard-logo.bmp");
 
             let bmp = Bmp::from_slice(bmp_data).unwrap();
 
             Image::new(&bmp, Point::new(0, 0)).draw(disp).unwrap();
+
+            disp.flush().unwrap();
+        }
+    }
+
+    pub fn show(&mut self) {
+        if let Some(disp) = &mut self.driver {
+            disp.clear();
+            let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
             Text::new("Pedalbaord   Platform", Point::new(0, 10), style)
                 .draw(disp)
