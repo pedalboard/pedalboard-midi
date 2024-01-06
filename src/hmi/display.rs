@@ -19,24 +19,31 @@ use embedded_graphics::{
 
 use sh1107 as driver;
 
-pub type Driver = driver::mode::GraphicsMode<
-    driver::interface::I2cInterface<
-        I2C<
-            I2C0,
-            (
-                Pin<Gpio24, FunctionI2C, PullUp>,
-                Pin<Gpio25, FunctionI2C, PullUp>,
-            ),
-        >,
-    >,
+pub type Interface = I2C<
+    I2C0,
+    (
+        Pin<Gpio24, FunctionI2C, PullUp>,
+        Pin<Gpio25, FunctionI2C, PullUp>,
+    ),
 >;
+
+pub type Driver = driver::mode::GraphicsMode<driver::interface::I2cInterface<Interface>>;
 
 pub struct Display {
     driver: Driver,
 }
 
 impl Display {
-    pub fn new(driver: Driver) -> Self {
+    pub fn new(i2c: Interface) -> Self {
+        let mut driver: sh1107::mode::GraphicsMode<_> = sh1107::Builder::new()
+            .with_size(sh1107::prelude::DisplaySize::Display128x128)
+            .with_rotation(sh1107::displayrotation::DisplayRotation::Rotate180)
+            .connect_i2c(i2c)
+            .into();
+
+        driver.init().unwrap();
+        driver.flush().unwrap();
+
         Display { driver }
     }
     pub fn splash_screen(&mut self) {
