@@ -34,14 +34,13 @@ mod app {
         clocks::init_clocks_and_plls,
         fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
-            bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
+            bank0::{Gpio0, Gpio1},
             FunctionI2C, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
         },
         i2c::I2C,
-        pac::SPI1,
         pac::UART0,
         rom_data::reset_to_usb_boot,
-        spi::{Enabled, Spi},
+        spi::Spi,
         timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
         usb::UsbBus,
@@ -66,35 +65,13 @@ mod app {
     use ws2812_spi::Ws2812;
 
     type Duration = TimerDurationU64<1_000_000>;
-    type MidiOut = embedded_midi::MidiOut<
-        Writer<
-            UART0,
-            (
-                Pin<Gpio0, FunctionUart, PullDown>,
-                Pin<Gpio1, FunctionUart, PullDown>,
-            ),
-        >,
-    >;
-    type MidiIn = embedded_midi::MidiIn<
-        Reader<
-            UART0,
-            (
-                Pin<Gpio0, FunctionUart, PullDown>,
-                Pin<Gpio1, FunctionUart, PullDown>,
-            ),
-        >,
-    >;
-    type LedSpi = Ws2812<
-        Spi<
-            Enabled,
-            SPI1,
-            (
-                Pin<Gpio11, FunctionSpi, PullDown>,
-                Pin<Gpio12, FunctionSpi, PullDown>,
-                Pin<Gpio10, FunctionSpi, PullDown>,
-            ),
-        >,
-    >;
+
+    type MidiUartPins = (
+        Pin<Gpio0, FunctionUart, PullDown>,
+        Pin<Gpio1, FunctionUart, PullDown>,
+    );
+    type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
+    type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
     const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
@@ -112,7 +89,7 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: Inputs,
-        led_spi: LedSpi,
+        led_spi: crate::hmi::leds::LedDriver,
         display: crate::hmi::display::Display,
     }
 

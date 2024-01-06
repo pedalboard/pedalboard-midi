@@ -1,11 +1,32 @@
 use super::ledring::LedRing;
 use crate::hmi::ledring::LEDS_PER_RING;
 use colorous::Gradient;
+use rp2040_hal::{
+    gpio::{
+        bank0::{Gpio10, Gpio11, Gpio12},
+        FunctionSpi, Pin, PullDown,
+    },
+    pac::SPI1,
+    spi::{Enabled, Spi},
+};
 use smart_leds::RGB8;
+use ws2812_spi::Ws2812;
 
 const NUM_LEDS: usize = 2;
 const NUM_LED_RINGS: usize = 8;
 const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
+
+pub type LedSpi = Spi<
+    Enabled,
+    SPI1,
+    (
+        Pin<Gpio11, FunctionSpi, PullDown>,
+        Pin<Gpio12, FunctionSpi, PullDown>,
+        Pin<Gpio10, FunctionSpi, PullDown>,
+    ),
+>;
+
+pub type LedDriver = Ws2812<LedSpi>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Led {
