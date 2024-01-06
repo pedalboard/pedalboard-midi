@@ -7,7 +7,10 @@ use rp2040_hal::{
     pac::I2C0,
 };
 
+use tinybmp::Bmp;
+
 use embedded_graphics::{
+    image::Image,
     mono_font::{ascii::FONT_6X10, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
@@ -38,12 +41,15 @@ impl Display {
     }
     pub fn splash_screen(&mut self) {
         let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+        let bmp_data = include_bytes!("../../img/pedalboard-logo.bmp");
 
-        // Create a text at position (20, 30) and draw it using the previously defined style
-        Text::new("Pedalbaord MIDI", Point::new(0, 10), style)
+        let bmp = Bmp::from_slice(bmp_data).unwrap();
+
+        Image::new(&bmp, Point::new(0, 0))
             .draw(&mut self.driver)
             .unwrap();
-        Text::new("started", Point::new(0, 127), style)
+
+        Text::new("Pedalbaord   Platform", Point::new(0, 10), style)
             .draw(&mut self.driver)
             .unwrap();
 
