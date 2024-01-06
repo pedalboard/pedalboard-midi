@@ -111,10 +111,10 @@ fn main() -> ! {
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
     // Create a text at position (20, 30) and draw it using the previously defined style
-    Text::new("Pedalbaord MIDI", Point::new(50, 10), style)
+    Text::new("Pedalbaord MIDI", Point::new(0, 10), style)
         .draw(&mut disp)
         .unwrap();
-    Text::new("started", Point::new(66, 20), style)
+    Text::new("started", Point::new(0, 127), style)
         .draw(&mut disp)
         .unwrap();
 
