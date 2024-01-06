@@ -35,8 +35,9 @@ mod app {
         fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
             bank0::{Gpio0, Gpio1, Gpio10, Gpio11, Gpio12},
-            FunctionSpi, FunctionUart, Pin, Pins, PullDown,
+            FunctionI2C, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
         },
+        i2c::I2C,
         pac::SPI1,
         pac::UART0,
         rom_data::reset_to_usb_boot,
@@ -94,7 +95,6 @@ mod app {
             ),
         >,
     >;
-
     const SYS_HZ: u32 = 125_000_000_u32;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
@@ -113,6 +113,7 @@ mod app {
         uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: LedSpi,
+        display: crate::hmi::display::Display,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -208,7 +209,7 @@ mod app {
 
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
-        // These are implicitly used by the spi driver if they are in the correct mode
+        // Configure SPI for Ws2812 LEDs
         let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
         let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
@@ -221,8 +222,31 @@ mod app {
 
         let led_spi = Ws2812::new(spi);
 
+        // Configure I²C for OLED display
+        let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
+        let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
+
+        let i2c = I2C::i2c0(
+            cx.device.I2C0,
+            sda_pin,
+            scl_pin,
+            400.kHz(),
+            &mut resets,
+            &clocks.system_clock,
+        );
+
+        let mut display: sh1107::mode::GraphicsMode<_> = sh1107::Builder::new()
+            .with_size(sh1107::prelude::DisplaySize::Display128x128)
+            .with_rotation(sh1107::displayrotation::DisplayRotation::Rotate180)
+            .connect_i2c(i2c)
+            .into();
+
+        display.init().unwrap();
+        display.flush().unwrap();
+
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
+        display_out::spawn().unwrap();
 
         let handlers = crate::handler::dispatch::create();
 
@@ -238,6 +262,7 @@ mod app {
                 uart_midi_in,
                 inputs,
                 led_spi,
+                display,
             },
             init::Monotonics(mono),
         )
@@ -343,5 +368,12 @@ mod app {
         });
         // schedule to run this task with 20Hz
         led_animation::spawn_after(Duration::millis(50)).unwrap();
+    }
+
+    #[task(local = [display])]
+    fn display_out(ctx: display_out::Context) {
+        let display = ctx.local.display;
+
+        crate::hmi::display::splash_screen(display);
     }
 }
