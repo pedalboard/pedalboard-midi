@@ -37,6 +37,12 @@ macro_rules! description {
         "Open Pedalboard Platform"
     };
 }
+macro_rules! git_hash {
+    () => {
+        env!("GIT_HASH")
+    };
+}
+
 macro_rules! version {
     () => {
         env!("CARGO_PKG_VERSION")
@@ -45,7 +51,7 @@ macro_rules! version {
 
 macro_rules! version_string {
     () => {
-        concat!(description!(), " v", version!())
+        concat!(description!(), " v", version!(), " (", git_hash!(), ")")
     };
 }
 pub type Driver = driver::mode::GraphicsMode<driver::interface::I2cInterface<Interface>>;
