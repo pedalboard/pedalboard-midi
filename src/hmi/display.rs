@@ -43,7 +43,6 @@ macro_rules! version {
     };
 }
 
-#[macro_export]
 macro_rules! version_string {
     () => {
         concat!(description!(), " v", version!())
