@@ -18,7 +18,7 @@ use embedded_graphics::{
 
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
-    style::{HeightMode, TextBoxStyleBuilder},
+    style::TextBoxStyleBuilder,
     TextBox,
 };
 
