@@ -17,7 +17,7 @@ use embedded_graphics::{
 };
 
 use embedded_text::{
-    alignment::HorizontalAlignment,
+    alignment::{HorizontalAlignment, VerticalAlignment},
     style::{HeightMode, TextBoxStyleBuilder},
     TextBox,
 };
@@ -91,12 +91,12 @@ impl Display {
             let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
 
             let textbox_style = TextBoxStyleBuilder::new()
-                .height_mode(HeightMode::FitToText)
                 .alignment(HorizontalAlignment::Center)
+                .vertical_alignment(VerticalAlignment::Middle)
                 .paragraph_spacing(6)
                 .build();
 
-            let bounds = Rectangle::new(Point::zero(), Size::new(128, 0));
+            let bounds = Rectangle::new(Point::zero(), Size::new(128, 128));
             let text_box =
                 TextBox::with_textbox_style(text, bounds, character_style, textbox_style);
 
