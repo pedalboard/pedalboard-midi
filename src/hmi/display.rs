@@ -32,6 +32,23 @@ pub type Interface = I2C<
     ),
 >;
 
+macro_rules! description {
+    () => {
+        "Open Pedalboard Platform"
+    };
+}
+macro_rules! version {
+    () => {
+        env!("CARGO_PKG_VERSION")
+    };
+}
+
+#[macro_export]
+macro_rules! version_string {
+    () => {
+        concat!(description!(), " v", version!())
+    };
+}
 pub type Driver = driver::mode::GraphicsMode<driver::interface::I2cInterface<Interface>>;
 
 pub struct Display {
@@ -71,8 +88,7 @@ impl Display {
         if let Some(display) = &mut self.driver {
             display.clear();
 
-            let text = "Open Pedalboard Platform";
-
+            let text = version_string!();
             let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
 
             let textbox_style = TextBoxStyleBuilder::new()
