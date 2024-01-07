@@ -32,7 +32,7 @@ fn main() {
 
     // note: add error checking yourself.
     let output = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();
