@@ -10,10 +10,16 @@ use tinybmp::Bmp;
 
 use embedded_graphics::{
     image::Image,
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
-    text::Text,
+    primitives::Rectangle,
+};
+
+use embedded_text::{
+    alignment::HorizontalAlignment,
+    style::{HeightMode, TextBoxStyleBuilder},
+    TextBox,
 };
 
 use sh1107 as driver;
@@ -62,15 +68,26 @@ impl Display {
     }
 
     pub fn show(&mut self) {
-        if let Some(disp) = &mut self.driver {
-            disp.clear();
-            let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+        if let Some(display) = &mut self.driver {
+            display.clear();
 
-            Text::new("Pedalbaord   Platform", Point::new(0, 10), style)
-                .draw(disp)
-                .unwrap();
+            let text = "Open Pedalboard Platform";
 
-            disp.flush().unwrap();
+            let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
+
+            let textbox_style = TextBoxStyleBuilder::new()
+                .height_mode(HeightMode::FitToText)
+                .alignment(HorizontalAlignment::Center)
+                .paragraph_spacing(6)
+                .build();
+
+            let bounds = Rectangle::new(Point::zero(), Size::new(128, 0));
+            let text_box =
+                TextBox::with_textbox_style(text, bounds, character_style, textbox_style);
+
+            text_box.draw(display).unwrap();
+
+            display.flush().unwrap();
         }
     }
 }
