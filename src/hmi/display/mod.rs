@@ -79,7 +79,7 @@ impl Display {
     }
     pub fn splash_screen(&mut self) {
         if let Some(disp) = &mut self.driver {
-            let bmp_data = include_bytes!("../../img/pedalboard-logo.bmp");
+            let bmp_data = include_bytes!("../../../img/pedalboard-logo.bmp");
 
             let bmp = Bmp::from_slice(bmp_data).unwrap();
 
