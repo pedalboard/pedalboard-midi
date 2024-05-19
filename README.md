@@ -1,6 +1,6 @@
 # Pedalboard Midi Controller
 
-The firmware is currently in avery prototype state and specific to a use case:
+The firmware is currently in a very prototype state and specific to a use case:
 
 ```txt
     MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
@@ -13,7 +13,7 @@ more configurable.
 
 ## Open Hardware
 
-see [Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) for more details.
+See [Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) for more details.
 
 ![Schematic](https://pedalboard.github.io/pedalboard-hw-site/latest/Schematic/pedalboard-hw-MIDI.svg)
 
