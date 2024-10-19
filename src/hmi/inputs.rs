@@ -65,9 +65,7 @@ where
         }
     }
     fn update(&mut self) -> Option<Value7> {
-        self.encoder.update();
-
-        match self.encoder.direction() {
+        match self.encoder.update() {
             Direction::Clockwise => {
                 if self.value < 127 {
                     self.value += 1
