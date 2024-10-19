@@ -49,7 +49,8 @@ mod app {
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::{
         class_prelude::UsbBusAllocator,
-        device::{UsbDeviceBuilder, UsbVidPid},
+        descriptor::lang_id::LangID,
+        device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
     use usbd_midi::{
@@ -70,8 +71,8 @@ mod app {
         Pin<Gpio0, FunctionUart, PullDown>,
         Pin<Gpio1, FunctionUart, PullDown>,
     );
-    type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
-    type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
+    //    type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
+    //   type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
@@ -85,8 +86,8 @@ mod app {
 
     #[local]
     struct Local {
-        uart_midi_out: MidiOut,
-        uart_midi_in: MidiIn,
+        //        uart_midi_out: MidiOut,
+        //      uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
         display: crate::hmi::display::Display,
@@ -131,9 +132,8 @@ mod app {
 
         let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
-            .manufacturer("github.com/pedalboard")
-            .product("pedalboard-midi")
-            .serial_number("0.0.1")
+            .strings(&[StringDescriptors::new(LangID::EN).product("pedalboard-midi")])
+            .expect("Failed to set strings")
             .device_class(USB_AUDIO_CLASS)
             .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
             .build();
@@ -154,8 +154,8 @@ mod app {
             .unwrap();
         let (mut rx, tx) = uart.split();
         rx.enable_rx_interrupt();
-        let uart_midi_out = MidiOut::new(tx);
-        let uart_midi_in = MidiIn::new(rx);
+        //       let uart_midi_out = MidiOut::new(tx);
+        //       let uart_midi_in = MidiIn::new(rx);
 
         // input pins
         let vol_pins = RotaryPins {
@@ -181,8 +181,10 @@ mod app {
 
         // ADC for analog input
         let adc = Adc::new(ctx.device.ADC, &mut resets);
-        let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input());
-        let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input());
+        let exp_a_pin =
+            AdcPin::new(pins.gpio27.into_floating_input()).expect("ADC pin creation failed");
+        let exp_b_pin =
+            AdcPin::new(pins.gpio28.into_floating_input()).expect("ADC pin creation failed");
 
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
@@ -226,8 +228,8 @@ mod app {
                 handlers: crate::handler::Handlers::new(handlers),
             },
             Local {
-                uart_midi_out,
-                uart_midi_in,
+                //                uart_midi_out,
+                //                uart_midi_in,
                 inputs,
                 led_spi,
                 display,
@@ -236,6 +238,7 @@ mod app {
         )
     }
 
+    /*
     #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
     fn midi_in(mut ctx: midi_in::Context) {
         match ctx.local.uart_midi_in.read() {
@@ -248,15 +251,19 @@ mod app {
             Err(_) => error!("failed to receive midi message"),
         }
     }
+    */
 
-    #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
+    // #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
+    #[task(shared = [usb_midi, usb_dev])]
     fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
-        // always send to UART out
-        let uart_midi_out = ctx.local.uart_midi_out;
         let msgs = messages.messages();
-        for message in msgs.iter() {
-            uart_midi_out.write(message).unwrap();
-        }
+        // always send to UART out
+        /*
+                let uart_midi_out = ctx.local.uart_midi_out;
+                for message in msgs.iter() {
+                    uart_midi_out.write(message).unwrap();
+                }
+        */
 
         // optionally send to USB if a device is listening
         let configured = ctx
@@ -267,11 +274,11 @@ mod app {
             return;
         }
         for message in msgs.into_iter() {
-            let p = UsbMidiEventPacket::from_midi(Cable0, message);
-            ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
-                Ok(_) => debug!("message sent to usb"),
-                Err(err) => error!("failed to send message: {}", err),
-            });
+            //         let p = UsbMidiEventPacket::from_midi(Cable0, message);
+            //         ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
+            //             Ok(_) => debug!("message sent to usb"),
+            //             Err(err) => error!("failed to send message: {}", err),
+            //         });
         }
     }
 
@@ -290,41 +297,41 @@ mod app {
         // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
+    /*
+        #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
+        fn usb_rx(mut ctx: usb_rx::Context) {
+            ctx.shared.usb_dev.lock(|usb_dev| {
+                ctx.shared.usb_midi.lock(|usb_midi| {
+                    // Check for new data
+                    if !usb_dev.poll(&mut [usb_midi]) {
+                        return;
+                    }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
-    fn usb_rx(mut ctx: usb_rx::Context) {
-        ctx.shared.usb_dev.lock(|usb_dev| {
-            ctx.shared.usb_midi.lock(|usb_midi| {
-                // Check for new data
-                if !usb_dev.poll(&mut [usb_midi]) {
-                    return;
-                }
-
-                let mut buffer = [0; 64];
-                if let Ok(size) = usb_midi.read(&mut buffer) {
-                    let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-                    for packet in buffer_reader.flatten() {
-                        match packet.message {
-                            midi_types::MidiMessage::NoteOff(
-                                midi_types::Channel::C16,
-                                midi_types::Note::C1m,
-                                ..,
-                            ) => {
-                                debug!("reset to usb boot");
-                                reset_to_usb_boot(0, 0);
-                            }
-                            _ => {
-                                ctx.shared.handlers.lock(|handlers| {
-                                    handlers.process_midi_input(packet.message);
-                                });
+                    let mut buffer = [0; 64];
+                    if let Ok(size) = usb_midi.read(&mut buffer) {
+                        let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+                        for packet in buffer_reader.flatten() {
+                            match packet.message {
+                                midi_types::MidiMessage::NoteOff(
+                                    midi_types::Channel::C16,
+                                    midi_types::Note::C1m,
+                                    ..,
+                                ) => {
+                                    debug!("reset to usb boot");
+                                    reset_to_usb_boot(0, 0);
+                                }
+                                _ => {
+                                    ctx.shared.handlers.lock(|handlers| {
+                                        handlers.process_midi_input(packet.message);
+                                    });
+                                }
                             }
                         }
                     }
-                }
+                });
             });
-        });
-    }
-
+        }
+    */
     #[task(local = [led_spi], shared =[handlers])]
     fn led_animation(mut ctx: led_animation::Context) {
         ctx.shared.handlers.lock(|handlers| {

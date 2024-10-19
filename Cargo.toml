@@ -12,29 +12,33 @@ repository = "https://github.com/pedalboard/pedalboard-midi"
 [dependencies]
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
-embedded-hal = { version = "0.2.7", features = ["unproven"] }
+embedded-hal = { version = "1.0.0" }
+# for ADC
+embedded_hal_0_2 = { package = "embedded-hal", version = "0.2.7", features = [
+  "unproven",
+] }
 
 defmt = "0.3"
 defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
+
+# embedded-midi = "main" }
 cortex-m-rtic = "1.1.4"
-rp2040-hal = { version = "0.9.1", features = [
+rp2040-hal = { version = "0.10.2", features = [
   "rt",
   "critical-section-impl",
   "rom-func-cache",
-  "eh1_0_alpha",
   "defmt",
   "rtic-monotonic",
 ] }
 rp2040-boot2 = "0.3.0"
-usb-device = { version = "0.2.9", features = ["defmt"] }
-usbd-midi = { git = "https://github.com/rust-midi/usbd-midi", branch = "main" }
+usb-device = { version = "0.3.0", features = ["defmt"] }
+usbd-midi = "0.3.0"
 nb = { version = "1.1.0" }
-embedded-midi = { git = "https://github.com/rust-midi/embedded-midi", branch = "main" }
 midi-types = { version = "0.1.7", features = ["defmt"] }
 debouncr = "0.2.2"
-rotary-encoder-embedded = "0.3.1"
+rotary-encoder-embedded = "0.3.0"
 heapless = "0.8.0"
 movavg = { version = "2.2.0", default-features = false }
 smart-leds = "0.4.0"
