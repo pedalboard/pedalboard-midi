@@ -568,8 +568,8 @@ dependencies = [
  "rotary-encoder-embedded",
  "rp2040-boot2",
  "rp2040-hal",
- "sh1107",
  "smart-leds",
+ "ssd1327-i2c",
  "tinybmp",
  "usb-device",
  "usbd-midi",
@@ -784,15 +784,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
-name = "sh1107"
-version = "0.3.5"
-source = "git+https://github.com/pedalboard/sh1107?branch=master#67ae1f285b958ccf49df65ceaa006b7cbd1fd53b"
-dependencies = [
- "embedded-graphics",
- "embedded-hal 0.2.7",
-]
-
-[[package]]
 name = "smart-leds"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,6 +808,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "ssd1327-i2c"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edb927a99fe369ede0a5905601f70cf25a0b178b2a843a4fe234e7faee52b069"
+dependencies = [
+ "embedded-graphics-core",
+ "embedded-hal 0.2.7",
 ]
 
 [[package]]

@@ -6,12 +6,13 @@ use rp2040_hal::{
     i2c::I2C,
     pac::I2C0,
 };
+use ssd1327_i2c::SSD1327I2C;
 use tinybmp::Bmp;
 
 use embedded_graphics::{
     image::Image,
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
-    pixelcolor::BinaryColor,
+    pixelcolor::Gray4,
     prelude::*,
     primitives::Rectangle,
 };
@@ -21,8 +22,6 @@ use embedded_text::{
     style::TextBoxStyleBuilder,
     TextBox,
 };
-
-use sh1107 as driver;
 
 pub type Interface = I2C<
     I2C0,
@@ -54,7 +53,7 @@ macro_rules! version_string {
         concat!(description!(), " v", version!(), " (", git_hash!(), ")")
     };
 }
-pub type Driver = driver::mode::GraphicsMode<driver::interface::I2cInterface<Interface>>;
+pub type Driver = SSD1327I2C<Interface>;
 
 pub struct Display {
     driver: Option<Driver>,
@@ -62,19 +61,11 @@ pub struct Display {
 
 impl Display {
     pub fn new(i2c: Interface) -> Self {
-        let mut driver: sh1107::mode::GraphicsMode<_> = sh1107::Builder::new()
-            .with_size(sh1107::prelude::DisplaySize::Display128x128)
-            .with_rotation(sh1107::displayrotation::DisplayRotation::Rotate180)
-            .connect_i2c(i2c)
-            .into();
+        let mut driver = ssd1327_i2c::SSD1327I2C::new(i2c);
+        driver.init();
 
-        match driver.init() {
-            Err(_) => Display {
-                driver: Option::None,
-            },
-            Ok(_) => Display {
-                driver: Option::Some(driver),
-            },
+        Display {
+            driver: Option::Some(driver),
         }
     }
     pub fn splash_screen(&mut self) {
@@ -91,10 +82,10 @@ impl Display {
 
     pub fn show(&mut self) {
         if let Some(display) = &mut self.driver {
-            display.clear();
+            display.clear(Gray4::BLACK).unwrap();
 
             let text = version_string!();
-            let character_style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
+            let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
 
             let textbox_style = TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Center)

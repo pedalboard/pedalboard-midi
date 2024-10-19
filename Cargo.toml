@@ -19,11 +19,18 @@ defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
 cortex-m-rtic = "1.1.4"
-rp2040-hal = { version = "0.9.1", features = ["rt", "critical-section-impl", "rom-func-cache", "eh1_0_alpha", "defmt", "rtic-monotonic"] }
+rp2040-hal = { version = "0.9.1", features = [
+  "rt",
+  "critical-section-impl",
+  "rom-func-cache",
+  "eh1_0_alpha",
+  "defmt",
+  "rtic-monotonic",
+] }
 rp2040-boot2 = "0.3.0"
-usb-device = { version="0.2.9", features = ["defmt"] }
+usb-device = { version = "0.2.9", features = ["defmt"] }
 usbd-midi = { git = "https://github.com/rust-midi/usbd-midi", branch = "main" }
-nb = { version="1.1.0" }
+nb = { version = "1.1.0" }
 embedded-midi = { git = "https://github.com/rust-midi/embedded-midi", branch = "main" }
 midi-types = { version = "0.1.7", features = ["defmt"] }
 debouncr = "0.2.2"
@@ -32,9 +39,9 @@ heapless = "0.8.0"
 movavg = { version = "2.2.0", default-features = false }
 smart-leds = "0.3.0"
 ws2812-spi = "0.4.0"
-colorous = {version = "1.0.12", default-features = false }
+colorous = { version = "1.0.12", default-features = false }
 embedded-graphics = "0.8.1"
-sh1107 = { git = "https://github.com/pedalboard/sh1107", branch = "master"}
+ssd1327-i2c = "0.2.0"
 tinybmp = "0.5.0"
 embedded-text = "0.7.0"
 
