@@ -37,8 +37,8 @@ debouncr = "0.2.2"
 rotary-encoder-embedded = "0.2.0"
 heapless = "0.8.0"
 movavg = { version = "2.2.0", default-features = false }
-smart-leds = "0.3.0"
-ws2812-spi = "0.4.0"
+smart-leds = "0.4.0"
+ws2812-spi = "0.5.0"
 colorous = { version = "1.0.12", default-features = false }
 embedded-graphics = "0.8.1"
 ssd1327-i2c = { git = "https://github.com/pedalboard/ssd1327-i2c", branch = "master" }
