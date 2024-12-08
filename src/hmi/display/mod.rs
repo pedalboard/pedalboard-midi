@@ -61,7 +61,7 @@ pub struct Display {
 
 impl Display {
     pub fn new(i2c: Interface) -> Self {
-        let mut driver = ssd1327_i2c::SSD1327I2C::new(i2c);
+        let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, 0x3D);
         driver.init();
 
         Display {
