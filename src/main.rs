@@ -27,7 +27,7 @@ mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use defmt::*;
-    use embedded_hal::spi::MODE_0;
+    use embedded_hal::{digital::v2::OutputPin, spi::MODE_0};
 
     use rp2040_hal::{
         adc::{Adc, AdcPin},
@@ -120,6 +120,9 @@ mod app {
             &mut resets,
         );
 
+        let mut debug_led = pins.gpio10.into_push_pull_output();
+        debug_led.set_high().unwrap();
+
         // USB
         let usb_bus: &'static _ = ctx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
             ctx.device.USBCTRL_REGS,
@@ -187,7 +190,7 @@ mod app {
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
         // Configure SPI for Ws2812 LEDs
-        let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
+        let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
         let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
         let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(

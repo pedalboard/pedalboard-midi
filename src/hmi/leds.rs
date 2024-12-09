@@ -3,7 +3,7 @@ use crate::hmi::ledring::LEDS_PER_RING;
 use colorous::Gradient;
 use rp2040_hal::{
     gpio::{
-        bank0::{Gpio10, Gpio11, Gpio12},
+        bank0::{Gpio11, Gpio12, Gpio14},
         FunctionSpi, Pin, PullDown,
     },
     pac::SPI1,
@@ -22,7 +22,7 @@ pub type LedSpi = Spi<
     (
         Pin<Gpio11, FunctionSpi, PullDown>,
         Pin<Gpio12, FunctionSpi, PullDown>,
-        Pin<Gpio10, FunctionSpi, PullDown>,
+        Pin<Gpio14, FunctionSpi, PullDown>,
     ),
 >;
 
