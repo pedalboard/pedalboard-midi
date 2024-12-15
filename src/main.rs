@@ -137,7 +137,9 @@ mod app {
 
         let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
-            .strings(&[StringDescriptors::new(LangID::EN).product("pedalboard-midi")])
+            .strings(&[StringDescriptors::new(LangID::EN)
+                .product("pedalboard-midi")
+                .manufacturer("github.com/pedalboard")])
             .expect("Failed to set strings")
             .device_class(USB_AUDIO_CLASS)
             .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
@@ -299,41 +301,40 @@ mod app {
         // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
-    /*
-        #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
-        fn usb_rx(mut ctx: usb_rx::Context) {
-            ctx.shared.usb_dev.lock(|usb_dev| {
-                ctx.shared.usb_midi.lock(|usb_midi| {
-                    // Check for new data
-                    if !usb_dev.poll(&mut [usb_midi]) {
-                        return;
-                    }
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
+    fn usb_rx(mut ctx: usb_rx::Context) {
+        ctx.shared.usb_dev.lock(|usb_dev| {
+            ctx.shared.usb_midi.lock(|usb_midi| {
+                // Check for new data
+                if !usb_dev.poll(&mut [usb_midi]) {
+                    return;
+                }
 
-                    let mut buffer = [0; 64];
-                    if let Ok(size) = usb_midi.read(&mut buffer) {
-                        let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-                        for packet in buffer_reader.flatten() {
-                            match packet.message {
-                                midi_types::MidiMessage::NoteOff(
-                                    midi_types::Channel::C16,
-                                    midi_types::Note::C1m,
-                                    ..,
-                                ) => {
-                                    debug!("reset to usb boot");
-                                    reset_to_usb_boot(0, 0);
-                                }
-                                _ => {
-                                    ctx.shared.handlers.lock(|handlers| {
-                                        handlers.process_midi_input(packet.message);
-                                    });
-                                }
+                let mut buffer = [0; 64];
+                if let Ok(size) = usb_midi.read(&mut buffer) {
+                    let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+                    for packet in buffer_reader.flatten() {
+                        match packet.message {
+                            usbd_midi::data::midi::message::Message::NoteOff(
+                                usbd_midi::data::midi::channel::Channel::Channel16,
+                                usbd_midi::data::midi::notes::Note::C1m,
+                                ..,
+                            ) => {
+                                debug!("reset to usb boot");
+                                reset_to_usb_boot(0, 0);
+                            }
+                            _ => {
+                                ctx.shared.handlers.lock(|handlers| {
+                                    //  handlers.process_midi_input(packet.message);
+                                });
                             }
                         }
                     }
-                });
+                }
             });
-        }
-    */
+        });
+    }
+
     #[task(local = [led_spi], shared =[handlers])]
     fn led_animation(mut ctx: led_animation::Context) {
         ctx.shared.handlers.lock(|handlers| {
