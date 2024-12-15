@@ -27,7 +27,7 @@ mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use defmt::*;
-    use embedded_hal::{digital::v2::OutputPin, spi::MODE_0};
+    use embedded_hal::{digital::OutputPin, spi::MODE_0};
 
     use rp2040_hal::{
         adc::{Adc, AdcPin},
