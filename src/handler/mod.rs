@@ -75,6 +75,7 @@ where
     }
 
     pub fn handle_human_input(&mut self, event: InputEvent) -> Actions {
+        info!("handle input event {:?}", event);
         let actions = match event {
             InputEvent::VolButton(Activate) => {
                 self.current += 1;

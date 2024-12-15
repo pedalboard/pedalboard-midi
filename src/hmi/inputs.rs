@@ -3,6 +3,7 @@ use debouncr::{
     Edge::{Falling, Rising},
     Repeat5,
 };
+use defmt::Format;
 use embedded_hal::digital::InputPin;
 use embedded_hal_0_2::adc::OneShot;
 use movavg::MovAvg;
@@ -17,18 +18,18 @@ use rp2040_hal::{
         FunctionSioInput, Pin, PinId, PullNone, PullUp,
     },
 };
-
 type PullUpInputPin<I> = Pin<I, FunctionSioInput, PullUp>;
 type AdcInputPin<I> = AdcPin<Pin<I, FunctionSioInput, PullNone>>;
 type Sma = MovAvg<u16, u32, 10>;
 
 use midi_types::Value7;
 
+#[derive(Format)]
 pub enum Edge {
     Activate,
     Deactivate,
 }
-
+#[derive(Format)]
 pub enum InputEvent {
     ButtonA(Edge),
     ButtonB(Edge),

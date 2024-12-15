@@ -3,7 +3,7 @@ use crate::hmi::ledring::LEDS_PER_RING;
 use colorous::Gradient;
 use rp2040_hal::{
     gpio::{
-        bank0::{Gpio10, Gpio11, Gpio12},
+        bank0::{Gpio11, Gpio12, Gpio14},
         FunctionSpi, Pin, PullDown,
     },
     pac::SPI1,
@@ -22,7 +22,7 @@ pub type LedSpi = Spi<
     (
         Pin<Gpio11, FunctionSpi, PullDown>,
         Pin<Gpio12, FunctionSpi, PullDown>,
-        Pin<Gpio10, FunctionSpi, PullDown>,
+        Pin<Gpio14, FunctionSpi, PullDown>,
     ),
 >;
 
@@ -84,7 +84,16 @@ impl Leds {
         let mut data: LedData = [RGB8::default(); LED_OUTPUTS];
         self.sawtooth.next();
 
-        for (led, a) in self.animations.into_iter().enumerate() {
+        // process the led ring animations
+        for (ring_index, mut ring) in self.ledrings.into_iter().enumerate() {
+            for (led_index, ring_led) in ring.animate().into_iter().enumerate() {
+                data[ring_index * LEDS_PER_RING + led_index] = ring_led;
+            }
+        }
+
+        // process the single led animations
+        for (single, a) in self.animations.into_iter().enumerate() {
+            let led = (NUM_LED_RINGS * LEDS_PER_RING) + single;
             match a {
                 Animation::On(c) => data[led] = c,
                 Animation::Off => data[led] = RGB8::default(),
@@ -92,7 +101,7 @@ impl Leds {
                 Animation::Toggle(_, false) => data[led] = RGB8::default(),
                 Animation::Flash(c) => {
                     data[led] = c;
-                    self.animations[led] = Animation::Off
+                    self.animations[single] = Animation::Off
                 }
                 Animation::Rainbow(gradient) => {
                     let c = gradient.eval_rational(self.sawtooth.value, self.sawtooth.max);
@@ -103,11 +112,6 @@ impl Leds {
             };
         }
 
-        for (ring_index, mut ring) in self.ledrings.into_iter().enumerate() {
-            for (led_index, ring_led) in ring.animate().into_iter().enumerate() {
-                data[NUM_LEDS + ring_index * LEDS_PER_RING + led_index] = ring_led;
-            }
-        }
         data
     }
 

@@ -27,15 +27,16 @@ mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use defmt::*;
-    use embedded_hal::spi::MODE_0;
+    use embedded_hal::{digital::v2::OutputPin, spi::MODE_0};
 
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
         fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
-            bank0::{Gpio0, Gpio1},
-            FunctionI2C, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
+            bank0::{Gpio0, Gpio1, Gpio10},
+            FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
+            SioOutput,
         },
         i2c::I2C,
         pac::UART0,
@@ -91,6 +92,7 @@ mod app {
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
         display: crate::hmi::display::Display,
+        debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
     }
 
     #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
@@ -120,6 +122,9 @@ mod app {
             sio.gpio_bank0,
             &mut resets,
         );
+
+        let mut debug_led = pins.gpio10.into_push_pull_output();
+        debug_led.set_high().unwrap();
 
         // USB
         let usb_bus: &'static _ = ctx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
@@ -189,7 +194,7 @@ mod app {
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
         // Configure SPI for Ws2812 LEDs
-        let spi_sclk = pins.gpio10.into_function::<FunctionSpi>();
+        let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
         let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
         let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
@@ -214,6 +219,7 @@ mod app {
         let mut display = crate::hmi::display::Display::new(i2c);
         display.splash_screen();
 
+        blink::spawn().unwrap();
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
         display_out::spawn_after(Duration::secs(1)).unwrap();
@@ -233,6 +239,7 @@ mod app {
                 inputs,
                 led_spi,
                 display,
+                debug_led,
             },
             init::Monotonics(mono),
         )
@@ -348,5 +355,16 @@ mod app {
     #[task(local = [display])]
     fn display_out(ctx: display_out::Context) {
         ctx.local.display.show();
+    }
+
+    #[task(local = [debug_led, state: bool = false])]
+    fn blink(ctx: blink::Context) {
+        *ctx.local.state = !*ctx.local.state;
+        if *ctx.local.state {
+            ctx.local.debug_led.set_high().ok().unwrap();
+        } else {
+            ctx.local.debug_led.set_low().ok().unwrap();
+        }
+        blink::spawn_after(Duration::millis(500)).unwrap();
     }
 }
