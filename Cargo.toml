@@ -23,7 +23,7 @@ defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
 
-# embedded-midi = "main" }
+embedded-midi = { git = "https://github.com/pedalboard/embedded-midi", branch = "main" }
 cortex-m-rtic = "1.1.4"
 rp2040-hal = { version = "0.10.2", features = [
   "rt",

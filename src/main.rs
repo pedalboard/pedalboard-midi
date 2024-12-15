@@ -72,8 +72,8 @@ mod app {
         Pin<Gpio0, FunctionUart, PullDown>,
         Pin<Gpio1, FunctionUart, PullDown>,
     );
-    //    type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
-    //   type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
+    type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
+    type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
@@ -87,8 +87,8 @@ mod app {
 
     #[local]
     struct Local {
-        //        uart_midi_out: MidiOut,
-        //      uart_midi_in: MidiIn,
+        uart_midi_out: MidiOut,
+        uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
         display: crate::hmi::display::Display,
@@ -159,8 +159,8 @@ mod app {
             .unwrap();
         let (mut rx, tx) = uart.split();
         rx.enable_rx_interrupt();
-        //       let uart_midi_out = MidiOut::new(tx);
-        //       let uart_midi_in = MidiIn::new(rx);
+        let uart_midi_out = MidiOut::new(tx);
+        let uart_midi_in = MidiIn::new(rx);
 
         // input pins
         let vol_pins = RotaryPins {
@@ -234,8 +234,8 @@ mod app {
                 handlers: crate::handler::Handlers::new(handlers),
             },
             Local {
-                //                uart_midi_out,
-                //                uart_midi_in,
+                uart_midi_out,
+                uart_midi_in,
                 inputs,
                 led_spi,
                 display,
@@ -245,7 +245,6 @@ mod app {
         )
     }
 
-    /*
     #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
     fn midi_in(mut ctx: midi_in::Context) {
         match ctx.local.uart_midi_in.read() {
@@ -258,19 +257,15 @@ mod app {
             Err(_) => error!("failed to receive midi message"),
         }
     }
-    */
 
-    // #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
-    #[task(shared = [usb_midi, usb_dev])]
+    #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
     fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
         let msgs = messages.messages();
         // always send to UART out
-        /*
-                let uart_midi_out = ctx.local.uart_midi_out;
-                for message in msgs.iter() {
-                    uart_midi_out.write(message).unwrap();
-                }
-        */
+        let uart_midi_out = ctx.local.uart_midi_out;
+        for message in msgs.iter() {
+            uart_midi_out.write(message).unwrap();
+        }
 
         // optionally send to USB if a device is listening
         let configured = ctx
