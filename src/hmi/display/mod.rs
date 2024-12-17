@@ -63,6 +63,9 @@ impl Display {
     pub fn new(i2c: Interface) -> Self {
         let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, 0x3D);
         driver.init();
+        driver
+            .send_cmd(ssd1327_i2c::Commands::ContrastControl(255))
+            .ok();
 
         Display {
             driver: Option::Some(driver),
