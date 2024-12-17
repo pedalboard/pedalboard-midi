@@ -34,9 +34,10 @@ rp2040-hal = { version = "0.10.2", features = [
 ] }
 rp2040-boot2 = "0.3.0"
 usb-device = { version = "0.3.2", features = ["defmt"] }
-usbd-midi = "0.3.0"
+usbd-midi = { git = "https://github.com/rust-embedded-community/usbd-midi.git", branch = "next" }
 nb = { version = "1.1.0" }
 midi-types = { version = "0.1.7", features = ["defmt"] }
+midi-convert = "0.2.0"
 debouncr = "0.2.2"
 rotary-encoder-embedded = "0.3.0"
 heapless = "0.8.0"

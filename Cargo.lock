@@ -594,6 +594,7 @@ dependencies = [
  "embedded-midi",
  "embedded-text",
  "heapless 0.8.0",
+ "midi-convert",
  "midi-types",
  "movavg",
  "nb 1.1.0",
@@ -960,8 +961,7 @@ dependencies = [
 [[package]]
 name = "usbd-midi"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fb6fed9e5283225ba8efc3c4dda83c0a08059472fa87389b656cbb29e5d88dc"
+source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#a10fac10de3d0d23534eac20359ae915c67ce97b"
 dependencies = [
  "num_enum 0.7.3",
  "usb-device",

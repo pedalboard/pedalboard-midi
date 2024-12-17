@@ -29,6 +29,8 @@ mod app {
     use defmt::*;
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
 
+    use midi_convert::midi_types::MidiMessage;
+    use midi_convert::parse::MidiTryParseSlice;
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
@@ -278,11 +280,11 @@ mod app {
             return;
         }
         for message in msgs.into_iter() {
-            //         let p = UsbMidiEventPacket::from_midi(Cable0, message);
-            //         ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
-            //             Ok(_) => debug!("message sent to usb"),
-            //             Err(err) => error!("failed to send message: {}", err),
-            //         });
+            //   let p = UsbMidiEventPacket::from_midi(Cable0, message);
+            //   ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
+            //       Ok(_) => debug!("message sent to usb"),
+            //       Err(err) => error!("failed to send message: {}", err),
+            //   });
         }
     }
 
@@ -313,24 +315,26 @@ mod app {
                 let mut buffer = [0; 64];
                 if let Ok(size) = usb_midi.read(&mut buffer) {
                     let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-                    for packet in buffer_reader.flatten() {
-                        match packet.message {
-                            usbd_midi::data::midi::message::Message::NoteOff(
-                                usbd_midi::data::midi::channel::Channel::Channel16,
-                                usbd_midi::data::midi::notes::Note::C1m,
-                                ..,
-                            ) => {
-                                debug!("reset to usb boot");
-                                reset_to_usb_boot(0, 0);
-                            }
-                            _ => {
-                                let raw: usbd_midi::data::midi::message::raw::Raw =
-                                    packet.message.into();
-                                midi_types::MidiParser::new();
-                                // midi_types::Parse((value);
-                                ctx.shared.handlers.lock(|handlers| {
-                                    //  handlers.process_midi_input(packet.message);
-                                });
+                    for packet in buffer_reader.into_iter() {
+                        if let Ok(packet) = packet {
+                            if let Ok(message) =
+                                MidiMessage::try_parse_slice(packet.as_message_bytes())
+                            {
+                                match message {
+                                    midi_types::MidiMessage::NoteOff(
+                                        midi_types::Channel::C16,
+                                        midi_types::Note::C1m,
+                                        ..,
+                                    ) => {
+                                        debug!("reset to usb boot");
+                                        reset_to_usb_boot(0, 0);
+                                    }
+                                    _ => {
+                                        ctx.shared.handlers.lock(|handlers| {
+                                            handlers.process_midi_input(message);
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
