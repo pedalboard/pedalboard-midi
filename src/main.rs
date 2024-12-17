@@ -338,7 +338,7 @@ mod app {
             let data = handlers.leds().animate();
             ctx.local
                 .led_spi
-                .write(brightness(data.iter().cloned(), 32))
+                .write(brightness(data.iter().cloned(), 8))
                 .unwrap();
         });
         // schedule to run this task with 20Hz
