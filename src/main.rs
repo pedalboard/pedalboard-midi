@@ -50,7 +50,6 @@ mod app {
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::{
         class_prelude::UsbBusAllocator,
-        descriptor::lang_id::LangID,
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
@@ -137,10 +136,11 @@ mod app {
 
         let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
-            .strings(&[StringDescriptors::new(LangID::EN)
+            .strings(&[StringDescriptors::default()
                 .product("pedalboard-midi")
-                .manufacturer("github.com/pedalboard")])
-            .expect("Failed to set strings")
+                .manufacturer("github.com/pedalboard")
+                .serial_number("1.0.0")])
+            .expect("Failed to set usb device strings")
             .device_class(USB_AUDIO_CLASS)
             .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
             .build();
@@ -324,6 +324,10 @@ mod app {
                                 reset_to_usb_boot(0, 0);
                             }
                             _ => {
+                                let raw: usbd_midi::data::midi::message::raw::Raw =
+                                    packet.message.into();
+                                midi_types::MidiParser::new();
+                                // midi_types::Parse((value);
                                 ctx.shared.handlers.lock(|handlers| {
                                     //  handlers.process_midi_input(packet.message);
                                 });
