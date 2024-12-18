@@ -3,6 +3,7 @@ use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
+use rp2040_hal::rom_data::reset_to_usb_boot;
 use smart_leds::colors::*;
 
 use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
@@ -95,6 +96,10 @@ where
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
         match m {
+            MidiMessage::NoteOff(midi_types::Channel::C16, midi_types::Note::C1m, ..) => {
+                debug!("reset to usb boot");
+                reset_to_usb_boot(0, 0);
+            }
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();

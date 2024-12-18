@@ -42,7 +42,6 @@ mod app {
         },
         i2c::I2C,
         pac::UART0,
-        rom_data::reset_to_usb_boot,
         spi::Spi,
         timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
@@ -324,21 +323,9 @@ mod app {
                     for packet in buffer_reader.into_iter().flatten() {
                         if let Ok(message) = MidiMessage::try_parse_slice(packet.as_message_bytes())
                         {
-                            match message {
-                                midi_types::MidiMessage::NoteOff(
-                                    midi_types::Channel::C16,
-                                    midi_types::Note::C1m,
-                                    ..,
-                                ) => {
-                                    debug!("reset to usb boot");
-                                    reset_to_usb_boot(0, 0);
-                                }
-                                _ => {
-                                    ctx.shared.handlers.lock(|handlers| {
-                                        handlers.process_midi_input(message);
-                                    });
-                                }
-                            }
+                            ctx.shared.handlers.lock(|handlers| {
+                                handlers.process_midi_input(message);
+                            });
                         }
                     }
                 }
