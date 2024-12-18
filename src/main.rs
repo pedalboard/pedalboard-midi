@@ -289,7 +289,7 @@ mod app {
                         Err(err) => error!("failed to send message: {}", err),
                     });
                 }
-                Err(_) => error!("failed to convert message: {}", err),
+                Err(_) => error!("failed to convert message"),
             }
         }
     }
