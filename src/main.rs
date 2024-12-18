@@ -30,7 +30,7 @@ mod app {
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
 
     use midi_convert::midi_types::MidiMessage;
-    use midi_convert::parse::MidiTryParseSlice;
+    use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
@@ -280,11 +280,17 @@ mod app {
             return;
         }
         for message in msgs.into_iter() {
-            //   let p = UsbMidiEventPacket::from_midi(Cable0, message);
-            //   ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
-            //       Ok(_) => debug!("message sent to usb"),
-            //       Err(err) => error!("failed to send message: {}", err),
-            //   });
+            let mut bytes = [0; 3];
+            message.render_slice(&mut bytes);
+            match UsbMidiEventPacket::from_message_bytes(Cable0, &bytes) {
+                Ok(p) => {
+                    ctx.shared.usb_midi.lock(|midi| match midi.send_packet(p) {
+                        Ok(_) => debug!("message sent to usb"),
+                        Err(err) => error!("failed to send message: {}", err),
+                    });
+                }
+                Err(_) => error!("failed to convert message: {}", err),
+            }
         }
     }
 
