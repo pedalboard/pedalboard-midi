@@ -961,7 +961,7 @@ dependencies = [
 [[package]]
 name = "usbd-midi"
 version = "0.3.0"
-source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#30d7b48fe950093c8667647a459e762abe005a26"
+source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#8c4a17b736e41c69abc8316ae8d6e6e5e469effa"
 dependencies = [
  "num_enum 0.7.3",
  "usb-device",

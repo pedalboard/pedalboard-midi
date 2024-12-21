@@ -54,16 +54,8 @@ mod app {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{
-        data::{
-            usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS},
-            usb_midi::{
-                cable_number::CableNumber::Cable0, midi_packet_reader::MidiPacketBufferReader,
-                usb_midi_event_packet::UsbMidiEventPacket,
-            },
-        },
-        midi_device::MidiClass,
-    };
+    use usbd_midi::{CableNumber, MidiClass, MidiPacketBufferReader, UsbMidiEventPacket};
+
     use ws2812_spi::Ws2812;
 
     type Duration = TimerDurationU64<1_000_000>;
@@ -142,8 +134,8 @@ mod app {
                 .manufacturer("github.com/pedalboard")
                 .serial_number("1.0.0")])
             .expect("Failed to set usb device strings")
-            .device_class(USB_AUDIO_CLASS)
-            .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
+            .device_class(0)
+            .device_sub_class(0)
             .build();
 
         // UART Midi
@@ -281,15 +273,14 @@ mod app {
         for message in msgs.into_iter() {
             let mut bytes = [0; 3];
             message.render_slice(&mut bytes);
-            match UsbMidiEventPacket::from_message_bytes(Cable0, &bytes) {
-                Ok(p) => {
-                    ctx.shared.usb_midi.lock(|midi| match midi.send_packet(p) {
-                        Ok(_) => debug!("message sent to usb"),
-                        Err(err) => error!("failed to send message: {}", err),
-                    });
-                }
-                Err(_) => error!("failed to convert message"),
-            }
+            let packet =
+                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &bytes).unwrap();
+            ctx.shared
+                .usb_midi
+                .lock(|midi| match midi.send_packet(packet) {
+                    Ok(_) => debug!("message sent to usb"),
+                    Err(err) => error!("failed to send message: {}", err),
+                });
         }
     }
 
@@ -321,8 +312,7 @@ mod app {
                 if let Ok(size) = usb_midi.read(&mut buffer) {
                     let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
                     for packet in buffer_reader.into_iter().flatten() {
-                        if let Ok(message) = MidiMessage::try_parse_slice(packet.as_message_bytes())
-                        {
+                        if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes()) {
                             ctx.shared.handlers.lock(|handlers| {
                                 handlers.process_midi_input(message);
                             });
