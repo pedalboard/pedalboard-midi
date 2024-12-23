@@ -300,7 +300,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 [[package]]
 name = "embedded-midi"
 version = "0.1.2"
-source = "git+https://github.com/pedalboard/embedded-midi?branch=main#e87761a042a7d1e3fd115d6e86367f379188ccf0"
+source = "git+https://github.com/rust-midi/embedded-midi.git?branch=main#fb83ec5faba5f4172ac98464c81dd9794dc87bba"
 dependencies = [
  "embedded-hal-nb",
  "midi-convert",
