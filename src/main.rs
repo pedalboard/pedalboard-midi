@@ -27,8 +27,10 @@ mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
     use defmt::*;
-    use embedded_hal::{digital::v2::OutputPin, spi::MODE_0};
+    use embedded_hal::{digital::OutputPin, spi::MODE_0};
 
+    use midi_convert::midi_types::MidiMessage;
+    use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
@@ -40,7 +42,6 @@ mod app {
         },
         i2c::I2C,
         pac::UART0,
-        rom_data::reset_to_usb_boot,
         spi::Spi,
         timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
@@ -50,19 +51,11 @@ mod app {
     use smart_leds::{brightness, SmartLedsWrite};
     use usb_device::{
         class_prelude::UsbBusAllocator,
-        device::{UsbDeviceBuilder, UsbVidPid},
+        device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{
-        data::{
-            usb::constants::{USB_AUDIO_CLASS, USB_MIDISTREAMING_SUBCLASS},
-            usb_midi::{
-                cable_number::CableNumber::Cable0, midi_packet_reader::MidiPacketBufferReader,
-                usb_midi_event_packet::UsbMidiEventPacket,
-            },
-        },
-        midi_device::MidiClass,
-    };
+    use usbd_midi::{CableNumber, MidiClass, MidiPacketBufferReader, UsbMidiEventPacket};
+
     use ws2812_spi::Ws2812;
 
     type Duration = TimerDurationU64<1_000_000>;
@@ -136,11 +129,13 @@ mod app {
 
         let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
-            .manufacturer("github.com/pedalboard")
-            .product("pedalboard-midi")
-            .serial_number("0.0.1")
-            .device_class(USB_AUDIO_CLASS)
-            .device_sub_class(USB_MIDISTREAMING_SUBCLASS)
+            .strings(&[StringDescriptors::default()
+                .product("pedalboard-midi")
+                .manufacturer("github.com/pedalboard")
+                .serial_number("1.0.0")])
+            .expect("Failed to set usb device strings")
+            .device_class(0)
+            .device_sub_class(0)
             .build();
 
         // UART Midi
@@ -186,8 +181,10 @@ mod app {
 
         // ADC for analog input
         let adc = Adc::new(ctx.device.ADC, &mut resets);
-        let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input());
-        let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input());
+        let exp_a_pin =
+            AdcPin::new(pins.gpio27.into_floating_input()).expect("ADC pin creation failed");
+        let exp_b_pin =
+            AdcPin::new(pins.gpio28.into_floating_input()).expect("ADC pin creation failed");
 
         let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
 
@@ -258,9 +255,9 @@ mod app {
 
     #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
     fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
+        let msgs = messages.messages();
         // always send to UART out
         let uart_midi_out = ctx.local.uart_midi_out;
-        let msgs = messages.messages();
         for message in msgs.iter() {
             uart_midi_out.write(message).unwrap();
         }
@@ -274,11 +271,16 @@ mod app {
             return;
         }
         for message in msgs.into_iter() {
-            let p = UsbMidiEventPacket::from_midi(Cable0, message);
-            ctx.shared.usb_midi.lock(|midi| match midi.send_message(p) {
-                Ok(_) => debug!("message sent to usb"),
-                Err(err) => error!("failed to send message: {}", err),
-            });
+            let mut bytes = [0; 3];
+            message.render_slice(&mut bytes);
+            let packet =
+                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &bytes).unwrap();
+            ctx.shared
+                .usb_midi
+                .lock(|midi| match midi.send_packet(packet) {
+                    Ok(_) => debug!("message sent to usb"),
+                    Err(err) => error!("failed to send message: {}", err),
+                });
         }
     }
 
@@ -297,7 +299,6 @@ mod app {
         // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
-
     #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
     fn usb_rx(mut ctx: usb_rx::Context) {
         ctx.shared.usb_dev.lock(|usb_dev| {
@@ -310,21 +311,11 @@ mod app {
                 let mut buffer = [0; 64];
                 if let Ok(size) = usb_midi.read(&mut buffer) {
                     let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
-                    for packet in buffer_reader.flatten() {
-                        match packet.message {
-                            midi_types::MidiMessage::NoteOff(
-                                midi_types::Channel::C16,
-                                midi_types::Note::C1m,
-                                ..,
-                            ) => {
-                                debug!("reset to usb boot");
-                                reset_to_usb_boot(0, 0);
-                            }
-                            _ => {
-                                ctx.shared.handlers.lock(|handlers| {
-                                    handlers.process_midi_input(packet.message);
-                                });
-                            }
+                    for packet in buffer_reader.into_iter().flatten() {
+                        if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes()) {
+                            ctx.shared.handlers.lock(|handlers| {
+                                handlers.process_midi_input(message);
+                            });
                         }
                     }
                 }

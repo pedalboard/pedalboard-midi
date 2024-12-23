@@ -4,8 +4,8 @@ use debouncr::{
     Repeat5,
 };
 use defmt::Format;
-use embedded_hal::adc::OneShot;
-use embedded_hal::digital::v2::InputPin;
+use embedded_hal::digital::InputPin;
+use embedded_hal_0_2::adc::OneShot;
 use movavg::MovAvg;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp2040_hal::{
