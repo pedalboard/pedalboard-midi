@@ -895,10 +895,10 @@ dependencies = [
 [[package]]
 name = "ssd1327-i2c"
 version = "0.2.0"
-source = "git+https://github.com/pedalboard/ssd1327-i2c?branch=master#cae87bf952f500f3dadd3b8d51d9008944c1a096"
+source = "git+https://github.com/pedalboard/ssd1327-i2c?branch=master#53049e99d3458d27d198ac104f74221bcbeb13b2"
 dependencies = [
  "embedded-graphics-core",
- "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
 ]
 
 [[package]]
