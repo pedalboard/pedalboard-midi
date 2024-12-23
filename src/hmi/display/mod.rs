@@ -1,11 +1,3 @@
-use rp2040_hal::{
-    gpio::{
-        bank0::{Gpio24, Gpio25},
-        FunctionI2C, Pin, PullUp,
-    },
-    i2c::I2C,
-    pac::I2C0,
-};
 use ssd1327_i2c::SSD1327I2C;
 use tinybmp::Bmp;
 
@@ -16,20 +8,13 @@ use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
 };
+use embedded_hal::i2c::I2c;
 
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
     style::TextBoxStyleBuilder,
     TextBox,
 };
-
-pub type Interface = I2C<
-    I2C0,
-    (
-        Pin<Gpio24, FunctionI2C, PullUp>,
-        Pin<Gpio25, FunctionI2C, PullUp>,
-    ),
->;
 
 macro_rules! description {
     () => {
@@ -53,14 +38,13 @@ macro_rules! version_string {
         concat!(description!(), " v", version!(), " (", git_hash!(), ")")
     };
 }
-pub type Driver = SSD1327I2C<Interface>;
 
-pub struct Display {
-    driver: Option<Driver>,
+pub struct Display<I2C> {
+    driver: Option<SSD1327I2C<I2C>>,
 }
 
-impl Display {
-    pub fn new(i2c: Interface) -> Self {
+impl<I2C: I2c> Display<I2C> {
+    pub fn new(i2c: I2C) -> Self {
         let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, 0x3D);
         driver.init();
         driver

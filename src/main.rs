@@ -36,12 +36,12 @@ mod app {
         clocks::init_clocks_and_plls,
         fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
-            bank0::{Gpio0, Gpio1, Gpio10},
+            bank0::{Gpio0, Gpio1, Gpio10, Gpio24, Gpio25},
             FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
             SioOutput,
         },
         i2c::I2C,
-        pac::UART0,
+        pac::{I2C0, UART0},
         spi::Spi,
         timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
@@ -67,6 +67,14 @@ mod app {
     type MidiOut = embedded_midi::MidiOut<Writer<UART0, MidiUartPins>>;
     type MidiIn = embedded_midi::MidiIn<Reader<UART0, MidiUartPins>>;
 
+    pub type I2CBus = I2C<
+        I2C0,
+        (
+            Pin<Gpio24, FunctionI2C, PullUp>,
+            Pin<Gpio25, FunctionI2C, PullUp>,
+        ),
+    >;
+
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
 
@@ -83,7 +91,7 @@ mod app {
         uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
-        display: crate::hmi::display::Display,
+        display: crate::hmi::display::Display<I2CBus>,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
     }
 
