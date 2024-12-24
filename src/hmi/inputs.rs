@@ -11,14 +11,10 @@ use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp2040_hal::{
     adc::{Adc, AdcPin},
     gpio::{
-        bank0::{
-            Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21, Gpio27, Gpio28, Gpio3, Gpio4,
-            Gpio5, Gpio6, Gpio7,
-        },
-        FunctionSioInput, Pin, PinId, PullNone, PullUp,
+        bank0::{Gpio27, Gpio28},
+        FunctionSioInput, Pin, PullNone,
     },
 };
-type PullUpInputPin<I> = Pin<I, FunctionSioInput, PullUp>;
 type AdcInputPin<I> = AdcPin<Pin<I, FunctionSioInput, PullNone>>;
 type Sma = MovAvg<u16, u32, 10>;
 
@@ -45,23 +41,22 @@ pub enum InputEvent {
     Gain(Value7),
 }
 
-struct Rotary<DT, CLK>
-where
-    DT: PinId,
-    CLK: PinId,
-{
-    encoder: RotaryEncoder<StandardMode, PullUpInputPin<DT>, PullUpInputPin<CLK>>,
+pub struct Rotary<DT, CLK, B> {
+    encoder: RotaryEncoder<StandardMode, DT, CLK>,
+    button: Button<B>,
     value: u8,
 }
 
-impl<DT, CLK> Rotary<DT, CLK>
+impl<DT, CLK, B> Rotary<DT, CLK, B>
 where
-    DT: PinId,
-    CLK: PinId,
+    DT: InputPin,
+    CLK: InputPin,
+    B: InputPin,
 {
-    fn new(dt: PullUpInputPin<DT>, clk: PullUpInputPin<CLK>) -> Self {
+    pub fn new(pin_dt: DT, pin_clk: CLK, pin_b: B) -> Self {
         Rotary {
-            encoder: RotaryEncoder::new(dt, clk).into_standard_mode(),
+            encoder: RotaryEncoder::new(pin_dt, pin_clk).into_standard_mode(),
+            button: Button::new(pin_b),
             value: 0u8,
         }
     }
@@ -84,19 +79,13 @@ where
     }
 }
 
-struct Button<I>
-where
-    I: PinId,
-{
-    pin: PullUpInputPin<I>,
+pub struct Button<P> {
+    pin: P,
     debouncer: DebouncerStateful<u8, Repeat5>,
 }
 
-impl<I> Button<I>
-where
-    I: PinId,
-{
-    fn new(pin: PullUpInputPin<I>) -> Self {
+impl<P: InputPin> Button<P> {
+    pub fn new(pin: P) -> Self {
         Button {
             pin,
             debouncer: debounce_stateful_5(false),
@@ -172,79 +161,90 @@ impl ExpressionPedal {
     }
 }
 
-pub struct Inputs {
-    button_vol: Button<Gpio18>,
-    vol_rotary: Rotary<Gpio17, Gpio16>,
-    button_gain: Button<Gpio21>,
-    gain_rotary: Rotary<Gpio20, Gpio19>,
-    button_a: Button<Gpio6>,
-    button_b: Button<Gpio5>,
-    button_c: Button<Gpio2>,
-    button_d: Button<Gpio7>,
-    button_e: Button<Gpio4>,
-    button_f: Button<Gpio3>,
+pub struct Buttons<PBA, PBB, PBC, PBD, PBE, PBF> {
+    a: Button<PBA>,
+    b: Button<PBB>,
+    c: Button<PBC>,
+    d: Button<PBD>,
+    e: Button<PBE>,
+    f: Button<PBF>,
+}
+
+impl<PBA, PBB, PBC, PBD, PBE, PBF> Buttons<PBA, PBB, PBC, PBD, PBE, PBF>
+where
+    PBA: InputPin,
+    PBB: InputPin,
+    PBC: InputPin,
+    PBD: InputPin,
+    PBE: InputPin,
+    PBF: InputPin,
+{
+    pub fn new(a: PBA, b: PBB, c: PBC, d: PBD, e: PBE, f: PBF) -> Self {
+        Buttons {
+            a: Button::new(a),
+            b: Button::new(b),
+            c: Button::new(c),
+            d: Button::new(d),
+            e: Button::new(e),
+            f: Button::new(f),
+        }
+    }
+}
+
+pub struct Inputs<PBA, PBB, PBC, PBD, PBE, PBF, VDT, VCLK, VB, GDT, GCLK, GB> {
+    //    button_vol: Button<Gpio18>,
+    vol_rotary: Rotary<VDT, VCLK, VB>,
+    //    button_gain: Button<Gpio21>,
+    gain_rotary: Rotary<GDT, GCLK, GB>,
+    buttons: Buttons<PBA, PBB, PBC, PBD, PBE, PBF>,
     exp: ExpressionPedals,
 }
 
-pub struct RotaryPins<DT, CLK, SW>
+impl<PBA, PBB, PBC, PBD, PBE, PBF, VDT, VCLK, VB, GDT, GCLK, GB>
+    Inputs<PBA, PBB, PBC, PBD, PBE, PBF, VDT, VCLK, VB, GDT, GCLK, GB>
 where
-    DT: PinId,
-    CLK: PinId,
-    SW: PinId,
+    PBA: InputPin,
+    PBB: InputPin,
+    PBC: InputPin,
+    PBD: InputPin,
+    PBE: InputPin,
+    PBF: InputPin,
+    VDT: InputPin,
+    VCLK: InputPin,
+    VB: InputPin,
+    GDT: InputPin,
+    GCLK: InputPin,
+    GB: InputPin,
 {
-    pub dt: PullUpInputPin<DT>,
-    pub clk: PullUpInputPin<CLK>,
-    pub sw: PullUpInputPin<SW>,
-}
-
-pub struct ButtonPins(
-    pub PullUpInputPin<Gpio7>,
-    pub PullUpInputPin<Gpio5>,
-    pub PullUpInputPin<Gpio2>,
-    pub PullUpInputPin<Gpio6>,
-    pub PullUpInputPin<Gpio4>,
-    pub PullUpInputPin<Gpio3>,
-);
-
-impl Inputs {
     pub fn new(
-        vol_pins: RotaryPins<Gpio17, Gpio16, Gpio18>,
-        gain_pins: RotaryPins<Gpio20, Gpio19, Gpio21>,
-        button_pins: ButtonPins,
+        vol_rotary: Rotary<VDT, VCLK, VB>,
+        gain_rotary: Rotary<GDT, GCLK, GB>,
+        buttons: Buttons<PBA, PBB, PBC, PBD, PBE, PBF>,
         adc: Adc,
         exp_a_pin: AdcInputPin<Gpio27>,
         exp_b_pin: AdcInputPin<Gpio28>,
     ) -> Self {
         Self {
-            button_vol: Button::new(vol_pins.sw),
-            vol_rotary: Rotary::new(vol_pins.dt, vol_pins.clk),
-
-            button_gain: Button::new(gain_pins.sw),
-            gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
-
-            button_a: Button::new(button_pins.3),
-            button_b: Button::new(button_pins.1),
-            button_c: Button::new(button_pins.2),
-            button_d: Button::new(button_pins.0),
-            button_e: Button::new(button_pins.4),
-            button_f: Button::new(button_pins.5),
-
+            vol_rotary,
+            gain_rotary,
+            buttons,
             exp: ExpressionPedals::new(adc, exp_a_pin, exp_b_pin),
         }
     }
 
     pub fn update(&mut self) -> Option<InputEvent> {
         let (exp_a, exp_b) = self.exp.update();
-        self.button_a
+        self.buttons
+            .a
             .update()
             .map(InputEvent::ButtonA)
-            .or_else(|| self.button_b.update().map(InputEvent::ButtonB))
-            .or_else(|| self.button_c.update().map(InputEvent::ButtonC))
-            .or_else(|| self.button_d.update().map(InputEvent::ButtonD))
-            .or_else(|| self.button_e.update().map(InputEvent::ButtonE))
-            .or_else(|| self.button_f.update().map(InputEvent::ButtonF))
-            .or_else(|| self.button_vol.update().map(InputEvent::VolButton))
-            .or_else(|| self.button_gain.update().map(InputEvent::GainButton))
+            .or_else(|| self.buttons.b.update().map(InputEvent::ButtonB))
+            .or_else(|| self.buttons.c.update().map(InputEvent::ButtonC))
+            .or_else(|| self.buttons.d.update().map(InputEvent::ButtonD))
+            .or_else(|| self.buttons.e.update().map(InputEvent::ButtonE))
+            .or_else(|| self.buttons.f.update().map(InputEvent::ButtonF))
+            .or_else(|| self.vol_rotary.button.update().map(InputEvent::VolButton))
+            .or_else(|| self.gain_rotary.button.update().map(InputEvent::GainButton))
             .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
             .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
             .or_else(|| exp_a.map(InputEvent::ExpressionPedalA))

@@ -725,10 +725,9 @@ dependencies = [
 [[package]]
 name = "rotary-encoder-embedded"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff8ec63cac264e7f64ef4ea9a446d0a4012ccc3fedaa55d6996e83793e95a75f"
+source = "git+https://github.com/tomried/rotary-encoder-embedded.git#3ee31e6591d28bdfc7b2bfebfcc734b82f5b6423"
 dependencies = [
- "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
 ]
 
 [[package]]

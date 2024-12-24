@@ -25,7 +25,7 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
-    use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
+    use crate::hmi::inputs::{Buttons, Inputs, Rotary};
     use core::mem::MaybeUninit;
     use defmt::*;
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
@@ -39,9 +39,12 @@ mod app {
         clocks::init_clocks_and_plls,
         fugit::{HertzU32, RateExtU32, TimerDurationU64},
         gpio::{
-            bank0::{Gpio0, Gpio1, Gpio10, Gpio24, Gpio25},
+            bank0::{
+                Gpio0, Gpio1, Gpio10, Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21,
+                Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
+            },
             FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
-            SioOutput,
+            SioInput, SioOutput,
         },
         i2c::I2C,
         pac::{I2C0, UART0},
@@ -92,7 +95,20 @@ mod app {
     struct Local {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
-        inputs: Inputs,
+        inputs: Inputs<
+            Pin<Gpio7, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio5, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio2, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio6, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio4, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio3, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio16, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio17, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio18, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio19, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio20, FunctionSio<SioInput>, PullUp>,
+            Pin<Gpio21, FunctionSio<SioInput>, PullUp>,
+        >,
         led_spi: crate::hmi::leds::LedDriver,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
@@ -175,25 +191,16 @@ mod app {
         let uart_midi_in = MidiIn::new(rx);
 
         // input pins
-        let vol_pins = RotaryPins {
-            clk: pins.gpio16.into_pull_up_input(),
-            dt: pins.gpio17.into_pull_up_input(),
-            sw: pins.gpio18.into_pull_up_input(),
-        };
+        let vol = Rotary::new(
+            pins.gpio16.into_pull_up_input(),
+            pins.gpio17.into_pull_up_input(),
+            pins.gpio18.into_pull_up_input(),
+        );
 
-        let gain_pins = RotaryPins {
-            clk: pins.gpio19.into_pull_up_input(),
-            dt: pins.gpio20.into_pull_up_input(),
-            sw: pins.gpio21.into_pull_up_input(),
-        };
-
-        let button_pins = ButtonPins(
-            pins.gpio7.into_pull_up_input(),
-            pins.gpio5.into_pull_up_input(),
-            pins.gpio2.into_pull_up_input(),
-            pins.gpio6.into_pull_up_input(),
-            pins.gpio4.into_pull_up_input(),
-            pins.gpio3.into_pull_up_input(),
+        let gain = Rotary::new(
+            pins.gpio19.into_pull_up_input(),
+            pins.gpio20.into_pull_up_input(),
+            pins.gpio21.into_pull_up_input(),
         );
 
         // ADC for analog input
@@ -203,7 +210,21 @@ mod app {
         let exp_b_pin =
             AdcPin::new(pins.gpio28.into_floating_input()).expect("ADC pin creation failed");
 
-        let inputs = Inputs::new(vol_pins, gain_pins, button_pins, adc, exp_a_pin, exp_b_pin);
+        let inputs = Inputs::new(
+            vol,
+            gain,
+            Buttons::new(
+                pins.gpio7.into_pull_up_input(),
+                pins.gpio5.into_pull_up_input(),
+                pins.gpio2.into_pull_up_input(),
+                pins.gpio6.into_pull_up_input(),
+                pins.gpio4.into_pull_up_input(),
+                pins.gpio3.into_pull_up_input(),
+            ),
+            adc,
+            exp_a_pin,
+            exp_b_pin,
+        );
 
         // Configure SPI for Ws2812 LEDs
         let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
