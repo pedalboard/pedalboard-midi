@@ -26,8 +26,11 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 mod app {
 
     use crate::hmi::inputs::{ButtonPins, Inputs, RotaryPins};
+    use core::mem::MaybeUninit;
     use defmt::*;
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
+    use embedded_hal_bus::i2c::AtomicDevice;
+    use embedded_hal_bus::util::AtomicCell;
 
     use midi_convert::midi_types::MidiMessage;
     use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
@@ -91,11 +94,14 @@ mod app {
         uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
-        display: crate::hmi::display::Display<I2CBus>,
+        display: crate::hmi::display::Display<AtomicDevice<'static, I2CBus>>,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
     }
 
-    #[init(local = [usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None])]
+    #[init(local = [
+        usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None,
+        i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit()
+    ])]
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut resets = ctx.device.RESETS;
         let mut watchdog = Watchdog::new(ctx.device.WATCHDOG);
@@ -219,7 +225,8 @@ mod app {
             &mut resets,
             &clocks.system_clock,
         );
-        let mut display = crate::hmi::display::Display::new(i2c);
+        let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
+        let mut display = crate::hmi::display::Display::new(AtomicDevice::new(i2c_bus));
         display.splash_screen();
 
         blink::spawn().unwrap();

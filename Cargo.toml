@@ -51,6 +51,11 @@ embedded-graphics = "0.8.1"
 ssd1327-i2c = { git = "https://github.com/pedalboard/ssd1327-i2c", branch = "master" }
 tinybmp = "0.6.0"
 embedded-text = "0.7.2"
+embedded-hal-bus = "0.2.0"
+# We aren't using this, but embedded-hal-bus 0.2 unconditionally requires atomics.
+# Should be fixed in e-h-b 0.3 via https://github.com/rust-embedded/embedded-hal/pull/607
+portable-atomic = { version = "1.7.0", features = ["critical-section"] }
+
 
 [patch.crates-io]
 
