@@ -62,7 +62,6 @@ portable-atomic = { version = "1.7.0", features = ["critical-section"] }
 # [dev-dependencies]
 
 [features]
-hw-v1 = []
 
 # cargo build/run
 [profile.dev]

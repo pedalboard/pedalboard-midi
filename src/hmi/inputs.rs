@@ -172,22 +172,6 @@ impl ExpressionPedal {
     }
 }
 
-#[cfg(feature = "hw-v1")]
-pub struct Inputs {
-    button_vol: Button<Gpio18>,
-    vol_rotary: Rotary<Gpio17, Gpio16>,
-    button_gain: Button<Gpio21>,
-    gain_rotary: Rotary<Gpio20, Gpio19>,
-    button_a: Button<Gpio7>,
-    button_b: Button<Gpio5>,
-    button_c: Button<Gpio2>,
-    button_d: Button<Gpio6>,
-    button_e: Button<Gpio4>,
-    button_f: Button<Gpio3>,
-    exp: ExpressionPedals,
-}
-
-#[cfg(not(feature = "hw-v1"))]
 pub struct Inputs {
     button_vol: Button<Gpio18>,
     vol_rotary: Rotary<Gpio17, Gpio16>,
@@ -231,12 +215,6 @@ impl Inputs {
         exp_a_pin: AdcInputPin<Gpio27>,
         exp_b_pin: AdcInputPin<Gpio28>,
     ) -> Self {
-        let (b_a, b_d) = match () {
-            #[cfg(not(feature = "hw-v1"))]
-            () => (button_pins.3, button_pins.0),
-            #[cfg(feature = "hw-v1")]
-            () => (button_pins.0, button_pins.3),
-        };
         Self {
             button_vol: Button::new(vol_pins.sw),
             vol_rotary: Rotary::new(vol_pins.dt, vol_pins.clk),
@@ -244,10 +222,10 @@ impl Inputs {
             button_gain: Button::new(gain_pins.sw),
             gain_rotary: Rotary::new(gain_pins.dt, gain_pins.clk),
 
-            button_a: Button::new(b_a),
+            button_a: Button::new(button_pins.3),
             button_b: Button::new(button_pins.1),
             button_c: Button::new(button_pins.2),
-            button_d: Button::new(b_d),
+            button_d: Button::new(button_pins.0),
             button_e: Button::new(button_pins.4),
             button_f: Button::new(button_pins.5),
 
