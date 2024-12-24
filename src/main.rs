@@ -99,7 +99,7 @@ mod app {
     }
 
     #[init(local = [
-        usb_bus: Option<usb_device::bus::UsbBusAllocator<UsbBus>> = None,
+        usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
         i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit()
     ])]
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
@@ -133,7 +133,7 @@ mod app {
         debug_led.set_high().unwrap();
 
         // USB
-        let usb_bus: &'static _ = ctx.local.usb_bus.insert(UsbBusAllocator::new(UsbBus::new(
+        let usb_bus: &'static _ = ctx.local.usb_bus.write(UsbBusAllocator::new(UsbBus::new(
             ctx.device.USBCTRL_REGS,
             ctx.device.USBCTRL_DPRAM,
             clocks.usb_clock,
