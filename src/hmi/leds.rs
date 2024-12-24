@@ -69,14 +69,14 @@ impl Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
             ledrings: [
-                LedRing::new(6),
                 LedRing::default(),
-                LedRing::new(6),
                 LedRing::default(),
-                LedRing::new(6),
-                LedRing::new(6),
                 LedRing::default(),
-                LedRing::new(6),
+                LedRing::default(),
+                LedRing::default(),
+                LedRing::default(),
+                LedRing::default(),
+                LedRing::default(),
             ],
         }
     }
