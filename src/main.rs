@@ -94,7 +94,10 @@ mod app {
         uart_midi_in: MidiIn,
         inputs: Inputs,
         led_spi: crate::hmi::leds::LedDriver,
-        display: crate::hmi::display::Display<AtomicDevice<'static, I2CBus>>,
+        displays: crate::hmi::display::Displays<
+            AtomicDevice<'static, I2CBus>,
+            AtomicDevice<'static, I2CBus>,
+        >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
     }
 
@@ -226,13 +229,16 @@ mod app {
             &clocks.system_clock,
         );
         let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
-        let mut display = crate::hmi::display::Display::new(AtomicDevice::new(i2c_bus));
-        display.splash_screen();
+        let mut displays = crate::hmi::display::Displays::new(
+            AtomicDevice::new(i2c_bus),
+            AtomicDevice::new(i2c_bus),
+        );
+        displays.splash_screen();
 
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
-        display_out::spawn_after(Duration::secs(1)).unwrap();
+        display_out::spawn_after(Duration::secs(2)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
 
@@ -248,7 +254,7 @@ mod app {
                 uart_midi_in,
                 inputs,
                 led_spi,
-                display,
+                displays,
                 debug_led,
             },
             init::Monotonics(mono),
@@ -351,9 +357,11 @@ mod app {
         led_animation::spawn_after(Duration::millis(50)).unwrap();
     }
 
-    #[task(local = [display])]
+    #[task(local = [displays])]
     fn display_out(ctx: display_out::Context) {
-        ctx.local.display.show();
+        ctx.local
+            .displays
+            .show(crate::hmi::display::DisplayLocation::L);
     }
 
     #[task(local = [debug_led, state: bool = false])]

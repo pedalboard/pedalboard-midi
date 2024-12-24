@@ -39,13 +39,43 @@ macro_rules! version_string {
     };
 }
 
-pub struct Display<I2C> {
+pub enum DisplayLocation {
+    L,
+    R,
+}
+
+pub struct Displays<I2CL, I2CR> {
+    display_l: Display<I2CL>,
+    display_r: Display<I2CR>,
+}
+
+impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
+    pub fn new(i2c_l: I2CL, i2c_r: I2CR) -> Self {
+        Displays {
+            display_l: Display::new(i2c_l, 0x3D),
+            display_r: Display::new(i2c_r, 0x3C),
+        }
+    }
+    pub fn splash_screen(&mut self) {
+        self.display_l.splash_screen();
+        self.display_r.splash_screen();
+    }
+
+    pub fn show(&mut self, loc: DisplayLocation) {
+        match loc {
+            DisplayLocation::L => self.display_l.show(),
+            DisplayLocation::R => self.display_r.show(),
+        }
+    }
+}
+
+struct Display<I2C> {
     driver: Option<SSD1327I2C<I2C>>,
 }
 
 impl<I2C: I2c> Display<I2C> {
-    pub fn new(i2c: I2C) -> Self {
-        let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, 0x3D);
+    fn new(i2c: I2C, addr: u8) -> Self {
+        let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, addr);
         driver.init();
         driver
             .send_cmd(ssd1327_i2c::Commands::ContrastControl(255))
@@ -55,7 +85,7 @@ impl<I2C: I2c> Display<I2C> {
             driver: Option::Some(driver),
         }
     }
-    pub fn splash_screen(&mut self) {
+    fn splash_screen(&mut self) {
         if let Some(disp) = &mut self.driver {
             let bmp_data = include_bytes!("../../../img/pedalboard-logo.bmp");
 
@@ -67,7 +97,7 @@ impl<I2C: I2c> Display<I2C> {
         }
     }
 
-    pub fn show(&mut self) {
+    fn show(&mut self) {
         if let Some(display) = &mut self.driver {
             display.clear(Gray4::BLACK).unwrap();
 
