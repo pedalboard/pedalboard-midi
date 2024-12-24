@@ -66,8 +66,6 @@ mod app {
 
     type Duration = TimerDurationU64<1_000_000>;
 
-    type DigInPin<P> = Pin<P, FunctionSio<SioInput>, PullUp>;
-
     type MidiUartPins = (
         Pin<Gpio0, FunctionUart, PullDown>,
         Pin<Gpio1, FunctionUart, PullDown>,
@@ -81,6 +79,22 @@ mod app {
             Pin<Gpio24, FunctionI2C, PullUp>,
             Pin<Gpio25, FunctionI2C, PullUp>,
         ),
+    >;
+
+    type DigInPin<P> = Pin<P, FunctionSio<SioInput>, PullUp>;
+    pub type InputPins = Inputs<
+        DigInPin<Gpio6>,
+        DigInPin<Gpio5>,
+        DigInPin<Gpio2>,
+        DigInPin<Gpio7>,
+        DigInPin<Gpio4>,
+        DigInPin<Gpio3>,
+        DigInPin<Gpio16>,
+        DigInPin<Gpio17>,
+        DigInPin<Gpio18>,
+        DigInPin<Gpio19>,
+        DigInPin<Gpio20>,
+        DigInPin<Gpio21>,
     >;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
@@ -97,20 +111,7 @@ mod app {
     struct Local {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
-        inputs: Inputs<
-            DigInPin<Gpio6>,
-            DigInPin<Gpio5>,
-            DigInPin<Gpio2>,
-            DigInPin<Gpio7>,
-            DigInPin<Gpio4>,
-            DigInPin<Gpio3>,
-            DigInPin<Gpio16>,
-            DigInPin<Gpio17>,
-            DigInPin<Gpio18>,
-            DigInPin<Gpio19>,
-            DigInPin<Gpio20>,
-            DigInPin<Gpio21>,
-        >,
+        inputs: InputPins,
         led_spi: crate::hmi::leds::LedDriver,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
