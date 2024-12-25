@@ -25,7 +25,7 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
-    use crate::hmi::inputs::{Buttons, Inputs, Rotary};
+    use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use core::mem::MaybeUninit;
     use defmt::*;
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
@@ -122,7 +122,8 @@ mod app {
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
-        i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit()
+        i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit(),
+        adc: MaybeUninit<rp2040_hal::adc::Adc> = MaybeUninit::uninit()
     ])]
     fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut resets = ctx.device.RESETS;
@@ -206,28 +207,27 @@ mod app {
             pins.gpio21.into_pull_up_input(),
         );
 
-        // ADC for analog input
-        let adc = Adc::new(ctx.device.ADC, &mut resets);
-        let exp_a_pin =
-            AdcPin::new(pins.gpio27.into_floating_input()).expect("ADC pin creation failed");
-        let exp_b_pin =
-            AdcPin::new(pins.gpio28.into_floating_input()).expect("ADC pin creation failed");
-
-        let inputs = Inputs::new(
-            vol,
-            gain,
-            Buttons::new(
-                pins.gpio6.into_pull_up_input(),
-                pins.gpio5.into_pull_up_input(),
-                pins.gpio2.into_pull_up_input(),
-                pins.gpio7.into_pull_up_input(),
-                pins.gpio4.into_pull_up_input(),
-                pins.gpio3.into_pull_up_input(),
-            ),
-            adc,
-            exp_a_pin,
-            exp_b_pin,
+        let buttons = Buttons::new(
+            pins.gpio6.into_pull_up_input(),
+            pins.gpio5.into_pull_up_input(),
+            pins.gpio2.into_pull_up_input(),
+            pins.gpio7.into_pull_up_input(),
+            pins.gpio4.into_pull_up_input(),
+            pins.gpio3.into_pull_up_input(),
         );
+
+        // ADC for analog input
+        let adc = ctx.local.adc.write(Adc::new(ctx.device.ADC, &mut resets));
+
+        let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input()).unwrap();
+        let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
+        let exp_adc_fifo = adc
+            .build_fifo()
+            .clock_divider(0, 0)
+            .round_robin((&exp_a_pin, &exp_b_pin))
+            .start_paused();
+        let exp = ExpressionPedals::new(exp_adc_fifo);
+        let inputs = Inputs::new(vol, gain, buttons, exp);
 
         // Configure SPI for Ws2812 LEDs
         let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
@@ -344,6 +344,7 @@ mod app {
         // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
+
     #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
     fn usb_rx(mut ctx: usb_rx::Context) {
         ctx.shared.usb_dev.lock(|usb_dev| {

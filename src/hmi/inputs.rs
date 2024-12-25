@@ -5,17 +5,9 @@ use debouncr::{
 };
 use defmt::Format;
 use embedded_hal::digital::InputPin;
-use embedded_hal_0_2::adc::OneShot;
 use movavg::MovAvg;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
-use rp2040_hal::{
-    adc::{Adc, AdcPin},
-    gpio::{
-        bank0::{Gpio27, Gpio28},
-        FunctionSioInput, Pin, PullNone,
-    },
-};
-type AdcInputPin<I> = AdcPin<Pin<I, FunctionSioInput, PullNone>>;
+use rp2040_hal::adc::AdcFifo;
 type Sma = MovAvg<u16, u32, 10>;
 
 use midi_types::Value7;
@@ -103,35 +95,33 @@ impl<P: InputPin> Button<P> {
 }
 
 pub struct ExpressionPedals {
-    adc: Adc,
-    exp_a_pin: AdcInputPin<Gpio27>,
-    exp_b_pin: AdcInputPin<Gpio28>,
     sample_rate_reduction: u8,
     exp_a: ExpressionPedal,
     exp_b: ExpressionPedal,
+    adc_fifo: AdcFifo<'static, u16>,
 }
 
 impl ExpressionPedals {
-    fn new(adc: Adc, exp_a_pin: AdcInputPin<Gpio27>, exp_b_pin: AdcInputPin<Gpio28>) -> Self {
+    pub fn new(adc_fifo: AdcFifo<'static, u16>) -> Self {
         ExpressionPedals {
-            adc,
-            exp_a_pin,
-            exp_b_pin,
             sample_rate_reduction: 0,
             exp_a: ExpressionPedal::new(),
             exp_b: ExpressionPedal::new(),
+            adc_fifo,
         }
     }
-
     fn update(&mut self) -> (Option<Value7>, Option<Value7>) {
         self.sample_rate_reduction += 1;
         if self.sample_rate_reduction <= 25 {
             return (None, None);
         }
         self.sample_rate_reduction = 0;
+        self.adc_fifo.resume();
+        while self.adc_fifo.len() < 2 {}
+        self.adc_fifo.pause();
 
-        let exp_a: u16 = self.adc.read(&mut self.exp_a_pin).unwrap();
-        let exp_b: u16 = self.adc.read(&mut self.exp_b_pin).unwrap();
+        let exp_a: u16 = self.adc_fifo.read(); //self.adc.read(&mut self.exp_a_pin).unwrap();
+        let exp_b: u16 = self.adc_fifo.read(); // self.adc.read(&mut self.exp_b_pin).unwrap();
         (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
     }
 }
@@ -220,15 +210,13 @@ where
         vol_rotary: Rotary<VDT, VCLK, VB>,
         gain_rotary: Rotary<GDT, GCLK, GB>,
         buttons: Buttons<PBA, PBB, PBC, PBD, PBE, PBF>,
-        adc: Adc,
-        exp_a_pin: AdcInputPin<Gpio27>,
-        exp_b_pin: AdcInputPin<Gpio28>,
+        exp: ExpressionPedals,
     ) -> Self {
         Self {
             vol_rotary,
             gain_rotary,
             buttons,
-            exp: ExpressionPedals::new(adc, exp_a_pin, exp_b_pin),
+            exp,
         }
     }
 
