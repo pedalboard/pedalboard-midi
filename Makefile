@@ -1,5 +1,5 @@
 
-.PHONY: help install install-latest restart stop start status sushi-logs device
+.PHONY: help install install-latest-release device mount clean run build lint debug device log-midi uf2
 
 .DEFAULT_GOAL := help
 
@@ -42,11 +42,11 @@ bootsel: device ## restart the RP2040 in bootsel mode
 install-latest-release: bootsel mount ## install the latest release from github
 	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
 
-install: bootsel mount ## mount and install built code to RP2040
+install: bootsel mount ## mount and install built uf2 to RP2040
 	cp ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 $(MOUNT_POINT)
 
 log-midi: device ## log the midi traffic coming from USB
-	@amidi -p "$(DEVICE)" -d	 
+	@amidi -p "$(DEVICE)" -d
 
 uf2: ## build uf2
 	cargo build --release
