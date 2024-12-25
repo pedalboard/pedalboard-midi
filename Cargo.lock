@@ -64,9 +64,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bytemuck"
-version = "1.20.0"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b37c88a63ffd85d15b406896cc343916d7cf57838a847b3a6f2ca5d39a5695a"
+checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
 
 [[package]]
 name = "byteorder"
@@ -109,7 +109,7 @@ checksum = "e37549a379a9e0e6e576fd208ee60394ccb8be963889eebba3ffe0980364f472"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -190,7 +190,7 @@ dependencies = [
  "proc-macro-error2",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -362,7 +362,7 @@ checksum = "e99b8b3c28ae0e84b604c75f721c21dc77afb3706076af5e8216d15fd1deaae3"
 dependencies = [
  "frunk_proc_macro_helpers",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -374,7 +374,7 @@ dependencies = [
  "frunk_core",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -563,7 +563,7 @@ checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -686,7 +686,7 @@ dependencies = [
  "proc-macro-error-attr2",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -935,9 +935,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.90"
+version = "2.0.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "919d3b74a5dd0ccd15aeb8f93e7006bd9e14c295087c9896a110f490752bcf31"
+checksum = "d53cbcb5a243bd33b7858b1d7f4aca2153490815872d86d955d6ea29f743c035"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -946,22 +946,22 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08f5383f3e0071702bf93ab5ee99b52d26936be9dedd9413067cbdcddcb6141a"
+checksum = "f072643fd0190df67a8bab670c20ef5d8737177d6ac6b2e9a236cb096206b2cc"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.8"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f357fcec90b3caef6623a099691be676d033b40a058ac95d2a6ade6fa0c943"
+checksum = "7b50fa271071aae2e6ee85f842e2e28ba8cd2c5fb67f11fcb1fd70b276f9e7d4"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -993,7 +993,7 @@ dependencies = [
 [[package]]
 name = "usbd-midi"
 version = "0.3.0"
-source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#8c4a17b736e41c69abc8316ae8d6e6e5e469effa"
+source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#057574a6333bfa367c8c0140c68760a386760b43"
 dependencies = [
  "num_enum 0.7.3",
  "usb-device",
