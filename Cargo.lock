@@ -600,7 +600,6 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embedded-graphics",
- "embedded-hal 0.2.7",
  "embedded-hal 1.0.0",
  "embedded-hal-bus",
  "embedded-midi",
