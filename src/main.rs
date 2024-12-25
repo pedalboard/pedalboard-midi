@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod config;
 mod devices;
 mod handler;
 mod hmi;
@@ -32,6 +33,7 @@ mod app {
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
 
+    use heapless::Vec;
     use midi_convert::midi_types::MidiMessage;
     use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
@@ -345,8 +347,9 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [], shared =[usb_midi,usb_dev,handlers])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [buf: Vec::<u8, 64> =Vec::new()], shared =[usb_midi,usb_dev,handlers])]
     fn usb_rx(mut ctx: usb_rx::Context) {
+        let sysex_receive_buffer = ctx.local.buf;
         ctx.shared.usb_dev.lock(|usb_dev| {
             ctx.shared.usb_midi.lock(|usb_midi| {
                 // Check for new data
@@ -358,10 +361,67 @@ mod app {
                 if let Ok(size) = usb_midi.read(&mut buffer) {
                     let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
                     for packet in buffer_reader.into_iter().flatten() {
-                        if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes()) {
-                            ctx.shared.handlers.lock(|handlers| {
-                                handlers.process_midi_input(message);
-                            });
+                        if !packet.is_sysex() {
+                            if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes())
+                            {
+                                ctx.shared.handlers.lock(|handlers| {
+                                    handlers.process_midi_input(message);
+                                });
+                            }
+                        } else {
+                            // If a packet containing a SysEx payload is detected, the data is saved
+                            // into a buffer and processed after the message is complete.
+                            if packet.is_sysex_start() {
+                                debug!("SysEx message start");
+                                sysex_receive_buffer.clear();
+                            }
+
+                            match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
+                                Ok(_) => {
+                                    if packet.is_sysex_end() {
+                                        debug!("SysEx message end");
+                                        info!(
+                                            "Buffered SysEx message: {:?}",
+                                            sysex_receive_buffer
+                                        );
+
+                                        // Process the SysEx message as request in a separate function
+                                        // and send an optional response back to the host.
+                                        if let Some(response) =
+                                            crate::config::process_sysex(sysex_receive_buffer.as_ref())
+                                        {
+                                            for chunk in response.chunks(3) {
+                                                let packet =
+                                                    UsbMidiEventPacket::try_from_payload_bytes(
+                                                        CableNumber::Cable0,
+                                                        chunk,
+                                                    );
+                                                match packet {
+                                                    Ok(packet) => loop {
+                                                        // Make sure to add some timeout in case the host
+                                                        // does not read the data.
+                                                        let result =
+                                                            usb_midi.send_packet(packet.clone());
+                                                        match result {
+                                                            Ok(_) => break,
+                                                            Err(err) => {
+                                                                if err != usb_device::UsbError::WouldBlock {
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    Err(_) => error!( "SysEx response packet error",),
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(_) => {
+                                    error!("SysEx buffer overflow.");
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
