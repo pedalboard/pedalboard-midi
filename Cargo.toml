@@ -40,7 +40,7 @@ smart-leds = "0.4.0"
 ws2812-spi = "0.5.0"
 colorous = { version = "1.0.15", default-features = false }
 # embedded-hal 1.0.0 needs to be merged
-rotary-encoder-embedded = { git = "https://github.com/tomried/rotary-encoder-embedded.git" }
+rotary-encoder-embedded = { git = "https://github.com/ost-ing/rotary-encoder-embedded.git" }
 movavg = { version = "2.3.0", default-features = false }
 debouncr = "0.2.2"
 
