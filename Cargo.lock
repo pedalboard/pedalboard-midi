@@ -574,6 +574,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 
 [[package]]
+name = "opendeck"
+version = "0.1.0"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#3dbc9afdbe15a93ee00c438bf3c99c0ff8e0ce12"
+
+[[package]]
 name = "panic-probe"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -610,6 +615,7 @@ dependencies = [
  "midi-types",
  "movavg",
  "nb 1.1.0",
+ "opendeck",
  "panic-probe",
  "portable-atomic",
  "rotary-encoder-embedded",
