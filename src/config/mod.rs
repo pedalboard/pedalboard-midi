@@ -3,8 +3,7 @@ use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
     FirmwareVersion, HardwareUid, MessageStatus, NrOfSupportedComponents, OpenDeckRequest,
-    OpenDeckResponse, SpecialRequest, SpecialResponse,
-    ValueSize::OneByte,
+    OpenDeckResponse, SpecialRequest, SpecialResponse, ValueSize,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -30,9 +29,9 @@ pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
                 SpecialRequest::Handshake => {
                     Some(OpenDeckResponse::Special(SpecialResponse::Handshake))
                 }
-                SpecialRequest::ValueSize => Some(OpenDeckResponse::Special(
-                    SpecialResponse::ValueSize(OneByte),
-                )),
+                SpecialRequest::ValueSize => {
+                    Some(OpenDeckResponse::Special(SpecialResponse::ValueSize))
+                }
                 SpecialRequest::ValuesPerMessage => Some(OpenDeckResponse::Special(
                     SpecialResponse::ValuesPerMessage(32),
                 )),
@@ -63,7 +62,6 @@ pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
                         touchscreen_buttons: 0,
                     }),
                 )),
-
                 _ => None,
             },
             OpenDeckRequest::Configuration => None,
@@ -71,7 +69,8 @@ pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
         };
         if let Some(odr) = res {
             info!("opendeck-res: {}", odr);
-            return Some(OpenDeckRenderer::render(odr, MessageStatus::Response));
+            let r = OpenDeckRenderer::new(ValueSize::TwoBytes);
+            return Some(r.render(odr, MessageStatus::Response));
         }
     }
 

@@ -5,7 +5,7 @@
 
 RELEASE_LEVEL ?= patch
 
-MOUNT_POINT = "/mnt/pico"
+MOUNT_POINT ?= "/mnt/pico"
 
 mount: ## mount the RP2040 in bootsel mode
 	@while [ ! -L /dev/disk/by-label/RPI-RP2 ] ; \
@@ -42,7 +42,7 @@ bootsel: device ## restart the RP2040 in bootsel mode
 install-latest-release: bootsel mount ## install the latest release from github
 	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
 
-install: bootsel mount ## mount and install built uf2 to RP2040
+install: ## mount and install built uf2 to RP2040
 	cp ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 $(MOUNT_POINT)
 
 log-midi: device ## log the midi traffic coming from USB
