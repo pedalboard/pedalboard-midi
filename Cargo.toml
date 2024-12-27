@@ -45,7 +45,9 @@ embedded-midi = { git = "https://github.com/rust-midi/embedded-midi.git", branch
 usbd-midi = { git = "https://github.com/rust-embedded-community/usbd-midi.git", branch = "next" }
 midi-types = { version = "0.1.7", features = ["defmt"] }
 midi-convert = "0.2.0"
-opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main" }
+opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", features = [
+  "defmt",
+] }
 
 # other libs
 movavg = { version = "2.3.0", default-features = false }
