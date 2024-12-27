@@ -576,7 +576,7 @@ checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#3dbc9afdbe15a93ee00c438bf3c99c0ff8e0ce12"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#647fc82241e453a96be305ef28a7ea63e97374ac"
 
 [[package]]
 name = "panic-probe"
