@@ -2,12 +2,17 @@ use defmt::*;
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
-    FirmwareVersion, HardwareUid, MessageStatus, OpenDeckRequest, OpenDeckResponse, SpecialRequest,
-    SpecialResponse,
+    FirmwareVersion, HardwareUid, MessageStatus, NrOfSupportedComponents, OpenDeckRequest,
+    OpenDeckResponse, SpecialRequest, SpecialResponse,
     ValueSize::OneByte,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
+const OPENDECK_DIGITAL: usize = 8;
+const OPENDECK_ANALOG: usize = 2;
+const OPENDECK_ENCODERS: usize = 2;
+const OPENDECK_LEDS: usize = 8;
+const OPENDECK_BUTTONS: usize = OPENDECK_ANALOG + OPENDECK_DIGITAL;
 
 /// Processes a SysEx request and returns an optional response.
 pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
@@ -37,6 +42,28 @@ pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
                 SpecialRequest::HardwareUID => Some(OpenDeckResponse::Special(
                     SpecialResponse::HardwareUID(HardwareUid(OPENDECK_UID)),
                 )),
+                SpecialRequest::FirmwareVersionAndHardwareUUID => Some(OpenDeckResponse::Special(
+                    SpecialResponse::FirmwareVersionAndHardwareUUID(
+                        firmware_version(),
+                        HardwareUid(OPENDECK_UID),
+                    ),
+                )),
+                SpecialRequest::BootloaderSupport => Some(OpenDeckResponse::Special(
+                    SpecialResponse::BootloaderSupport(true),
+                )),
+                SpecialRequest::NrOfSupportedPresets => Some(OpenDeckResponse::Special(
+                    SpecialResponse::NrOfSupportedPresets(10),
+                )),
+                SpecialRequest::NrOfSupportedComponents => Some(OpenDeckResponse::Special(
+                    SpecialResponse::NrOfSupportedComponents(NrOfSupportedComponents {
+                        buttons: OPENDECK_BUTTONS,
+                        encoders: OPENDECK_ENCODERS,
+                        analog: OPENDECK_ANALOG,
+                        leds: OPENDECK_LEDS,
+                        touchscreen_buttons: 0,
+                    }),
+                )),
+
                 _ => None,
             },
             OpenDeckRequest::Configuration => None,
