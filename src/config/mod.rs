@@ -7,15 +7,17 @@ use opendeck::{
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
-const OPENDECK_DIGITAL: usize = 8;
 const OPENDECK_ANALOG: usize = 2;
 const OPENDECK_ENCODERS: usize = 2;
 const OPENDECK_LEDS: usize = 8;
-const OPENDECK_BUTTONS: usize = OPENDECK_ANALOG + OPENDECK_DIGITAL;
+const OPENDECK_BUTTONS: usize = 8;
+
+use heapless::Vec;
 
 /// Processes a SysEx request and returns an optional response.
 pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
-    if let Ok(req) = OpenDeckParser::parse(request) {
+    let parser = OpenDeckParser::new(ValueSize::TwoBytes);
+    if let Ok(req) = parser.parse(request) {
         info!("opendeck-req: {}", req);
         let res = match req {
             OpenDeckRequest::Special(special) => match special {
@@ -64,7 +66,10 @@ pub fn process_sysex(request: &[u8]) -> Option<Buffer> {
                 )),
                 _ => None,
             },
-            OpenDeckRequest::Configuration => None,
+            OpenDeckRequest::Configuration(wish, amount, block, index, value) => Some(
+                OpenDeckResponse::Configuration(wish, amount, block, index, value, Vec::new()),
+            ),
+
             _ => None,
         };
         if let Some(odr) = res {
