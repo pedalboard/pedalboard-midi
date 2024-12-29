@@ -87,12 +87,11 @@ impl Config {
                     )),
                     _ => None,
                 },
-                OpenDeckRequest::Configuration(wish, amount, block, index, value) => {
+                OpenDeckRequest::Configuration(wish, amount, block) => {
                     let mut res_values = Vec::new();
                     match block {
-                        Block::Global(GlobalSection::Midi) => {}
-                        Block::Global(GlobalSection::Reserved) => {}
-                        Block::Global(GlobalSection::Presets) => {
+                        Block::Global(GlobalSection::Midi(_, _)) => {}
+                        Block::Global(GlobalSection::Presets(index, value)) => {
                             if let Ok(param) = PresetIndex::try_from(index) {
                                 match param {
                                     PresetIndex::Active => match wish {
@@ -108,7 +107,7 @@ impl Config {
                                 }
                             }
                         }
-                        Block::Button => {}
+                        Block::Button(_) => {}
                         Block::Encoder => {}
                         Block::Analog(_) => {}
                         Block::Display => {}
@@ -116,7 +115,7 @@ impl Config {
                         Block::Touchscreen => {}
                     }
                     Some(OpenDeckResponse::Configuration(
-                        wish, amount, block, index, value, res_values,
+                        wish, amount, block, res_values,
                     ))
                 }
 
