@@ -1,10 +1,11 @@
 use defmt::*;
+use midi_types::Value7;
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
-    Block, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus, NrOfSupportedComponents,
-    OpenDeckRequest, OpenDeckResponse, PresetIndex, SpecialRequest, SpecialResponse, ValueSize,
-    Wish,
+    Block, ButtonSection, ButtonType, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus,
+    NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex, SpecialRequest,
+    SpecialResponse, ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -16,22 +17,60 @@ const OPENDECK_NR_PRESETS: usize = 2;
 
 use heapless::Vec;
 
-#[derive(Default, Copy, Clone)]
-pub struct Preset {}
+#[derive(Debug, Format, Clone)]
+pub struct Button {
+    button_type: ButtonType,
+    value: Value7,
+}
+
+impl Default for Button {
+    fn default() -> Self {
+        Button {
+            button_type: ButtonType::default(),
+            value: Value7::new(0x01),
+        }
+    }
+}
+
+#[derive(Format, Debug)]
+pub struct Preset {
+    buttons: Vec<Button, OPENDECK_BUTTONS>,
+}
+
+impl Default for Preset {
+    fn default() -> Self {
+        let mut buttons = Vec::new();
+        for n in 1..OPENDECK_BUTTONS {
+            buttons.push(Button::default()).unwrap();
+        }
+        Preset { buttons }
+    }
+}
+
+impl Preset {
+    fn button_mut(&mut self, index: u16) -> Option<&mut Button> {
+        self.buttons.get_mut(index as usize)
+    }
+}
 
 #[derive(Default)]
 pub struct Config {
     enabled: bool,
-    current_preset: u16,
-    //    presets: [Preset; OPENDECK_NR_PRESETS],
+    current_preset: usize,
+    presets: Vec<Preset, OPENDECK_NR_PRESETS>,
 }
 
 impl Config {
     pub fn new() -> Self {
+        let mut presets = Vec::new();
+        for n in 1..OPENDECK_NR_PRESETS {
+            presets.push(Preset::default()).unwrap();
+        }
+
         Config {
             enabled: false,
             current_preset: 0,
-            //          presets: [Preset::default(); OPENDECK_NR_PRESETS],
+            presets,
         }
     }
     /// Processes a SysEx request and returns an optional response.
@@ -89,31 +128,57 @@ impl Config {
                 },
                 OpenDeckRequest::Configuration(wish, amount, block) => {
                     let mut res_values = Vec::new();
-                    match block {
-                        Block::Global(GlobalSection::Midi(_, _)) => {}
-                        Block::Global(GlobalSection::Presets(index, value)) => {
-                            if let Ok(param) = PresetIndex::try_from(index) {
-                                match param {
-                                    PresetIndex::Active => match wish {
-                                        Wish::Set => self.current_preset = value,
-                                        Wish::Get | Wish::Backup => {
-                                            res_values.push(self.current_preset).unwrap()
-                                        }
-                                    },
-                                    // FIXME implement more preset features
-                                    PresetIndex::Preservation => {}
-                                    PresetIndex::EnableMideChange => {}
-                                    PresetIndex::ForceValueRefresh => {}
+
+                    if let Some(preset) = self.current_preset_mut() {
+                        match block {
+                            Block::Global(GlobalSection::Midi(_, _)) => {}
+                            Block::Global(GlobalSection::Presets(index, value)) => {
+                                if let Ok(param) = PresetIndex::try_from(index) {
+                                    match param {
+                                        PresetIndex::Active => match wish {
+                                            Wish::Set => self.current_preset = value as usize,
+                                            Wish::Get | Wish::Backup => {
+                                                res_values.push(self.current_preset as u16).unwrap()
+                                            }
+                                        },
+                                        // FIXME implement more preset features
+                                        PresetIndex::Preservation => {}
+                                        PresetIndex::EnableMideChange => {}
+                                        PresetIndex::ForceValueRefresh => {}
+                                    }
                                 }
                             }
-                        }
-                        Block::Button(_) => {}
-                        Block::Encoder => {}
-                        Block::Analog(_) => {}
-                        Block::Display => {}
-                        Block::Led => {}
-                        Block::Touchscreen => {}
-                    }
+                            Block::Button(ButtonSection::Type(index, t)) => {
+                                if let Some(b) = preset.button_mut(index) {
+                                    match wish {
+                                        Wish::Set => b.button_type = t,
+                                        Wish::Get | Wish::Backup => {
+                                            res_values.push(b.button_type as u16).unwrap()
+                                        }
+                                    }
+                                }
+                            }
+                            Block::Button(ButtonSection::Value(index, v)) => {
+                                if let Some(b) = preset.button_mut(index) {
+                                    match wish {
+                                        Wish::Set => b.value = v,
+                                        Wish::Get | Wish::Backup => {
+                                            let current: u8 = b.value.into();
+                                            res_values.push(current as u16).unwrap()
+                                        }
+                                    }
+                                }
+                            }
+
+                            Block::Encoder => {}
+                            Block::Analog(_) => {}
+                            Block::Display => {}
+                            Block::Led => {}
+                            Block::Touchscreen => {}
+                            // FIXME remove once all cases are handled
+                            _ => {}
+                        };
+                    };
                     Some(OpenDeckResponse::Configuration(
                         wish, amount, block, res_values,
                     ))
@@ -129,6 +194,9 @@ impl Config {
         }
 
         None
+    }
+    fn current_preset_mut(&mut self) -> Option<&mut Preset> {
+        self.presets.get_mut(self.current_preset as usize)
     }
 }
 

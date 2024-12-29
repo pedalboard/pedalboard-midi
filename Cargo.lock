@@ -576,7 +576,7 @@ checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#16a7fe6f12f44e5ceaec40eeccb65b890042ca27"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#02478150732b2797995f609f69cc9a6119eb6a3c"
 dependencies = [
  "defmt",
  "heapless 0.8.0",
