@@ -1,11 +1,11 @@
 use defmt::*;
-use midi_types::Value7;
+use midi_types::{Channel, Value7};
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
     Block, ButtonSection, ButtonType, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus,
-    NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex, SpecialRequest,
-    SpecialResponse, ValueSize, Wish,
+    MessageType, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex,
+    SpecialRequest, SpecialResponse, ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -21,14 +21,26 @@ use heapless::Vec;
 pub struct Button {
     button_type: ButtonType,
     value: Value7,
+    midi_id: Value7,
+    message_type: MessageType,
+    channel: Channel,
+}
+
+impl Button {
+    fn new(midi_id: Value7) -> Self {
+        Button {
+            button_type: ButtonType::default(),
+            value: Value7::new(0x01),
+            midi_id,
+            message_type: MessageType::default(),
+            channel: Channel::C1,
+        }
+    }
 }
 
 impl Default for Button {
     fn default() -> Self {
-        Button {
-            button_type: ButtonType::default(),
-            value: Value7::new(0x01),
-        }
+        Button::new(Value7::new(0x00))
     }
 }
 
@@ -40,8 +52,8 @@ pub struct Preset {
 impl Default for Preset {
     fn default() -> Self {
         let mut buttons = Vec::new();
-        for n in 1..OPENDECK_BUTTONS {
-            buttons.push(Button::default()).unwrap();
+        for i in 0..(OPENDECK_BUTTONS - 1) {
+            buttons.push(Button::new(Value7::new(i as u8))).unwrap();
         }
         Preset { buttons }
     }
@@ -63,7 +75,7 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         let mut presets = Vec::new();
-        for n in 1..OPENDECK_NR_PRESETS {
+        for _ in 0..(OPENDECK_NR_PRESETS - 1) {
             presets.push(Preset::default()).unwrap();
         }
 
@@ -128,11 +140,12 @@ impl Config {
                 },
                 OpenDeckRequest::Configuration(wish, amount, block) => {
                     let mut res_values = Vec::new();
+                    let bc = block.clone();
 
                     if let Some(preset) = self.current_preset_mut() {
                         match block {
-                            Block::Global(GlobalSection::Midi(_, _)) => {}
-                            Block::Global(GlobalSection::Presets(index, value)) => {
+                            Block::Global(_, GlobalSection::Midi(_)) => {}
+                            Block::Global(index, GlobalSection::Presets(value)) => {
                                 if let Ok(param) = PresetIndex::try_from(index) {
                                     match param {
                                         PresetIndex::Active => match wish {
@@ -148,39 +161,50 @@ impl Config {
                                     }
                                 }
                             }
-                            Block::Button(ButtonSection::Type(index, t)) => {
+                            Block::Button(index, section) => {
                                 if let Some(b) = preset.button_mut(index) {
                                     match wish {
-                                        Wish::Set => b.button_type = t,
+                                        Wish::Set => match section {
+                                            ButtonSection::Type(t) => b.button_type = t,
+                                            ButtonSection::Value(v) => b.value = v,
+                                            ButtonSection::MidiId(id) => b.midi_id = id,
+                                            ButtonSection::MessageType(t) => b.message_type = t,
+                                            ButtonSection::Channel(c) => b.channel = c,
+                                        },
                                         Wish::Get | Wish::Backup => {
-                                            res_values.push(b.button_type as u16).unwrap()
+                                            res_values
+                                                .push(match section {
+                                                    ButtonSection::Type(_) => b.button_type as u16,
+                                                    ButtonSection::MessageType(_) => {
+                                                        b.message_type as u16
+                                                    }
+                                                    ButtonSection::Value(_) => {
+                                                        let v: u8 = b.value.into();
+                                                        v as u16
+                                                    }
+                                                    ButtonSection::MidiId(_) => {
+                                                        let v: u8 = b.midi_id.into();
+                                                        v as u16
+                                                    }
+                                                    ButtonSection::Channel(_) => {
+                                                        let v: u8 = b.channel.into();
+                                                        v as u16
+                                                    }
+                                                })
+                                                .unwrap();
                                         }
                                     }
                                 }
                             }
-                            Block::Button(ButtonSection::Value(index, v)) => {
-                                if let Some(b) = preset.button_mut(index) {
-                                    match wish {
-                                        Wish::Set => b.value = v,
-                                        Wish::Get | Wish::Backup => {
-                                            let current: u8 = b.value.into();
-                                            res_values.push(current as u16).unwrap()
-                                        }
-                                    }
-                                }
-                            }
-
                             Block::Encoder => {}
-                            Block::Analog(_) => {}
+                            Block::Analog(_, _) => {}
                             Block::Display => {}
                             Block::Led => {}
                             Block::Touchscreen => {}
-                            // FIXME remove once all cases are handled
-                            _ => {}
                         };
                     };
                     Some(OpenDeckResponse::Configuration(
-                        wish, amount, block, res_values,
+                        wish, amount, bc, res_values,
                     ))
                 }
 
@@ -196,7 +220,7 @@ impl Config {
         None
     }
     fn current_preset_mut(&mut self) -> Option<&mut Preset> {
-        self.presets.get_mut(self.current_preset as usize)
+        self.presets.get_mut(self.current_preset)
     }
 }
 
