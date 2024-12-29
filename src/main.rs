@@ -120,6 +120,7 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
+        config: crate::config::Config,
     }
 
     #[init(local = [
@@ -267,6 +268,7 @@ mod app {
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
+        let config = crate::config::Config::new();
 
         info!("pedalboard-midi initialized");
         (
@@ -282,6 +284,7 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
+                config,
             },
             init::Monotonics(mono),
         )
@@ -347,7 +350,10 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [buf: Vec::<u8, 64> =Vec::new()], shared =[usb_midi,usb_dev,handlers])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, local = [
+        buf: Vec::<u8, 64>=Vec::new(),
+        config,
+    ], shared =[usb_midi,usb_dev,handlers])]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
         ctx.shared.usb_dev.lock(|usb_dev| {
@@ -388,7 +394,7 @@ mod app {
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
                                         if let Some(response) =
-                                            crate::config::process_sysex(sysex_receive_buffer.as_ref())
+                                            ctx.local.config.process_sysex(sysex_receive_buffer.as_ref())
                                         {
                                             for chunk in response.chunks(3) {
                                                 let packet =
