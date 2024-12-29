@@ -3,9 +3,9 @@ use midi_types::{Channel, Value7};
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
-    Block, ButtonSection, ButtonType, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus,
-    MessageType, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex,
-    SpecialRequest, SpecialResponse, ValueSize, Wish,
+    Block, ButtonSection, ButtonType, ChannelOrAll, FirmwareVersion, GlobalSection, HardwareUid,
+    MessageStatus, MessageType, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse,
+    PresetIndex, SpecialRequest, SpecialResponse, ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -23,7 +23,7 @@ pub struct Button {
     value: Value7,
     midi_id: Value7,
     message_type: MessageType,
-    channel: Channel,
+    channel: ChannelOrAll,
 }
 
 impl Button {
@@ -33,7 +33,7 @@ impl Button {
             value: Value7::new(0x01),
             midi_id,
             message_type: MessageType::default(),
-            channel: Channel::C1,
+            channel: ChannelOrAll::Channel(Channel::C1),
         }
     }
 }
@@ -52,7 +52,7 @@ pub struct Preset {
 impl Default for Preset {
     fn default() -> Self {
         let mut buttons = Vec::new();
-        for i in 0..(OPENDECK_BUTTONS - 1) {
+        for i in 0..OPENDECK_BUTTONS {
             buttons.push(Button::new(Value7::new(i as u8))).unwrap();
         }
         Preset { buttons }
@@ -75,7 +75,7 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         let mut presets = Vec::new();
-        for _ in 0..(OPENDECK_NR_PRESETS - 1) {
+        for _ in 0..OPENDECK_NR_PRESETS {
             presets.push(Preset::default()).unwrap();
         }
 
@@ -187,8 +187,7 @@ impl Config {
                                                         v as u16
                                                     }
                                                     ButtonSection::Channel(_) => {
-                                                        let v: u8 = b.channel.into();
-                                                        v as u16
+                                                        b.channel.clone().into()
                                                     }
                                                 })
                                                 .unwrap();
