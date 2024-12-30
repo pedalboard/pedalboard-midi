@@ -1,7 +1,7 @@
 use defmt::*;
-use midi_types::{Channel, Value7};
+use midi_types::{Channel, Value14, Value7};
 use opendeck::{
-    parser::OpenDeckParser,
+    parser::{OpenDeckParseError, OpenDeckParser},
     renderer::{Buffer, OpenDeckRenderer},
     Accelleration, Amount, Block, ButtonSection, ButtonType, ChannelOrAll, EncoderMessageType,
     EncoderSection, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus, MessageType,
@@ -69,15 +69,18 @@ pub struct Encoder {
     enabled: bool,
     invert_state: bool,
     message_type: EncoderMessageType,
-    midi_id: Value7,
+    midi_id: Value14,
     channel: ChannelOrAll,
     pulses_per_step: u8,
     accelleration: Accelleration,
     remote_sync: bool,
+    upper_limit: Value14,
+    lower_limit: Value14,
+    second_midi_id: Value14,
 }
 
 impl Encoder {
-    fn new(midi_id: Value7) -> Self {
+    fn new(midi_id: Value14) -> Self {
         Encoder {
             enabled: true,
             invert_state: false,
@@ -87,6 +90,9 @@ impl Encoder {
             midi_id,
             accelleration: Accelleration::None,
             remote_sync: false,
+            lower_limit: Value14::new(0),
+            upper_limit: Value14::new(0),
+            second_midi_id: Value14::new(0),
         }
     }
     fn set(&mut self, section: &EncoderSection) {
@@ -99,6 +105,9 @@ impl Encoder {
             EncoderSection::PulsesPerStep(v) => self.pulses_per_step = *v,
             EncoderSection::RemoteSync(v) => self.remote_sync = *v,
             EncoderSection::Accelleration(v) => self.accelleration = *v,
+            EncoderSection::LowerLimit(v) => self.lower_limit = *v,
+            EncoderSection::UpperLimit(v) => self.upper_limit = *v,
+            EncoderSection::SecondMidiId(v) => self.second_midi_id = *v,
             EncoderSection::MidiIdMSB(_) => {}
         }
     }
@@ -107,14 +116,14 @@ impl Encoder {
             EncoderSection::MessageType(_) => self.message_type as u16,
             EncoderSection::Channel(_) => self.channel.clone().into(),
             EncoderSection::Enabled(_) => self.enabled as u16,
-            EncoderSection::MidiIdLSB(_) => {
-                let v: u8 = self.midi_id.into();
-                v as u16
-            }
+            EncoderSection::MidiIdLSB(_) => self.midi_id.into(),
             EncoderSection::InvertState(_) => self.invert_state as u16,
             EncoderSection::PulsesPerStep(_) => self.pulses_per_step as u16,
             EncoderSection::RemoteSync(_) => self.remote_sync as u16,
             EncoderSection::Accelleration(_) => self.accelleration as u16,
+            EncoderSection::LowerLimit(_) => self.lower_limit.into(),
+            EncoderSection::UpperLimit(_) => self.upper_limit.into(),
+            EncoderSection::SecondMidiId(_) => self.second_midi_id.into(),
             EncoderSection::MidiIdMSB(_) => 0x00,
         }
     }
@@ -140,7 +149,7 @@ impl Default for Preset {
         }
         let mut encoders = Vec::new();
         for i in 0..OPENDECK_ENCODERS {
-            encoders.push(Encoder::new(Value7::new(i as u8))).unwrap();
+            encoders.push(Encoder::new(Value14::new(i as i16))).unwrap();
         }
         Preset { buttons, encoders }
     }
@@ -188,20 +197,37 @@ impl Config {
         let parser = OpenDeckParser::new(ValueSize::TwoBytes);
         let renderer = OpenDeckRenderer::new(ValueSize::TwoBytes);
         let mut responses = Vec::new();
-        if let Ok(req) = parser.parse(request) {
-            if let Some(odr) = self.process_req(&req) {
-                info!("opendeck-res: {}", odr);
-                responses
-                    .push(renderer.render(odr, MessageStatus::Response))
-                    .unwrap();
-
-                if let OpenDeckRequest::Configuration(wish, Amount::All(0x7E), block) = req {
-                    let end =
-                        OpenDeckResponse::Configuration(wish, Amount::All(0x7E), block, Vec::new());
+        match parser.parse(request) {
+            Ok(req) => {
+                if let Some(odr) = self.process_req(&req) {
+                    info!("opendeck-res: {}", odr);
                     responses
-                        .push(renderer.render(end, MessageStatus::Response))
+                        .push(renderer.render(odr, MessageStatus::Response))
                         .unwrap();
+
+                    if let OpenDeckRequest::Configuration(wish, Amount::All(0x7E), block) = req {
+                        let end = OpenDeckResponse::Configuration(
+                            wish,
+                            Amount::All(0x7E),
+                            block,
+                            Vec::new(),
+                        );
+                        responses
+                            .push(renderer.render(end, MessageStatus::Response))
+                            .unwrap();
+                    }
                 }
+            }
+            Err(OpenDeckParseError::StatusError(status)) => {
+                responses
+                    .push(renderer.render(
+                        OpenDeckResponse::Special(SpecialResponse::Handshake),
+                        status,
+                    ))
+                    .unwrap();
+            }
+            Err(err) => {
+                error!("error parsing sysex message: {}", err)
             }
         }
         responses
