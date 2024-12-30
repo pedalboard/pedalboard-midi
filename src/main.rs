@@ -393,7 +393,7 @@ mod app {
 
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
-                                        if let Some(response) =
+                                        for response in 
                                             ctx.local.config.process_sysex(sysex_receive_buffer.as_ref())
                                         {
                                             for chunk in response.chunks(3) {

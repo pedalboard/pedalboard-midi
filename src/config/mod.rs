@@ -14,6 +14,7 @@ const OPENDECK_ENCODERS: usize = 2;
 const OPENDECK_LEDS: usize = 8;
 const OPENDECK_BUTTONS: usize = 8;
 const OPENDECK_NR_PRESETS: usize = 2;
+const OPENDECK_MAX_NR_MESSAGES: usize = 2;
 
 use heapless::Vec;
 
@@ -99,6 +100,8 @@ pub struct Config {
     presets: Vec<Preset, OPENDECK_NR_PRESETS>,
 }
 
+type Responses = Vec<Buffer, OPENDECK_MAX_NR_MESSAGES>;
+
 impl Config {
     pub fn new() -> Self {
         let mut presets = Vec::new();
@@ -112,21 +115,31 @@ impl Config {
             presets,
         }
     }
-    /// Processes a SysEx request and returns an optional response.
-    pub fn process_sysex(&mut self, request: &[u8]) -> Option<Buffer> {
+    /// Processes a SysEx request and returns an optional responses.
+    pub fn process_sysex(&mut self, request: &[u8]) -> Responses {
         let parser = OpenDeckParser::new(ValueSize::TwoBytes);
+        let renderer = OpenDeckRenderer::new(ValueSize::TwoBytes);
+        let mut responses = Vec::new();
         if let Ok(req) = parser.parse(request) {
-            if let Some(odr) = self.process_req(req) {
+            if let Some(odr) = self.process_req(&req) {
                 info!("opendeck-res: {}", odr);
-                let r = OpenDeckRenderer::new(ValueSize::TwoBytes);
-                return Some(r.render(odr, MessageStatus::Response));
+                responses
+                    .push(renderer.render(odr, MessageStatus::Response))
+                    .unwrap();
+
+                if let OpenDeckRequest::Configuration(wish, Amount::All(0x7E), block) = req {
+                    let end =
+                        OpenDeckResponse::Configuration(wish, Amount::All(0x7E), block, Vec::new());
+                    responses
+                        .push(renderer.render(end, MessageStatus::Response))
+                        .unwrap();
+                }
             }
         }
-
-        None
+        responses
     }
 
-    fn process_req(&mut self, req: OpenDeckRequest) -> Option<OpenDeckResponse> {
+    fn process_req(&mut self, req: &OpenDeckRequest) -> Option<OpenDeckResponse> {
         info!("opendeck-req: {}", req);
         match req {
             OpenDeckRequest::Special(special) => {
@@ -136,16 +149,19 @@ impl Config {
                 None
             }
             OpenDeckRequest::Configuration(wish, amount, block) => {
-                let res_values = self.process_config(&wish, &amount, &block);
+                let (res_values, for_amount) = self.process_config(wish, amount, block);
                 Some(OpenDeckResponse::Configuration(
-                    wish, amount, block, res_values,
+                    wish.clone(),
+                    for_amount,
+                    block.clone(),
+                    res_values,
                 ))
             }
             _ => None,
         }
     }
 
-    fn process_special_req(&mut self, special: SpecialRequest) -> Option<SpecialResponse> {
+    fn process_special_req(&mut self, special: &SpecialRequest) -> Option<SpecialResponse> {
         match special {
             SpecialRequest::BootloaderMode => {
                 rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
@@ -189,8 +205,14 @@ impl Config {
         }
     }
 
-    fn process_config(&mut self, wish: &Wish, amount: &Amount, block: &Block) -> NewValues {
+    fn process_config(
+        &mut self,
+        wish: &Wish,
+        amount: &Amount,
+        block: &Block,
+    ) -> (NewValues, Amount) {
         let mut res_values = Vec::new();
+        let mut for_amount = amount.clone();
 
         if let Some(preset) = self.current_preset_mut() {
             match block {
@@ -227,6 +249,7 @@ impl Config {
                             for b in preset.buttons.iter() {
                                 res_values.push(b.get(section)).unwrap();
                             }
+                            for_amount = Amount::All(0)
                         }
                     },
                 },
@@ -238,7 +261,7 @@ impl Config {
             };
         };
 
-        res_values
+        (res_values, for_amount)
     }
 
     fn current_preset_mut(&mut self) -> Option<&mut Preset> {
