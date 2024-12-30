@@ -4,7 +4,7 @@ use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
     Amount, Block, ButtonSection, ButtonType, ChannelOrAll, FirmwareVersion, GlobalSection,
-    HardwareUid, MessageStatus, MessageType, NrOfSupportedComponents, OpenDeckRequest,
+    HardwareUid, MessageStatus, MessageType, NewValues, NrOfSupportedComponents, OpenDeckRequest,
     OpenDeckResponse, PresetIndex, SpecialRequest, SpecialResponse, ValueSize, Wish,
 };
 
@@ -36,13 +36,13 @@ impl Button {
             channel: ChannelOrAll::Channel(Channel::C1),
         }
     }
-    fn set(&mut self, section: ButtonSection) {
+    fn set(&mut self, section: &ButtonSection) {
         match section {
-            ButtonSection::Type(t) => self.button_type = t,
-            ButtonSection::Value(v) => self.value = v,
-            ButtonSection::MidiId(id) => self.midi_id = id,
-            ButtonSection::MessageType(t) => self.message_type = t,
-            ButtonSection::Channel(c) => self.channel = c,
+            ButtonSection::Type(t) => self.button_type = *t,
+            ButtonSection::Value(v) => self.value = *v,
+            ButtonSection::MidiId(id) => self.midi_id = *id,
+            ButtonSection::MessageType(t) => self.message_type = *t,
+            ButtonSection::Channel(c) => self.channel = c.clone(),
         }
     }
     fn get(&self, section: &ButtonSection) -> u16 {
@@ -84,11 +84,11 @@ impl Default for Preset {
 }
 
 impl Preset {
-    fn button_mut(&mut self, index: u16) -> Option<&mut Button> {
-        self.buttons.get_mut(index as usize)
+    fn button_mut(&mut self, index: &u16) -> Option<&mut Button> {
+        self.buttons.get_mut(*index as usize)
     }
-    fn button(&mut self, index: u16) -> Option<&Button> {
-        self.buttons.get(index as usize)
+    fn button(&mut self, index: &u16) -> Option<&Button> {
+        self.buttons.get(*index as usize)
     }
 }
 
@@ -136,56 +136,9 @@ impl Config {
                 None
             }
             OpenDeckRequest::Configuration(wish, amount, block) => {
-                let mut res_values = Vec::new();
-                let bc = block.clone();
-
-                if let Some(preset) = self.current_preset_mut() {
-                    match block {
-                        Block::Global(_, GlobalSection::Midi(_)) => {}
-                        Block::Global(index, GlobalSection::Presets(value)) => {
-                            if let Ok(param) = PresetIndex::try_from(index) {
-                                match param {
-                                    PresetIndex::Active => match wish {
-                                        Wish::Set => self.current_preset = value as usize,
-                                        Wish::Get | Wish::Backup => {
-                                            res_values.push(self.current_preset as u16).unwrap()
-                                        }
-                                    },
-                                    // FIXME implement more preset features
-                                    PresetIndex::Preservation => {}
-                                    PresetIndex::EnableMideChange => {}
-                                    PresetIndex::ForceValueRefresh => {}
-                                }
-                            }
-                        }
-                        Block::Button(index, section) => match wish {
-                            Wish::Set => {
-                                if let Some(b) = preset.button_mut(index) {
-                                    b.set(section)
-                                }
-                            }
-                            Wish::Get | Wish::Backup => match amount {
-                                Amount::Single => {
-                                    if let Some(b) = preset.button(index) {
-                                        res_values.push(b.get(&section)).unwrap();
-                                    }
-                                }
-                                Amount::All => {
-                                    for b in preset.buttons.iter() {
-                                        res_values.push(b.get(&section)).unwrap();
-                                    }
-                                }
-                            },
-                        },
-                        Block::Encoder => {}
-                        Block::Analog(_, _) => {}
-                        Block::Display => {}
-                        Block::Led => {}
-                        Block::Touchscreen => {}
-                    };
-                };
+                let res_values = self.process_config(&wish, &amount, &block);
                 Some(OpenDeckResponse::Configuration(
-                    wish, amount, bc, res_values,
+                    wish, amount, block, res_values,
                 ))
             }
             _ => None,
@@ -235,6 +188,59 @@ impl Config {
             _ => None,
         }
     }
+
+    fn process_config(&mut self, wish: &Wish, amount: &Amount, block: &Block) -> NewValues {
+        let mut res_values = Vec::new();
+
+        if let Some(preset) = self.current_preset_mut() {
+            match block {
+                Block::Global(_, GlobalSection::Midi(_)) => {}
+                Block::Global(index, GlobalSection::Presets(value)) => {
+                    if let Ok(param) = PresetIndex::try_from(*index) {
+                        match param {
+                            PresetIndex::Active => match wish {
+                                Wish::Set => self.current_preset = *value as usize,
+                                Wish::Get | Wish::Backup => {
+                                    res_values.push(self.current_preset as u16).unwrap()
+                                }
+                            },
+                            // FIXME implement more preset features
+                            PresetIndex::Preservation => {}
+                            PresetIndex::EnableMideChange => {}
+                            PresetIndex::ForceValueRefresh => {}
+                        }
+                    }
+                }
+                Block::Button(index, section) => match wish {
+                    Wish::Set => {
+                        if let Some(b) = preset.button_mut(index) {
+                            b.set(section)
+                        }
+                    }
+                    Wish::Get | Wish::Backup => match amount {
+                        Amount::Single => {
+                            if let Some(b) = preset.button(index) {
+                                res_values.push(b.get(section)).unwrap();
+                            }
+                        }
+                        Amount::All => {
+                            for b in preset.buttons.iter() {
+                                res_values.push(b.get(section)).unwrap();
+                            }
+                        }
+                    },
+                },
+                Block::Encoder => {}
+                Block::Analog(_, _) => {}
+                Block::Display => {}
+                Block::Led => {}
+                Block::Touchscreen => {}
+            };
+        };
+
+        res_values
+    }
+
     fn current_preset_mut(&mut self) -> Option<&mut Preset> {
         self.presets.get_mut(self.current_preset)
     }
