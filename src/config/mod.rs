@@ -216,21 +216,19 @@ impl Config {
 
         if let Some(preset) = self.current_preset_mut() {
             match block {
-                Block::Global(_, GlobalSection::Midi(_)) => {}
-                Block::Global(index, GlobalSection::Presets(value)) => {
-                    if let Ok(param) = PresetIndex::try_from(*index) {
-                        match param {
-                            PresetIndex::Active => match wish {
-                                Wish::Set => self.current_preset = *value as usize,
-                                Wish::Get | Wish::Backup => {
-                                    res_values.push(self.current_preset as u16).unwrap()
-                                }
-                            },
-                            // FIXME implement more preset features
-                            PresetIndex::Preservation => {}
-                            PresetIndex::EnableMideChange => {}
-                            PresetIndex::ForceValueRefresh => {}
-                        }
+                Block::Global(GlobalSection::Midi(_, _)) => {}
+                Block::Global(GlobalSection::Presets(pi, value)) => {
+                    match pi {
+                        PresetIndex::Active => match wish {
+                            Wish::Set => self.current_preset = *value as usize,
+                            Wish::Get | Wish::Backup => {
+                                res_values.push(self.current_preset as u16).unwrap()
+                            }
+                        },
+                        // FIXME implement more preset features
+                        PresetIndex::Preservation => {}
+                        PresetIndex::EnableMideChange => {}
+                        PresetIndex::ForceValueRefresh => {}
                     }
                 }
                 Block::Button(index, section) => match wish {
