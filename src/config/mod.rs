@@ -116,112 +116,7 @@ impl Config {
     pub fn process_sysex(&mut self, request: &[u8]) -> Option<Buffer> {
         let parser = OpenDeckParser::new(ValueSize::TwoBytes);
         if let Ok(req) = parser.parse(request) {
-            info!("opendeck-req: {}", req);
-            let res = match req {
-                OpenDeckRequest::Special(special) => match special {
-                    SpecialRequest::BootloaderMode => {
-                        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-                        None
-                    }
-                    SpecialRequest::Reboot => {
-                        cortex_m::peripheral::SCB::sys_reset();
-                    }
-                    SpecialRequest::Handshake => {
-                        self.enabled = true;
-                        Some(OpenDeckResponse::Special(SpecialResponse::Handshake))
-                    }
-                    SpecialRequest::ValueSize => {
-                        Some(OpenDeckResponse::Special(SpecialResponse::ValueSize))
-                    }
-                    SpecialRequest::ValuesPerMessage => Some(OpenDeckResponse::Special(
-                        SpecialResponse::ValuesPerMessage(32),
-                    )),
-                    SpecialRequest::FirmwareVersion => Some(OpenDeckResponse::Special(
-                        SpecialResponse::FirmwareVersion(firmware_version()),
-                    )),
-                    SpecialRequest::HardwareUID => Some(OpenDeckResponse::Special(
-                        SpecialResponse::HardwareUID(HardwareUid(OPENDECK_UID)),
-                    )),
-                    SpecialRequest::FirmwareVersionAndHardwareUUID => Some(
-                        OpenDeckResponse::Special(SpecialResponse::FirmwareVersionAndHardwareUUID(
-                            firmware_version(),
-                            HardwareUid(OPENDECK_UID),
-                        )),
-                    ),
-                    SpecialRequest::BootloaderSupport => Some(OpenDeckResponse::Special(
-                        SpecialResponse::BootloaderSupport(true),
-                    )),
-                    SpecialRequest::NrOfSupportedPresets => Some(OpenDeckResponse::Special(
-                        SpecialResponse::NrOfSupportedPresets(OPENDECK_NR_PRESETS),
-                    )),
-                    SpecialRequest::NrOfSupportedComponents => Some(OpenDeckResponse::Special(
-                        SpecialResponse::NrOfSupportedComponents(NrOfSupportedComponents {
-                            buttons: OPENDECK_BUTTONS,
-                            encoders: OPENDECK_ENCODERS,
-                            analog: OPENDECK_ANALOG,
-                            leds: OPENDECK_LEDS,
-                            touchscreen_buttons: 0,
-                        }),
-                    )),
-                    _ => None,
-                },
-                OpenDeckRequest::Configuration(wish, amount, block) => {
-                    let mut res_values = Vec::new();
-                    let bc = block.clone();
-
-                    if let Some(preset) = self.current_preset_mut() {
-                        match block {
-                            Block::Global(_, GlobalSection::Midi(_)) => {}
-                            Block::Global(index, GlobalSection::Presets(value)) => {
-                                if let Ok(param) = PresetIndex::try_from(index) {
-                                    match param {
-                                        PresetIndex::Active => match wish {
-                                            Wish::Set => self.current_preset = value as usize,
-                                            Wish::Get | Wish::Backup => {
-                                                res_values.push(self.current_preset as u16).unwrap()
-                                            }
-                                        },
-                                        // FIXME implement more preset features
-                                        PresetIndex::Preservation => {}
-                                        PresetIndex::EnableMideChange => {}
-                                        PresetIndex::ForceValueRefresh => {}
-                                    }
-                                }
-                            }
-                            Block::Button(index, section) => match wish {
-                                Wish::Set => {
-                                    if let Some(b) = preset.button_mut(index) {
-                                        b.set(section)
-                                    }
-                                }
-                                Wish::Get | Wish::Backup => match amount {
-                                    Amount::Single => {
-                                        if let Some(b) = preset.button(index) {
-                                            res_values.push(b.get(&section)).unwrap();
-                                        }
-                                    }
-                                    Amount::All => {
-                                        for b in preset.buttons.iter() {
-                                            res_values.push(b.get(&section)).unwrap();
-                                        }
-                                    }
-                                },
-                            },
-                            Block::Encoder => {}
-                            Block::Analog(_, _) => {}
-                            Block::Display => {}
-                            Block::Led => {}
-                            Block::Touchscreen => {}
-                        };
-                    };
-                    Some(OpenDeckResponse::Configuration(
-                        wish, amount, bc, res_values,
-                    ))
-                }
-
-                _ => None,
-            };
-            if let Some(odr) = res {
+            if let Some(odr) = self.process_req(req) {
                 info!("opendeck-res: {}", odr);
                 let r = OpenDeckRenderer::new(ValueSize::TwoBytes);
                 return Some(r.render(odr, MessageStatus::Response));
@@ -229,6 +124,116 @@ impl Config {
         }
 
         None
+    }
+
+    fn process_req(&mut self, req: OpenDeckRequest) -> Option<OpenDeckResponse> {
+        info!("opendeck-req: {}", req);
+        match req {
+            OpenDeckRequest::Special(special) => {
+                if let Some(spec_res) = self.process_special_req(special) {
+                    return Some(OpenDeckResponse::Special(spec_res));
+                }
+                None
+            }
+            OpenDeckRequest::Configuration(wish, amount, block) => {
+                let mut res_values = Vec::new();
+                let bc = block.clone();
+
+                if let Some(preset) = self.current_preset_mut() {
+                    match block {
+                        Block::Global(_, GlobalSection::Midi(_)) => {}
+                        Block::Global(index, GlobalSection::Presets(value)) => {
+                            if let Ok(param) = PresetIndex::try_from(index) {
+                                match param {
+                                    PresetIndex::Active => match wish {
+                                        Wish::Set => self.current_preset = value as usize,
+                                        Wish::Get | Wish::Backup => {
+                                            res_values.push(self.current_preset as u16).unwrap()
+                                        }
+                                    },
+                                    // FIXME implement more preset features
+                                    PresetIndex::Preservation => {}
+                                    PresetIndex::EnableMideChange => {}
+                                    PresetIndex::ForceValueRefresh => {}
+                                }
+                            }
+                        }
+                        Block::Button(index, section) => match wish {
+                            Wish::Set => {
+                                if let Some(b) = preset.button_mut(index) {
+                                    b.set(section)
+                                }
+                            }
+                            Wish::Get | Wish::Backup => match amount {
+                                Amount::Single => {
+                                    if let Some(b) = preset.button(index) {
+                                        res_values.push(b.get(&section)).unwrap();
+                                    }
+                                }
+                                Amount::All => {
+                                    for b in preset.buttons.iter() {
+                                        res_values.push(b.get(&section)).unwrap();
+                                    }
+                                }
+                            },
+                        },
+                        Block::Encoder => {}
+                        Block::Analog(_, _) => {}
+                        Block::Display => {}
+                        Block::Led => {}
+                        Block::Touchscreen => {}
+                    };
+                };
+                Some(OpenDeckResponse::Configuration(
+                    wish, amount, bc, res_values,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn process_special_req(&mut self, special: SpecialRequest) -> Option<SpecialResponse> {
+        match special {
+            SpecialRequest::BootloaderMode => {
+                rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                None
+            }
+            SpecialRequest::Reboot => {
+                cortex_m::peripheral::SCB::sys_reset();
+            }
+            SpecialRequest::Handshake => {
+                self.enabled = true;
+                Some(SpecialResponse::Handshake)
+            }
+            SpecialRequest::ValueSize => Some(SpecialResponse::ValueSize),
+            SpecialRequest::ValuesPerMessage => Some(SpecialResponse::ValuesPerMessage(32)),
+            SpecialRequest::FirmwareVersion => {
+                Some(SpecialResponse::FirmwareVersion(firmware_version()))
+            }
+            SpecialRequest::HardwareUID => {
+                Some(SpecialResponse::HardwareUID(HardwareUid(OPENDECK_UID)))
+            }
+            SpecialRequest::FirmwareVersionAndHardwareUUID => {
+                Some(SpecialResponse::FirmwareVersionAndHardwareUUID(
+                    firmware_version(),
+                    HardwareUid(OPENDECK_UID),
+                ))
+            }
+            SpecialRequest::BootloaderSupport => Some(SpecialResponse::BootloaderSupport(true)),
+            SpecialRequest::NrOfSupportedPresets => {
+                Some(SpecialResponse::NrOfSupportedPresets(OPENDECK_NR_PRESETS))
+            }
+            SpecialRequest::NrOfSupportedComponents => Some(
+                SpecialResponse::NrOfSupportedComponents(NrOfSupportedComponents {
+                    buttons: OPENDECK_BUTTONS,
+                    encoders: OPENDECK_ENCODERS,
+                    analog: OPENDECK_ANALOG,
+                    leds: OPENDECK_LEDS,
+                    touchscreen_buttons: 0,
+                }),
+            ),
+            _ => None,
+        }
     }
     fn current_preset_mut(&mut self) -> Option<&mut Preset> {
         self.presets.get_mut(self.current_preset)
