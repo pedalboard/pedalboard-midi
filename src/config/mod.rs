@@ -3,9 +3,9 @@ use midi_types::{Channel, Value7};
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
-    Block, ButtonSection, ButtonType, ChannelOrAll, FirmwareVersion, GlobalSection, HardwareUid,
-    MessageStatus, MessageType, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse,
-    PresetIndex, SpecialRequest, SpecialResponse, ValueSize, Wish,
+    Amount, Block, ButtonSection, ButtonType, ChannelOrAll, FirmwareVersion, GlobalSection,
+    HardwareUid, MessageStatus, MessageType, NrOfSupportedComponents, OpenDeckRequest,
+    OpenDeckResponse, PresetIndex, SpecialRequest, SpecialResponse, ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -36,6 +36,30 @@ impl Button {
             channel: ChannelOrAll::Channel(Channel::C1),
         }
     }
+    fn set(&mut self, section: ButtonSection) {
+        match section {
+            ButtonSection::Type(t) => self.button_type = t,
+            ButtonSection::Value(v) => self.value = v,
+            ButtonSection::MidiId(id) => self.midi_id = id,
+            ButtonSection::MessageType(t) => self.message_type = t,
+            ButtonSection::Channel(c) => self.channel = c,
+        }
+    }
+    fn get(&self, section: &ButtonSection) -> u16 {
+        match section {
+            ButtonSection::Type(_) => self.button_type as u16,
+            ButtonSection::MessageType(_) => self.message_type as u16,
+            ButtonSection::Value(_) => {
+                let v: u8 = self.value.into();
+                v as u16
+            }
+            ButtonSection::MidiId(_) => {
+                let v: u8 = self.midi_id.into();
+                v as u16
+            }
+            ButtonSection::Channel(_) => self.channel.clone().into(),
+        }
+    }
 }
 
 impl Default for Button {
@@ -62,6 +86,9 @@ impl Default for Preset {
 impl Preset {
     fn button_mut(&mut self, index: u16) -> Option<&mut Button> {
         self.buttons.get_mut(index as usize)
+    }
+    fn button(&mut self, index: u16) -> Option<&Button> {
+        self.buttons.get(index as usize)
     }
 }
 
@@ -161,40 +188,25 @@ impl Config {
                                     }
                                 }
                             }
-                            Block::Button(index, section) => {
-                                if let Some(b) = preset.button_mut(index) {
-                                    match wish {
-                                        Wish::Set => match section {
-                                            ButtonSection::Type(t) => b.button_type = t,
-                                            ButtonSection::Value(v) => b.value = v,
-                                            ButtonSection::MidiId(id) => b.midi_id = id,
-                                            ButtonSection::MessageType(t) => b.message_type = t,
-                                            ButtonSection::Channel(c) => b.channel = c,
-                                        },
-                                        Wish::Get | Wish::Backup => {
-                                            res_values
-                                                .push(match section {
-                                                    ButtonSection::Type(_) => b.button_type as u16,
-                                                    ButtonSection::MessageType(_) => {
-                                                        b.message_type as u16
-                                                    }
-                                                    ButtonSection::Value(_) => {
-                                                        let v: u8 = b.value.into();
-                                                        v as u16
-                                                    }
-                                                    ButtonSection::MidiId(_) => {
-                                                        let v: u8 = b.midi_id.into();
-                                                        v as u16
-                                                    }
-                                                    ButtonSection::Channel(_) => {
-                                                        b.channel.clone().into()
-                                                    }
-                                                })
-                                                .unwrap();
-                                        }
+                            Block::Button(index, section) => match wish {
+                                Wish::Set => {
+                                    if let Some(b) = preset.button_mut(index) {
+                                        b.set(section)
                                     }
                                 }
-                            }
+                                Wish::Get | Wish::Backup => match amount {
+                                    Amount::Single => {
+                                        if let Some(b) = preset.button(index) {
+                                            res_values.push(b.get(&section)).unwrap();
+                                        }
+                                    }
+                                    Amount::All => {
+                                        for b in preset.buttons.iter() {
+                                            res_values.push(b.get(&section)).unwrap();
+                                        }
+                                    }
+                                },
+                            },
                             Block::Encoder => {}
                             Block::Analog(_, _) => {}
                             Block::Display => {}
