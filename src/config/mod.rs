@@ -223,7 +223,7 @@ impl Config {
                                 res_values.push(b.get(section)).unwrap();
                             }
                         }
-                        Amount::All => {
+                        Amount::All(_) => {
                             for b in preset.buttons.iter() {
                                 res_values.push(b.get(section)).unwrap();
                             }
