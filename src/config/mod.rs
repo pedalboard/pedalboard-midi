@@ -3,9 +3,10 @@ use midi_types::{Channel, Value7};
 use opendeck::{
     parser::OpenDeckParser,
     renderer::{Buffer, OpenDeckRenderer},
-    Amount, Block, ButtonSection, ButtonType, ChannelOrAll, FirmwareVersion, GlobalSection,
-    HardwareUid, MessageStatus, MessageType, NewValues, NrOfSupportedComponents, OpenDeckRequest,
-    OpenDeckResponse, PresetIndex, SpecialRequest, SpecialResponse, ValueSize, Wish,
+    Accelleration, Amount, Block, ButtonSection, ButtonType, ChannelOrAll, EncoderMessageType,
+    EncoderSection, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus, MessageType,
+    NewValues, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex,
+    SpecialRequest, SpecialResponse, ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -63,6 +64,62 @@ impl Button {
     }
 }
 
+#[derive(Debug, Format, Clone)]
+pub struct Encoder {
+    enabled: bool,
+    invert_state: bool,
+    message_type: EncoderMessageType,
+    midi_id: Value7,
+    channel: ChannelOrAll,
+    pulses_per_step: u8,
+    accelleration: Accelleration,
+    remote_sync: bool,
+}
+
+impl Encoder {
+    fn new(midi_id: Value7) -> Self {
+        Encoder {
+            enabled: true,
+            invert_state: false,
+            message_type: EncoderMessageType::ControlChange,
+            channel: ChannelOrAll::Channel(Channel::C1),
+            pulses_per_step: 2,
+            midi_id,
+            accelleration: Accelleration::None,
+            remote_sync: false,
+        }
+    }
+    fn set(&mut self, section: &EncoderSection) {
+        match section {
+            EncoderSection::MessageType(v) => self.message_type = *v,
+            EncoderSection::Channel(v) => self.channel = v.clone(),
+            EncoderSection::Enabled(v) => self.enabled = *v,
+            EncoderSection::MidiIdLSB(v) => self.midi_id = *v,
+            EncoderSection::InvertState(v) => self.invert_state = *v,
+            EncoderSection::PulsesPerStep(v) => self.pulses_per_step = *v,
+            EncoderSection::RemoteSync(v) => self.remote_sync = *v,
+            EncoderSection::Accelleration(v) => self.accelleration = *v,
+            EncoderSection::MidiIdMSB(_) => {}
+        }
+    }
+    fn get(&self, section: &EncoderSection) -> u16 {
+        match section {
+            EncoderSection::MessageType(_) => self.message_type as u16,
+            EncoderSection::Channel(_) => self.channel.clone().into(),
+            EncoderSection::Enabled(_) => self.enabled as u16,
+            EncoderSection::MidiIdLSB(_) => {
+                let v: u8 = self.midi_id.into();
+                v as u16
+            }
+            EncoderSection::InvertState(_) => self.invert_state as u16,
+            EncoderSection::PulsesPerStep(_) => self.pulses_per_step as u16,
+            EncoderSection::RemoteSync(_) => self.remote_sync as u16,
+            EncoderSection::Accelleration(_) => self.accelleration as u16,
+            EncoderSection::MidiIdMSB(_) => 0x00,
+        }
+    }
+}
+
 impl Default for Button {
     fn default() -> Self {
         Button::new(Value7::new(0x00))
@@ -72,6 +129,7 @@ impl Default for Button {
 #[derive(Format, Debug)]
 pub struct Preset {
     buttons: Vec<Button, OPENDECK_BUTTONS>,
+    encoders: Vec<Encoder, OPENDECK_ENCODERS>,
 }
 
 impl Default for Preset {
@@ -80,7 +138,11 @@ impl Default for Preset {
         for i in 0..OPENDECK_BUTTONS {
             buttons.push(Button::new(Value7::new(i as u8))).unwrap();
         }
-        Preset { buttons }
+        let mut encoders = Vec::new();
+        for i in 0..OPENDECK_ENCODERS {
+            encoders.push(Encoder::new(Value7::new(i as u8))).unwrap();
+        }
+        Preset { buttons, encoders }
     }
 }
 
@@ -90,6 +152,12 @@ impl Preset {
     }
     fn button(&mut self, index: &u16) -> Option<&Button> {
         self.buttons.get(*index as usize)
+    }
+    fn encoder_mut(&mut self, index: &u16) -> Option<&mut Encoder> {
+        self.encoders.get_mut(*index as usize)
+    }
+    fn encoder(&mut self, index: &u16) -> Option<&Encoder> {
+        self.encoders.get(*index as usize)
     }
 }
 
@@ -251,7 +319,26 @@ impl Config {
                         }
                     },
                 },
-                Block::Encoder => {}
+                Block::Encoder(index, section) => match wish {
+                    Wish::Set => {
+                        if let Some(b) = preset.encoder_mut(index) {
+                            b.set(section)
+                        }
+                    }
+                    Wish::Get | Wish::Backup => match amount {
+                        Amount::Single => {
+                            if let Some(b) = preset.encoder(index) {
+                                res_values.push(b.get(section)).unwrap();
+                            }
+                        }
+                        Amount::All(_) => {
+                            for b in preset.encoders.iter() {
+                                res_values.push(b.get(section)).unwrap();
+                            }
+                            for_amount = Amount::All(0)
+                        }
+                    },
+                },
                 Block::Analog(_, _) => {}
                 Block::Display => {}
                 Block::Led => {}
