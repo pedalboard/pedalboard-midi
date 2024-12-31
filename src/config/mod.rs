@@ -90,9 +90,9 @@ impl Encoder {
             midi_id,
             accelleration: Accelleration::None,
             remote_sync: false,
-            lower_limit: Value14::new(0),
-            upper_limit: Value14::new(0),
-            second_midi_id: Value14::new(0),
+            lower_limit: Value14::from(u16::MIN),
+            upper_limit: Value14::from(u16::MIN),
+            second_midi_id: Value14::from(u16::MIN),
         }
     }
     fn set(&mut self, section: &EncoderSection) {
@@ -149,7 +149,9 @@ impl Default for Preset {
         }
         let mut encoders = Vec::new();
         for i in 0..OPENDECK_ENCODERS {
-            encoders.push(Encoder::new(Value14::new(i as i16))).unwrap();
+            encoders
+                .push(Encoder::new(Value14::new(i16::MIN + i as i16)))
+                .unwrap();
         }
         Preset { buttons, encoders }
     }
