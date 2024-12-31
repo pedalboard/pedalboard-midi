@@ -1,12 +1,14 @@
 use defmt::*;
 use midi_types::{Channel, Value14, Value7};
 use opendeck::{
+    button::{ButtonSection, ButtonType, MessageType},
+    encoder::{Accelleration, EncoderMessageType, EncoderSection},
+    global::{GlobalSection, PresetIndex},
     parser::{OpenDeckParseError, OpenDeckParser},
     renderer::{Buffer, OpenDeckRenderer},
-    Accelleration, Amount, Block, ButtonSection, ButtonType, ChannelOrAll, EncoderMessageType,
-    EncoderSection, FirmwareVersion, GlobalSection, HardwareUid, MessageStatus, MessageType,
-    NewValues, NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, PresetIndex,
-    SpecialRequest, SpecialResponse, ValueSize, Wish,
+    Amount, Block, ChannelOrAll, FirmwareVersion, HardwareUid, MessageStatus, NewValues,
+    NrOfSupportedComponents, OpenDeckRequest, OpenDeckResponse, SpecialRequest, SpecialResponse,
+    ValueSize, Wish,
 };
 
 const OPENDECK_UID: u32 = 0x12345677;
@@ -76,6 +78,7 @@ pub struct Encoder {
     remote_sync: bool,
     upper_limit: Value14,
     lower_limit: Value14,
+    repeated_value: Value14,
     second_midi_id: Value14,
 }
 
@@ -93,6 +96,7 @@ impl Encoder {
             lower_limit: Value14::from(u16::MIN),
             upper_limit: Value14::from(u16::MIN),
             second_midi_id: Value14::from(u16::MIN),
+            repeated_value: Value14::from(u16::MIN),
         }
     }
     fn set(&mut self, section: &EncoderSection) {
@@ -108,6 +112,7 @@ impl Encoder {
             EncoderSection::LowerLimit(v) => self.lower_limit = *v,
             EncoderSection::UpperLimit(v) => self.upper_limit = *v,
             EncoderSection::SecondMidiId(v) => self.second_midi_id = *v,
+            EncoderSection::RepeatedValue(v) => self.repeated_value = *v,
             EncoderSection::MidiIdMSB(_) => {}
         }
     }
@@ -124,6 +129,7 @@ impl Encoder {
             EncoderSection::LowerLimit(_) => self.lower_limit.into(),
             EncoderSection::UpperLimit(_) => self.upper_limit.into(),
             EncoderSection::SecondMidiId(_) => self.second_midi_id.into(),
+            EncoderSection::RepeatedValue(_) => self.repeated_value.into(),
             EncoderSection::MidiIdMSB(_) => 0x00,
         }
     }
