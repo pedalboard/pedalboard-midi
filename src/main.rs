@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-mod config;
 mod devices;
 mod handler;
 mod hmi;
