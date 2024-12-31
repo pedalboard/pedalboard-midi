@@ -120,7 +120,7 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        config: crate::config::Config,
+        config: opendeck::config::Config,
     }
 
     #[init(local = [
@@ -268,7 +268,7 @@ mod app {
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
-        let config = crate::config::Config::new();
+        let config = opendeck::config::Config::new();
 
         info!("pedalboard-midi initialized");
         (
