@@ -98,6 +98,8 @@ mod app {
         DigInPin<Gpio21>,
     >;
 
+    type OpenDeckConfig = opendeck::config::Config<4, 8, 2, 2, 8>;
+
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
 
@@ -119,7 +121,7 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        config: opendeck::config::Config,
+        config: OpenDeckConfig,
     }
 
     #[init(local = [
@@ -392,8 +394,7 @@ mod app {
 
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
-                                        for response in 
-                                            ctx.local.config.process_sysex(sysex_receive_buffer.as_ref())
+                                        for response in ctx.local.config.process_sysex(sysex_receive_buffer.as_ref())
                                         {
                                             for chunk in response.chunks(3) {
                                                 let packet =
@@ -465,13 +466,10 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
     fn firmware_version() -> opendeck::config::FirmwareVersion {
-    opendeck::config::FirmwareVersion {
-        major: 1,
-        minor: 0,
-        revision: 0,
+        opendeck::config::FirmwareVersion {
+            major: 1,
+            minor: 0,
+            revision: 0,
+        }
     }
 }
-
-}
-
-
