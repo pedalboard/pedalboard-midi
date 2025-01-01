@@ -451,6 +451,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "int-enum"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a37a9c11c6ecfec8b9bed97337dfecff3686d02ba8f52e8addad2829d047128"
+dependencies = [
+ "proc-macro2",
+ "proc-macro2-diagnostics",
+ "quote",
+ "syn 2.0.91",
+ "version_check",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -576,10 +589,11 @@ checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#a452e6e44c91e1b1a6e24d8c36e76b071a945d9e"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#c602aeb2d6c9336099ea891de40a8cbd3b4d7bf2"
 dependencies = [
  "defmt",
  "heapless 0.8.0",
+ "int-enum",
  "midi-types",
 ]
 
@@ -707,6 +721,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proc-macro2-diagnostics"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af066a9c399a26e020ada66a034357a868728e72cd426f3adcd35f80d88d88c8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.91",
+ "version_check",
+ "yansi",
 ]
 
 [[package]]
@@ -1046,3 +1073,9 @@ dependencies = [
  "embedded-hal 1.0.0",
  "smart-leds-trait",
 ]
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
