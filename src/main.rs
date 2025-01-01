@@ -267,7 +267,7 @@ mod app {
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
-        let config = opendeck::config::Config::new();
+        let config = opendeck::config::Config::new(firmware_version(), 0x123456);
 
         info!("pedalboard-midi initialized");
         (
@@ -464,4 +464,14 @@ mod app {
         }
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
+    fn firmware_version() -> opendeck::config::FirmwareVersion {
+    opendeck::config::FirmwareVersion {
+        major: 1,
+        minor: 0,
+        revision: 0,
+    }
 }
+
+}
+
+
