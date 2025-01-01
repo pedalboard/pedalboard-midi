@@ -269,7 +269,9 @@ mod app {
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
         let handlers = crate::handler::dispatch::create();
-        let config = opendeck::config::Config::new(firmware_version(), 0x123456);
+
+        let config =
+            opendeck::config::Config::new(firmware_version(), 0x123456, reboot, bootloader);
 
         info!("pedalboard-midi initialized");
         (
@@ -465,11 +467,19 @@ mod app {
         }
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
+
     fn firmware_version() -> opendeck::config::FirmwareVersion {
         opendeck::config::FirmwareVersion {
             major: 1,
             minor: 0,
             revision: 0,
         }
+    }
+
+    fn reboot() {
+        cortex_m::peripheral::SCB::sys_reset();
+    }
+    fn bootloader() {
+        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
     }
 }
