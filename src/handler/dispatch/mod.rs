@@ -1,6 +1,6 @@
 mod live_effect;
 mod live_looper;
-mod opendeck;
+mod opendeck_handler;
 mod setup_looper;
 mod test;
 
@@ -12,7 +12,7 @@ use heapless::Vec;
 
 /// Enum based static dispatch
 pub enum HandlerEnum {
-    OpenDeck(self::opendeck::OpenDeck),
+    OpenDeck(self::opendeck_handler::OpenDeck),
     LiveEffect(self::live_effect::LiveEffect),
     LiveLooper(self::live_looper::LiveLooper),
     SetupLooper(self::setup_looper::SetupLooper),
@@ -36,6 +36,15 @@ impl Handler for HandlerEnum {
             HandlerEnum::LiveLooper(h) => h.leds(),
             HandlerEnum::SetupLooper(h) => h.leds(),
             HandlerEnum::Test(h) => h.leds(),
+        }
+    }
+    fn process_sysex(&mut self, r: &[u8]) -> opendeck::config::Responses {
+        match self {
+            HandlerEnum::OpenDeck(h) => h.process_sysex(r),
+            HandlerEnum::LiveEffect(h) => h.process_sysex(r),
+            HandlerEnum::LiveLooper(h) => h.process_sysex(r),
+            HandlerEnum::SetupLooper(h) => h.process_sysex(r),
+            HandlerEnum::Test(h) => h.process_sysex(r),
         }
     }
 }
@@ -73,6 +82,11 @@ pub fn create() -> HandlerVec<HandlerEnum> {
     handlers
         .push(crate::handler::dispatch::HandlerEnum::Test(
             self::test::Test::new(),
+        ))
+        .unwrap();
+    handlers
+        .push(crate::handler::dispatch::HandlerEnum::OpenDeck(
+            self::opendeck_handler::OpenDeck::new(),
         ))
         .unwrap();
     handlers

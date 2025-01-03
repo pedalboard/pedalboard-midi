@@ -3,12 +3,11 @@ use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use defmt::*;
 use heapless::Vec;
 use midi_types::{MidiMessage, Note};
-use rp2040_hal::rom_data::reset_to_usb_boot;
 use smart_leds::colors::*;
 
 use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 
-const MAX_MIDI_MESSAGES: usize = 8;
+const MAX_MIDI_MESSAGES: usize = 16;
 type MidiMessageVec = Vec<MidiMessage, MAX_MIDI_MESSAGES>;
 
 #[derive(Debug)]
@@ -50,6 +49,7 @@ impl Actions {
 }
 pub trait Handler {
     fn handle_human_input(&mut self, e: InputEvent) -> Actions;
+    fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses;
     fn leds(&mut self) -> &mut Leds;
 }
 
@@ -96,10 +96,6 @@ where
     }
     pub fn process_midi_input(&mut self, m: MidiMessage) {
         match m {
-            MidiMessage::NoteOff(midi_types::Channel::C16, midi_types::Note::C1m, ..) => {
-                debug!("reset to usb boot");
-                reset_to_usb_boot(0, 0);
-            }
             // see https://github.com/pedalboard/db-meter.lv2
             MidiMessage::NoteOff(_, Note::C1, vel) => {
                 let v: u8 = vel.into();
@@ -115,6 +111,10 @@ where
                 self.leds().set(Flash(DARK_BLUE), Led::Mon);
             }
         }
+    }
+
+    pub fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses {
+        self.handler().process_sysex(request)
     }
 
     fn handler(&mut self) -> &mut H {

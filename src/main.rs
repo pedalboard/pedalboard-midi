@@ -98,7 +98,6 @@ mod app {
         DigInPin<Gpio21>,
     >;
 
-    type OpenDeckConfig = opendeck::config::Config<4, 8, 2, 2, 8>;
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
@@ -121,7 +120,6 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        config: OpenDeckConfig,
     }
 
     #[init(local = [
@@ -268,10 +266,7 @@ mod app {
         poll_input::spawn().unwrap();
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
-        let handlers = crate::handler::dispatch::create();
-
-        let config =
-            opendeck::config::Config::new(firmware_version(), 0x123456, reboot, bootloader);
+       let handlers = crate::handler::dispatch::create();
 
         info!("pedalboard-midi initialized");
         (
@@ -287,7 +282,6 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
-                config,
             },
             init::Monotonics(mono),
         )
@@ -353,10 +347,10 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, local = [
-        buf: Vec::<u8, 64>=Vec::new(),
-        config,
-    ], shared =[usb_midi,usb_dev,handlers])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, 
+        local = [ buf: Vec::<u8, 64>=Vec::new()],
+        shared =[usb_midi,usb_dev,handlers]
+    )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
         ctx.shared.usb_dev.lock(|usb_dev| {
@@ -396,33 +390,36 @@ mod app {
 
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
-                                        for response in ctx.local.config.process_sysex(sysex_receive_buffer.as_ref())
-                                        {
-                                            for chunk in response.chunks(3) {
-                                                let packet =
-                                                    UsbMidiEventPacket::try_from_payload_bytes(
-                                                        CableNumber::Cable0,
-                                                        chunk,
-                                                    );
-                                                match packet {
-                                                    Ok(packet) => loop {
-                                                        // Make sure to add some timeout in case the host
-                                                        // does not read the data.
-                                                        let result =
-                                                            usb_midi.send_packet(packet.clone());
-                                                        match result {
-                                                            Ok(_) => break,
-                                                            Err(err) => {
-                                                                if err != usb_device::UsbError::WouldBlock {
-                                                                    break;
+                                        //
+                                        ctx.shared.handlers.lock(|handlers| {
+                                            for response in handlers.process_sysex(sysex_receive_buffer.as_ref()) {
+                                                for chunk in response.chunks(3) {
+                                                    let packet =
+                                                        UsbMidiEventPacket::try_from_payload_bytes(
+                                                            CableNumber::Cable0,
+                                                            chunk,
+                                                        );
+                                                    match packet {
+                                                        Ok(packet) => loop {
+                                                            // Make sure to add some timeout in case the host
+                                                            // does not read the data.
+                                                            let result =
+                                                                usb_midi.send_packet(packet.clone());
+                                                            match result {
+                                                                Ok(_) => break,
+                                                                Err(err) => {
+                                                                    if err != usb_device::UsbError::WouldBlock {
+                                                                        break;
+                                                                    }
                                                                 }
                                                             }
-                                                        }
-                                                    },
-                                                    Err(_) => error!( "SysEx response packet error",),
+                                                        },
+                                                        Err(_) => error!( "SysEx response packet error",),
+                                                    }
                                                 }
+
                                             }
-                                        }
+                                        });
                                     }
                                 }
                                 Err(_) => {
@@ -468,18 +465,4 @@ mod app {
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
-    fn firmware_version() -> opendeck::config::FirmwareVersion {
-        opendeck::config::FirmwareVersion {
-            major: 1,
-            minor: 0,
-            revision: 0,
-        }
-    }
-
-    fn reboot() {
-        cortex_m::peripheral::SCB::sys_reset();
-    }
-    fn bootloader() {
-        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-    }
 }

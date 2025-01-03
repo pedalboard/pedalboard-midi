@@ -32,11 +32,11 @@ debug: ## build and run by installing uf2 on the mounted pico
 	cargo run --config 'runner = "probe-run --chip RP2040"' --release
 
 device:
-	$(eval DEVICE := $(shell amidi -l | grep pedalboard-midi |  awk '{ print $$2 }'))
+	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
 
 bootsel: device ## restart the RP2040 in bootsel mode
 	-aconnect -d 128:1 16:0 
-	amidi -S '8F 0C 0F' -p "$(DEVICE)"
+	amidi -S 'F0 00 53 43 00 00 55 F7' -p "$(DEVICE)"
 	-aconnect 128:1 16:0
 
 install-latest-release: bootsel mount ## install the latest release from github

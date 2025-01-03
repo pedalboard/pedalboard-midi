@@ -3,6 +3,7 @@ use crate::devices::Direction;
 use crate::handler::{Actions, Handler};
 use crate::hmi::inputs::{Edge::Activate, InputEvent};
 use crate::hmi::leds::{Animation::On, Led, Leds};
+use heapless::Vec;
 
 use smart_leds::colors::*;
 
@@ -51,6 +52,9 @@ impl Handler for SetupLooper {
     }
     fn leds(&mut self) -> &mut Leds {
         &mut self.leds
+    }
+    fn process_sysex(&mut self, _: &[u8]) -> opendeck::config::Responses {
+        Vec::new()
     }
 }
 

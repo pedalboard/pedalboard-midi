@@ -2,7 +2,7 @@ use crate::handler::{Actions, Handler, MidiMessages};
 use crate::hmi::inputs::{Edge::Activate, Edge::Deactivate, InputEvent};
 use crate::hmi::ledring;
 use crate::hmi::leds::{Animation::On, Led, LedRings, Leds};
-
+use heapless::Vec;
 use smart_leds::colors::*;
 
 pub struct Test {
@@ -129,6 +129,9 @@ impl Handler for Test {
     }
     fn leds(&mut self) -> &mut Leds {
         &mut self.leds
+    }
+    fn process_sysex(&mut self, _: &[u8]) -> opendeck::config::Responses {
+        Vec::new()
     }
 }
 
