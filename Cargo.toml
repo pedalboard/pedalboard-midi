@@ -42,7 +42,7 @@ usb-device = { version = "0.3.2", features = ["defmt"] }
 
 # midi crates
 embedded-midi = { git = "https://github.com/rust-midi/embedded-midi.git", branch = "main" }
-usbd-midi = { git = "https://github.com/rust-embedded-community/usbd-midi.git", branch = "next" }
+usbd-midi = "0.4.0"
 midi-types = { version = "0.1.7", features = ["defmt"] }
 midi-convert = "0.2.0"
 opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", features = [

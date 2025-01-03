@@ -61,7 +61,7 @@ mod app {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{CableNumber, MidiClass, MidiPacketBufferReader, UsbMidiEventPacket};
+    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiPacketReader, UsbMidiEventPacket};
 
     use ws2812_spi::Ws2812;
 
@@ -104,7 +104,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        usb_midi: MidiClass<'static, UsbBus>,
+        usb_midi: UsbMidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         handlers: crate::handler::Handlers<crate::handler::dispatch::HandlerEnum>,
     }
@@ -166,7 +166,7 @@ mod app {
             &mut resets,
         )));
 
-        let usb_midi = MidiClass::new(usb_bus, 1, 1).unwrap();
+        let usb_midi = UsbMidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .strings(&[StringDescriptors::default()
                 .product("pedalboard OpenDeck")
@@ -362,7 +362,7 @@ mod app {
 
                 let mut buffer = [0; 64];
                 if let Ok(size) = usb_midi.read(&mut buffer) {
-                    let buffer_reader = MidiPacketBufferReader::new(&buffer, size);
+                    let buffer_reader = UsbMidiPacketReader::new(&buffer, size);
                     for packet in buffer_reader.into_iter().flatten() {
                         if !packet.is_sysex() {
                             if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes())

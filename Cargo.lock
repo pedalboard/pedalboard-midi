@@ -1030,8 +1030,9 @@ dependencies = [
 
 [[package]]
 name = "usbd-midi"
-version = "0.3.0"
-source = "git+https://github.com/rust-embedded-community/usbd-midi.git?branch=next#057574a6333bfa367c8c0140c68760a386760b43"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fdd3a107503a1b163e925830ffc80c89f88829fc82a23f9a2fe502b9d60e934"
 dependencies = [
  "num_enum 0.7.3",
  "usb-device",
