@@ -37,7 +37,7 @@ impl Handler for OpenDeck {
             Ok(None)
         }
     }
-    fn handle_midi_input(&mut self, _: BytesMessage<&[u8]>) {}
+    fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
     fn leds(&mut self) -> &mut Leds {
         &mut self.leds
     }

@@ -298,7 +298,7 @@ mod app {
                     let mut buf  = [0x00u8; 3];
                     m.render_slice(&mut buf);
                     if let Ok(m) = BytesMessage::try_from(&buf[..]) {
-                         handlers.handle_midi_input(m);
+                         handlers.handle_midi_input(&m);
                     }
 
                 });
@@ -373,7 +373,7 @@ mod app {
                         if !packet.is_sysex() {
                             if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
                                 ctx.shared.handlers.lock(|handlers| {
-                                    handlers.handle_midi_input(m);
+                                    handlers.handle_midi_input(&m);
                                 });
                             }
                         } else {
