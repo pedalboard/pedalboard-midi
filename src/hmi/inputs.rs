@@ -10,8 +10,6 @@ use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp2040_hal::adc::AdcFifo;
 type Sma = MovAvg<u16, u32, 10>;
 
-use midi_types::Value7;
-
 #[derive(Format)]
 pub enum Edge {
     Activate,
@@ -25,12 +23,12 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
-    ExpressionPedalA(Value7),
-    ExpressionPedalB(Value7),
+    ExpressionPedalA(u8),
+    ExpressionPedalB(u8),
     VolButton(Edge),
-    Vol(Value7),
+    Vol(u8),
     GainButton(Edge),
-    Gain(Value7),
+    Gain(u8),
 }
 
 pub struct Rotary<DT, CLK, B> {
@@ -52,19 +50,19 @@ where
             value: 0u8,
         }
     }
-    fn update(&mut self) -> Option<Value7> {
+    fn update(&mut self) -> Option<u8> {
         match self.encoder.update() {
             Direction::Clockwise => {
                 if self.value < 127 {
                     self.value += 1
                 }
-                Some(Value7::new(self.value))
+                Some(self.value)
             }
             Direction::Anticlockwise => {
                 if self.value > 1 {
                     self.value -= 1;
                 }
-                Some(Value7::new(self.value))
+                Some(self.value)
             }
             Direction::None => None,
         }
@@ -110,7 +108,7 @@ impl ExpressionPedals {
             adc_fifo,
         }
     }
-    fn update(&mut self) -> (Option<Value7>, Option<Value7>) {
+    fn update(&mut self) -> (Option<u8>, Option<u8>) {
         self.sample_rate_reduction += 1;
         if self.sample_rate_reduction <= 25 {
             return (None, None);
@@ -139,12 +137,12 @@ impl ExpressionPedal {
         }
     }
 
-    fn update(&mut self, value: u16) -> Option<Value7> {
+    fn update(&mut self, value: u16) -> Option<u8> {
         let new = (self.avg.feed(value) >> 5) as u8;
 
         if self.current.abs_diff(new) > 2 {
             self.current = new;
-            return Some(Value7::new(self.current));
+            return Some(self.current);
         }
 
         None

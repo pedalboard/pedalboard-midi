@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-mod devices;
 mod handler;
 mod hmi;
 mod loudness;
@@ -25,6 +24,7 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
 
+    use crate::handler::Handler;
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use core::mem::MaybeUninit;
     use defmt::*;
@@ -106,7 +106,7 @@ mod app {
     struct Shared {
         usb_midi: UsbMidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        handlers: crate::handler::Handlers<crate::handler::dispatch::HandlerEnum>,
+        handlers: crate::handler::Handlers,
     }
 
     #[local]
@@ -266,14 +266,14 @@ mod app {
         poll_input::spawn().unwrap();
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
-       let handlers = crate::handler::dispatch::create();
+       let handlers = crate::handler::Handlers::new();
 
         info!("pedalboard-midi initialized");
         (
             Shared {
                 usb_midi,
                 usb_dev,
-                handlers: crate::handler::Handlers::new(handlers),
+                handlers,
             },
             Local {
                 uart_midi_out,
@@ -289,10 +289,18 @@ mod app {
 
     #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
     fn midi_in(mut ctx: midi_in::Context) {
+        use midi2::prelude::*;
+
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
                 ctx.shared.handlers.lock(|handlers| {
-                    handlers.process_midi_input(m);
+
+                    let mut buf  = [0x00u8; 3];
+                    m.render_slice(&mut buf);
+                    if let Ok(m) = BytesMessage::try_from(&buf[..]) {
+                         handlers.handle_midi_input(m);
+                    }
+
                 });
             }
             Err(nb::Error::WouldBlock) => {}
@@ -301,12 +309,11 @@ mod app {
     }
 
     #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
-    fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
-        let msgs = messages.messages();
+    fn midi_out(mut ctx: midi_out::Context, message: [u8;3]) {
         // always send to UART out
         let uart_midi_out = ctx.local.uart_midi_out;
-        for message in msgs.iter() {
-            uart_midi_out.write(message).unwrap();
+        if let Ok(mm) = MidiMessage::try_parse_slice(&message) {
+             uart_midi_out.write(&mm).unwrap();
         }
 
         // optionally send to USB if a device is listening
@@ -317,18 +324,14 @@ mod app {
         if !configured {
             return;
         }
-        for message in msgs.into_iter() {
-            let mut bytes = [0; 3];
-            message.render_slice(&mut bytes);
-            let packet =
-                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &bytes).unwrap();
-            ctx.shared
-                .usb_midi
-                .lock(|midi| match midi.send_packet(packet) {
-                    Ok(_) => debug!("message sent to usb"),
-                    Err(err) => error!("failed to send message: {}", err),
-                });
-        }
+         let packet =
+                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &message).unwrap();
+        ctx.shared
+           .usb_midi
+           .lock(|midi| match midi.send_packet(packet) {
+                Ok(_) => debug!("message sent to usb"),
+                Err(err) => error!("failed to send message: {}", err),
+         });
     }
 
     #[task(local = [inputs], shared = [handlers])]
@@ -337,9 +340,12 @@ mod app {
 
         if let Some(event) = inputs.update() {
             ctx.shared.handlers.lock(|handlers| {
-                let actions = handlers.handle_human_input(event);
-                if !actions.midi_messages.is_empty() {
-                    midi_out::spawn(actions.midi_messages).unwrap();
+
+                let mut buf  = [0x00u8; 6];
+                let message = handlers.handle_human_input(event, &mut buf).unwrap();
+                if message.is_some() {
+                    // fixme send message 
+                    //midi_out::spawn(message).unwrap();
                 }
             });
         };
@@ -365,10 +371,9 @@ mod app {
                     let buffer_reader = UsbMidiPacketReader::new(&buffer, size);
                     for packet in buffer_reader.into_iter().flatten() {
                         if !packet.is_sysex() {
-                            if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes())
-                            {
+                            if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
                                 ctx.shared.handlers.lock(|handlers| {
-                                    handlers.process_midi_input(message);
+                                    handlers.handle_midi_input(m);
                                 });
                             }
                         } else {

@@ -48,6 +48,11 @@ midi-convert = "0.2.0"
 opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", features = [
   "defmt",
 ] }
+midi2 = { version = "0.7.0", default-features = false, features = [
+  "channel-voice1",
+  "sysex7",
+  "system-common",
+] }
 
 # other libs
 movavg = { version = "2.3.0", default-features = false }

@@ -1,137 +1,85 @@
-pub mod dispatch;
-use crate::hmi::inputs::{Edge::Activate, InputEvent};
+use crate::handler::opendeck_handler::OpenDeck;
+use crate::hmi::inputs::InputEvent;
+use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 use defmt::*;
-use heapless::Vec;
-use midi_types::{MidiMessage, Note};
+use midi2::prelude::*;
+use midi2::{error::BufferOverflow, BytesMessage};
 use smart_leds::colors::*;
 
-use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
+mod opendeck_handler;
 
-const MAX_MIDI_MESSAGES: usize = 16;
-type MidiMessageVec = Vec<MidiMessage, MAX_MIDI_MESSAGES>;
-
-#[derive(Debug)]
-pub struct MidiMessages(MidiMessageVec);
-
-impl MidiMessages {
-    pub fn push(&mut self, a: MidiMessage) {
-        self.0.push(a).unwrap();
-    }
-
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-
-    pub fn none() -> Self {
-        MidiMessages(Vec::new())
-    }
-
-    pub fn messages(self) -> MidiMessageVec {
-        self.0
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-pub struct Actions {
-    pub midi_messages: MidiMessages,
-}
-
-impl Actions {
-    fn new(midi_messages: MidiMessages) -> Self {
-        Actions { midi_messages }
-    }
-    fn none() -> Self {
-        Actions::new(MidiMessages::none())
-    }
-}
 pub trait Handler {
-    fn handle_human_input(&mut self, e: InputEvent) -> Actions;
+    fn handle_human_input<'a>(
+        &mut self,
+        e: InputEvent,
+        buffer: &'a mut [u8],
+    ) -> Result<Option<BytesMessage<&'a mut [u8]>>, BufferOverflow>;
+    fn handle_midi_input(&mut self, m: BytesMessage<&[u8]>);
     fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses;
     fn leds(&mut self) -> &mut Leds;
 }
 
-const MAX_HANDLERS: usize = 8;
-
-/// The Vec of Handlers to iterate over
-pub type HandlerVec<H> = Vec<H, MAX_HANDLERS>;
-
-/// The router (dispatcher) for human input and midi input
-pub struct Handlers<H: Handler> {
-    handlers: HandlerVec<H>,
-    current: usize,
+pub struct Handlers {
+    opendeck: OpenDeck,
 }
 
-impl<H> Handlers<H>
-where
-    H: Handler,
-{
-    pub fn new(handlers: Vec<H, MAX_HANDLERS>) -> Self {
+impl Handlers {
+    pub fn new() -> Self {
         Handlers {
-            handlers,
-            current: 0,
+            opendeck: OpenDeck::new(),
         }
     }
+}
 
-    pub fn handle_human_input(&mut self, event: InputEvent) -> Actions {
+impl Handler for Handlers {
+    fn handle_human_input<'a>(
+        &mut self,
+        event: InputEvent,
+        buffer: &'a mut [u8],
+    ) -> Result<Option<BytesMessage<&'a mut [u8]>>, BufferOverflow> {
         info!("handle input event {:?}", event);
-        let actions = match event {
-            InputEvent::VolButton(Activate) => {
-                self.current += 1;
-                if self.current == self.handlers.len() {
-                    self.current = 0
-                }
-                Actions::none()
-            }
-            _ => self.handler().handle_human_input(event),
-        };
-        if !actions.midi_messages.is_empty() {
-            // MIDI-out indicator
-            self.leds().set(Flash(DARK_GREEN), Led::Mon);
-        }
+        let actions = self.opendeck.handle_human_input(event, buffer);
+        // FIXME only flash when a message was received
+        //        if let actions = Actions::MidiMessage {
+        // MIDI-out indicator
+        self.leds().set(Flash(DARK_GREEN), Led::Mon);
+        //      }
 
         actions
     }
-    pub fn process_midi_input(&mut self, m: MidiMessage) {
+    fn handle_midi_input(&mut self, m: BytesMessage<&[u8]>) {
+        let mut handled = false;
         match m {
             // see https://github.com/pedalboard/db-meter.lv2
-            MidiMessage::NoteOff(_, Note::C1, vel) => {
-                let v: u8 = vel.into();
-                let lufs = -(v as f32);
-                debug!("loudness {}", lufs);
-                self.leds().set_ledring(
-                    super::hmi::ledring::Animation::Loudness(lufs),
-                    LedRings::Vol,
-                );
-            }
-            _ => {
-                // MIDI-in indicator
-                self.leds().set(Flash(DARK_BLUE), Led::Mon);
-            }
+            BytesMessage::ChannelVoice1(m) => match m {
+                midi2::channel_voice1::ChannelVoice1::NoteOn(m) => {
+                    if m.note_number() == u7::new(24) {
+                        handled = true;
+                        let v: u8 = m.velocity().into();
+                        let lufs = -(v as f32);
+
+                        debug!("loudness {}", lufs);
+                        self.leds().set_ledring(
+                            super::hmi::ledring::Animation::Loudness(lufs),
+                            LedRings::Vol,
+                        );
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        if handled {
+            // MIDI-in indicator
+            self.leds().set(Flash(DARK_BLUE), Led::Mon);
         }
     }
 
-    pub fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses {
-        self.handler().process_sysex(request)
+    fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses {
+        self.opendeck.process_sysex(request)
     }
 
-    fn handler(&mut self) -> &mut H {
-        &mut self.handlers[self.current]
-    }
-
-    pub fn leds(&mut self) -> &mut Leds {
-        self.handler().leds()
-    }
-}
-
-/// Construct empty Handlers
-impl<H> Default for Handlers<H>
-where
-    H: Handler,
-{
-    fn default() -> Self {
-        Self::new(Vec::new())
+    fn leds(&mut self) -> &mut Leds {
+        self.opendeck.leds()
     }
 }
