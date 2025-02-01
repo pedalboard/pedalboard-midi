@@ -19,6 +19,8 @@ pub trait Handler {
     fn leds(&mut self) -> &mut Leds;
 }
 
+/// The router (dispatcher) for human input and midi input
+#[derive(Default)]
 pub struct Handlers {
     opendeck: OpenDeck,
 }

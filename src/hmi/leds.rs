@@ -29,12 +29,14 @@ pub type LedSpi = Spi<
 pub type LedDriver = Ws2812<LedSpi>;
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum Led {
     Mode,
     Mon,
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum LedRings {
     Gain,
     F,
@@ -49,6 +51,7 @@ pub enum LedRings {
 pub type LedData = [RGB8; LED_OUTPUTS];
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum Animation {
     On(RGB8),
     Off,
