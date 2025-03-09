@@ -1,10 +1,11 @@
-use midi2::{error::BufferOverflow, BytesMessage};
+use midi2::BytesMessage;
 
 use crate::handler::Handler;
 use crate::hmi::{
     inputs::{Edge, InputEvent},
     leds::Leds,
 };
+use opendeck::global::handler::Messages;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 8, 2, 2, 8>;
 
@@ -14,11 +15,7 @@ pub struct OpenDeck {
 }
 
 impl Handler for OpenDeck {
-    fn handle_human_input<'a>(
-        &mut self,
-        event: InputEvent,
-        buffer: &'a mut [u8],
-    ) -> Result<Option<BytesMessage<&'a mut [u8]>>, BufferOverflow> {
+    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
         if let Some(preset) = self.config.current_preset_mut() {
             match event {
                 InputEvent::ButtonA(a) => {
@@ -27,14 +24,14 @@ impl Handler for OpenDeck {
                             Edge::Activate => opendeck::button::handler::Action::Pressed,
                             Edge::Deactivate => opendeck::button::handler::Action::Released,
                         };
-                        return button.handle(action, buffer);
+                        return Messages::Button(button.handle(action));
                     }
-                    Ok(None)
+                    Messages::None
                 }
-                _ => Ok(None),
+                _ => Messages::None,
             }
         } else {
-            Ok(None)
+            Messages::None
         }
     }
     fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}

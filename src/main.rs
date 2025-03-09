@@ -33,6 +33,7 @@ mod app {
     use embedded_hal_bus::util::AtomicCell;
 
     use heapless::Vec;
+    use midi2::Data;
     use midi_convert::midi_types::MidiMessage;
     use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
@@ -308,33 +309,7 @@ mod app {
         }
     }
 
-    #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
-    fn midi_out(mut ctx: midi_out::Context, message: [u8;3]) {
-        // always send to UART out
-        let uart_midi_out = ctx.local.uart_midi_out;
-        if let Ok(mm) = MidiMessage::try_parse_slice(&message) {
-             uart_midi_out.write(&mm).unwrap();
-        }
-
-        // optionally send to USB if a device is listening
-        let configured = ctx
-            .shared
-            .usb_dev
-            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-        if !configured {
-            return;
-        }
-         let packet =
-                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &message).unwrap();
-        ctx.shared
-           .usb_midi
-           .lock(|midi| match midi.send_packet(packet) {
-                Ok(_) => debug!("message sent to usb"),
-                Err(err) => error!("failed to send message: {}", err),
-         });
-    }
-
-    #[task(local = [inputs], shared = [handlers])]
+    #[task(local = [inputs, uart_midi_out], shared = [handlers, usb_midi, usb_dev])]
     fn poll_input(mut ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
 
@@ -342,14 +317,36 @@ mod app {
             ctx.shared.handlers.lock(|handlers| {
 
                 let mut buf  = [0x00u8; 6];
-                let message = handlers.handle_human_input(event, &mut buf).unwrap();
-                if message.is_some() {
-                    // fixme send message 
-                    //midi_out::spawn(message).unwrap();
-                }
+                let mut messages = handlers.handle_human_input(event);
+                match messages.next(&mut buf) {
+                    Ok(Some(m)) => {
+                        // always send to UART out
+                        let uart_midi_out = ctx.local.uart_midi_out;
+                        if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                            uart_midi_out.write(&mm).unwrap();
+                        }
+                        // optionally send to USB if a device is listening
+                        let configured = ctx
+                            .shared
+                            .usb_dev
+                            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+                            if configured {
+                                let packet =
+                                    UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, m.data()).unwrap();
+                                    ctx.shared
+                                        .usb_midi
+                                        .lock(|midi| match midi.send_packet(packet) {
+                                            Ok(_) => debug!("message sent to usb"),
+                                            Err(err) => error!("failed to send message: {}", err),
+                                        });
+                            }
+                    }
+                    Ok(None) => {}
+                    Err(_) => error!("buffer overflow"),
+                };
             });
         };
-        // schedule to run this task once per millis
+        // schedule to run this task =nce per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 

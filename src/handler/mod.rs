@@ -3,17 +3,14 @@ use crate::hmi::inputs::InputEvent;
 use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 use defmt::*;
 use midi2::prelude::*;
-use midi2::{error::BufferOverflow, BytesMessage};
+use midi2::BytesMessage;
+use opendeck::global::handler::Messages;
 use smart_leds::colors::*;
 
 mod opendeck_handler;
 
 pub trait Handler {
-    fn handle_human_input<'a>(
-        &mut self,
-        e: InputEvent,
-        buffer: &'a mut [u8],
-    ) -> Result<Option<BytesMessage<&'a mut [u8]>>, BufferOverflow>;
+    fn handle_human_input<'a>(&mut self, e: InputEvent) -> Messages;
     fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>);
     fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses;
     fn leds(&mut self) -> &mut Leds;
@@ -34,20 +31,16 @@ impl Handlers {
 }
 
 impl Handler for Handlers {
-    fn handle_human_input<'a>(
-        &mut self,
-        event: InputEvent,
-        buffer: &'a mut [u8],
-    ) -> Result<Option<BytesMessage<&'a mut [u8]>>, BufferOverflow> {
+    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
         info!("handle input event {:?}", event);
-        let r = self.opendeck.handle_human_input(event, buffer);
+        let r = self.opendeck.handle_human_input(event);
         // FIXME only flash when a message was received
         //        if let actions = Actions::MidiMessage {
         // MIDI-out indicator
 
-        if has_midi_message(&r) {
-            self.leds().set(Flash(DARK_GREEN), Led::Mon);
-        }
+        //        if has_midi_message(&r) {
+        //            self.leds().set(Flash(DARK_GREEN), Led::Mon);
+        //        }
 
         r
     }
@@ -81,10 +74,4 @@ impl Handler for Handlers {
     fn leds(&mut self) -> &mut Leds {
         self.opendeck.leds()
     }
-}
-fn has_midi_message(m: &Result<Option<BytesMessage<&mut [u8]>>, BufferOverflow>) -> bool {
-    if let Ok(m) = m {
-        return m.is_some();
-    }
-    false
 }
