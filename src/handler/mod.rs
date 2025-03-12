@@ -4,13 +4,13 @@ use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 use defmt::*;
 use midi2::prelude::*;
 use midi2::BytesMessage;
-use opendeck::global::handler::Messages;
+use opendeck::handler::Messages;
 use smart_leds::colors::*;
 
 mod opendeck_handler;
 
 pub trait Handler {
-    fn handle_human_input<'a>(&mut self, e: InputEvent) -> Messages;
+    fn handle_human_input(&mut self, e: InputEvent) -> Messages;
     fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>);
     fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses;
     fn leds(&mut self) -> &mut Leds;

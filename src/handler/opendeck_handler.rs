@@ -5,7 +5,7 @@ use crate::hmi::{
     inputs::{Edge, InputEvent},
     leds::Leds,
 };
-use opendeck::global::handler::Messages;
+use opendeck::handler::Messages;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 8, 2, 2, 8>;
 
