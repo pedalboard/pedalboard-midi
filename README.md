@@ -5,7 +5,7 @@ Firmware for the Open Pedalboard MIDI controller.
 The firmware is compatible with the [OpenDeck MIDI platform](https://github.com/shanteacontrols/OpenDeck)
 and can therefore be configured using the [OpenDeck configurator](https://config.shanteacontrols.com/#/).
 
-More details about the OpenDeck configuration can be found [in the OpenDeck Wiki](https://github.com/shanteacontrols/OpenDeck/wiki/)Configurable-features
+More details about the OpenDeck configuration can be found [in the OpenDeck Wiki](https://github.com/shanteacontrols/OpenDeck/wiki/)
 
 ## Open Hardware
 

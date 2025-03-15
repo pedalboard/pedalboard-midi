@@ -63,7 +63,7 @@ impl Handler for Handlers {
         if !handled {
             // MIDI-in indicator
             self.leds().set(Flash(DARK_BLUE), Led::Mon);
-            //  self.opendeck.handle_midi_input(m);
+            self.opendeck.handle_midi_input(m);
         }
     }
 
