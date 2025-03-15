@@ -314,36 +314,45 @@ mod app {
             ctx.shared.handlers.lock(|handlers| {
                 let mut buf = [0x00u8; 6];
                 let mut messages = handlers.handle_human_input(event);
-                match messages.next(&mut buf) {
-                    Ok(Some(m)) => {
-                        // always send to UART out
-                        let uart_midi_out = ctx.local.uart_midi_out;
-                        if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
-                            debug!("sending midi message {:?}", mm);
-                            uart_midi_out.write(&mm).unwrap();
+                let mut more = true;
+
+                let uart_midi_out = ctx.local.uart_midi_out;
+                while more {
+                    match messages.next(&mut buf) {
+                        Ok(Some(m)) => {
+                            // always send to UART out
+                            if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                                debug!("sending midi message {:?}", mm);
+                                uart_midi_out.write(&mm).unwrap();
+                            }
+                            // optionally send to USB if a device is listening
+                            let configured = ctx
+                                .shared
+                                .usb_dev
+                                .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+                            if configured {
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    m.data(),
+                                )
+                                .unwrap();
+                                ctx.shared
+                                    .usb_midi
+                                    .lock(|midi| match midi.send_packet(packet) {
+                                        Ok(_) => debug!("message sent to usb"),
+                                        Err(err) => error!("failed to send message: {}", err),
+                                    });
+                            }
                         }
-                        // optionally send to USB if a device is listening
-                        let configured = ctx
-                            .shared
-                            .usb_dev
-                            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-                        if configured {
-                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                CableNumber::Cable0,
-                                m.data(),
-                            )
-                            .unwrap();
-                            ctx.shared
-                                .usb_midi
-                                .lock(|midi| match midi.send_packet(packet) {
-                                    Ok(_) => debug!("message sent to usb"),
-                                    Err(err) => error!("failed to send message: {}", err),
-                                });
+                        Ok(None) => {
+                            more = false;
                         }
-                    }
-                    Ok(None) => {}
-                    Err(_) => error!("buffer overflow"),
-                };
+                        Err(_) => {
+                            more = false;
+                            error!("buffer overflow")
+                        }
+                    };
+                }
             });
         };
         // schedule to run this task =nce per millis
