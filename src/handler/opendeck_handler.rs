@@ -1,11 +1,12 @@
 use midi2::BytesMessage;
-use opendeck::button::handler::Action;
 
 use crate::handler::Handler;
 use crate::hmi::{
-    inputs::{Edge, InputEvent},
+    inputs::{Edge, InputEvent, Pulse},
     leds::Leds,
 };
+use opendeck::button::handler::Action;
+use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
@@ -18,17 +19,18 @@ pub struct OpenDeck {
 impl Handler for OpenDeck {
     fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
         match event {
-            InputEvent::ButtonA(a) => self.config.handle_button(0, a.into()),
-            InputEvent::ButtonB(a) => self.config.handle_button(1, a.into()),
-            InputEvent::ButtonC(a) => self.config.handle_button(2, a.into()),
-            InputEvent::ButtonD(a) => self.config.handle_button(3, a.into()),
-            InputEvent::ButtonE(a) => self.config.handle_button(4, a.into()),
-            InputEvent::ButtonF(a) => self.config.handle_button(5, a.into()),
-            InputEvent::VolButton(a) => self.config.handle_button(6, a.into()),
-            InputEvent::GainButton(a) => self.config.handle_button(6, a.into()),
+            InputEvent::Vol(pulse) => self.config.handle_encoder(0, pulse.into()),
+            InputEvent::Gain(pulse) => self.config.handle_encoder(1, pulse.into()),
+            InputEvent::VolButton(a) => self.config.handle_button(0, a.into()),
+            InputEvent::GainButton(a) => self.config.handle_button(1, a.into()),
+            InputEvent::ButtonA(a) => self.config.handle_button(2, a.into()),
+            InputEvent::ButtonB(a) => self.config.handle_button(3, a.into()),
+            InputEvent::ButtonC(a) => self.config.handle_button(4, a.into()),
+            InputEvent::ButtonD(a) => self.config.handle_button(5, a.into()),
+            InputEvent::ButtonE(a) => self.config.handle_button(6, a.into()),
+            InputEvent::ButtonF(a) => self.config.handle_button(7, a.into()),
             InputEvent::ExpressionPedalA(value) => self.config.handle_analog(0, value),
             InputEvent::ExpressionPedalB(value) => self.config.handle_analog(1, value),
-            _ => Messages::None,
         }
     }
     fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
@@ -45,6 +47,15 @@ impl From<Edge> for Action {
         match edge {
             Edge::Activate => Action::Pressed,
             Edge::Deactivate => Action::Released,
+        }
+    }
+}
+
+impl From<Pulse> for EncoderPulse {
+    fn from(pulse: Pulse) -> Self {
+        match pulse {
+            Pulse::Clockwise => EncoderPulse::Clockwise,
+            Pulse::CounterClockwise => EncoderPulse::CounterClockwise,
         }
     }
 }

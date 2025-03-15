@@ -16,6 +16,12 @@ pub enum Edge {
     Deactivate,
 }
 #[derive(Format)]
+pub enum Pulse {
+    Clockwise,
+    CounterClockwise,
+}
+
+#[derive(Format)]
 pub enum InputEvent {
     ButtonA(Edge),
     ButtonB(Edge),
@@ -26,15 +32,14 @@ pub enum InputEvent {
     ExpressionPedalA(u16),
     ExpressionPedalB(u16),
     VolButton(Edge),
-    Vol(u8),
+    Vol(Pulse),
     GainButton(Edge),
-    Gain(u8),
+    Gain(Pulse),
 }
 
 pub struct Rotary<DT, CLK, B> {
     encoder: RotaryEncoder<StandardMode, DT, CLK>,
     button: Button<B>,
-    value: u8,
 }
 
 impl<DT, CLK, B> Rotary<DT, CLK, B>
@@ -47,23 +52,12 @@ where
         Rotary {
             encoder: RotaryEncoder::new(pin_dt, pin_clk).into_standard_mode(),
             button: Button::new(pin_b),
-            value: 0u8,
         }
     }
-    fn update(&mut self) -> Option<u8> {
+    fn update(&mut self) -> Option<Pulse> {
         match self.encoder.update() {
-            Direction::Clockwise => {
-                if self.value < 127 {
-                    self.value += 1
-                }
-                Some(self.value)
-            }
-            Direction::Anticlockwise => {
-                if self.value > 1 {
-                    self.value -= 1;
-                }
-                Some(self.value)
-            }
+            Direction::Clockwise => Some(Pulse::Clockwise),
+            Direction::Anticlockwise => Some(Pulse::CounterClockwise),
             Direction::None => None,
         }
     }
