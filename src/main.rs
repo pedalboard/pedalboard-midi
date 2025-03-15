@@ -319,6 +319,7 @@ mod app {
                         // always send to UART out
                         let uart_midi_out = ctx.local.uart_midi_out;
                         if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                            debug!("sending midi message {:?}", mm);
                             uart_midi_out.write(&mm).unwrap();
                         }
                         // optionally send to USB if a device is listening
