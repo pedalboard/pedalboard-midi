@@ -1,15 +1,11 @@
 # Pedalboard Midi Controller
 
-The firmware is currently in a very prototype state and specific to a use case:
+Firmware for the Open Pedalboard MIDI controller.
 
-```txt
-    MIDI Controller => Plethora X3 (Channel 1) => RC500 (Channel 2)
-```
+The firmware is compatible with the [OpenDeck MIDI platform](https://github.com/shanteacontrols/OpenDeck)
+and can therefore be configured using the [OpenDeck configurator](https://config.shanteacontrols.com/#/).
 
-The project currently can be used as a starting point for your own pedalboard.
-
-It is planned to split the reusable parts into a library or make the firmware
-more configurable.
+More details about the OpenDeck configuration can be found [in the OpenDeck Wiki](https://github.com/shanteacontrols/OpenDeck/wiki/)Configurable-features
 
 ## Open Hardware
 
@@ -36,7 +32,7 @@ cargo install probe-rs --features cli
 
 The firmware supports No-Button-Boot (nbb) bootsel mode via USB midi interface.
 
-see `make bootsel` for how to send a midi message to reset the device into
+See `make bootsel` for how to send a midi message to reset the device into
 bootsel mode.
 
 1. Connect USB C cable to the Pico

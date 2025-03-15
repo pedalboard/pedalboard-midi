@@ -1,4 +1,5 @@
 use midi2::BytesMessage;
+use opendeck::button::handler::Action;
 
 use crate::handler::Handler;
 use crate::hmi::{
@@ -20,11 +21,7 @@ impl Handler for OpenDeck {
             match event {
                 InputEvent::ButtonA(a) => {
                     if let Some(button) = preset.button_mut(&0) {
-                        let action = match a {
-                            Edge::Activate => opendeck::button::handler::Action::Pressed,
-                            Edge::Deactivate => opendeck::button::handler::Action::Released,
-                        };
-                        return Messages::Button(button.handle(action));
+                        return Messages::Button(button.handle(a.into()));
                     }
                     Messages::None
                 }
@@ -40,6 +37,15 @@ impl Handler for OpenDeck {
     }
     fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses {
         self.config.process_sysex(request)
+    }
+}
+
+impl From<Edge> for Action {
+    fn from(edge: Edge) -> Self {
+        match edge {
+            Edge::Activate => Action::Pressed,
+            Edge::Deactivate => Action::Released,
+        }
     }
 }
 
