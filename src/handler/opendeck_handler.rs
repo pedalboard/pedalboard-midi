@@ -8,7 +8,7 @@ use crate::hmi::{
 };
 use opendeck::handler::Messages;
 
-pub type OpenDeckConfig = opendeck::config::Config<2, 8, 2, 2, 8>;
+pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
 
 pub struct OpenDeck {
     config: OpenDeckConfig,
@@ -17,18 +17,16 @@ pub struct OpenDeck {
 
 impl Handler for OpenDeck {
     fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
-        if let Some(preset) = self.config.current_preset_mut() {
-            match event {
-                InputEvent::ButtonA(a) => {
-                    if let Some(button) = preset.button_mut(&0) {
-                        return Messages::Button(button.handle(a.into()));
-                    }
-                    Messages::None
-                }
-                _ => Messages::None,
-            }
-        } else {
-            Messages::None
+        match event {
+            InputEvent::ButtonA(a) => self.config.handle_button(0, a.into()),
+            InputEvent::ButtonB(a) => self.config.handle_button(1, a.into()),
+            InputEvent::ButtonC(a) => self.config.handle_button(2, a.into()),
+            InputEvent::ButtonD(a) => self.config.handle_button(3, a.into()),
+            InputEvent::ButtonE(a) => self.config.handle_button(4, a.into()),
+            InputEvent::ButtonF(a) => self.config.handle_button(5, a.into()),
+            InputEvent::VolButton(a) => self.config.handle_button(6, a.into()),
+            InputEvent::GainButton(a) => self.config.handle_button(6, a.into()),
+            _ => Messages::None,
         }
     }
     fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
