@@ -23,8 +23,8 @@ pub enum InputEvent {
     ButtonD(Edge),
     ButtonE(Edge),
     ButtonF(Edge),
-    ExpressionPedalA(u8),
-    ExpressionPedalB(u8),
+    ExpressionPedalA(u16),
+    ExpressionPedalB(u16),
     VolButton(Edge),
     Vol(u8),
     GainButton(Edge),
@@ -108,7 +108,7 @@ impl ExpressionPedals {
             adc_fifo,
         }
     }
-    fn update(&mut self) -> (Option<u8>, Option<u8>) {
+    fn update(&mut self) -> (Option<u16>, Option<u16>) {
         self.sample_rate_reduction += 1;
         if self.sample_rate_reduction <= 25 {
             return (None, None);
@@ -125,7 +125,7 @@ impl ExpressionPedals {
 }
 
 pub struct ExpressionPedal {
-    current: u8,
+    current: u16,
     avg: Sma,
 }
 
@@ -137,8 +137,8 @@ impl ExpressionPedal {
         }
     }
 
-    fn update(&mut self, value: u16) -> Option<u8> {
-        let new = (self.avg.feed(value) >> 5) as u8;
+    fn update(&mut self, value: u16) -> Option<u16> {
+        let new = self.avg.feed(value);
 
         if self.current.abs_diff(new) > 2 {
             self.current = new;

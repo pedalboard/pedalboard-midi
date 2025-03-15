@@ -26,6 +26,8 @@ impl Handler for OpenDeck {
             InputEvent::ButtonF(a) => self.config.handle_button(5, a.into()),
             InputEvent::VolButton(a) => self.config.handle_button(6, a.into()),
             InputEvent::GainButton(a) => self.config.handle_button(6, a.into()),
+            InputEvent::ExpressionPedalA(value) => self.config.handle_analog(0, value),
+            InputEvent::ExpressionPedalB(value) => self.config.handle_analog(1, value),
             _ => Messages::None,
         }
     }
