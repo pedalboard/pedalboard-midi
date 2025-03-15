@@ -62,7 +62,7 @@ mod app {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiPacketReader, UsbMidiEventPacket};
+    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
     use ws2812_spi::Ws2812;
 
@@ -98,7 +98,6 @@ mod app {
         DigInPin<Gpio20>,
         DigInPin<Gpio21>,
     >;
-
 
     #[monotonic(binds = TIMER_IRQ_0, default = true)]
     type MyMono = Monotonic<Alarm0>;
@@ -267,7 +266,7 @@ mod app {
         poll_input::spawn().unwrap();
         display_out::spawn_after(Duration::secs(2)).unwrap();
 
-       let handlers = crate::handler::Handlers::new();
+        let handlers = crate::handler::Handlers::new();
 
         info!("pedalboard-midi initialized");
         (
@@ -295,13 +294,11 @@ mod app {
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
                 ctx.shared.handlers.lock(|handlers| {
-
-                    let mut buf  = [0x00u8; 3];
+                    let mut buf = [0x00u8; 3];
                     m.render_slice(&mut buf);
                     if let Ok(m) = BytesMessage::try_from(&buf[..]) {
-                         handlers.handle_midi_input(&m);
+                        handlers.handle_midi_input(&m);
                     }
-
                 });
             }
             Err(nb::Error::WouldBlock) => {}
@@ -315,8 +312,7 @@ mod app {
 
         if let Some(event) = inputs.update() {
             ctx.shared.handlers.lock(|handlers| {
-
-                let mut buf  = [0x00u8; 6];
+                let mut buf = [0x00u8; 6];
                 let mut messages = handlers.handle_human_input(event);
                 match messages.next(&mut buf) {
                     Ok(Some(m)) => {
@@ -330,16 +326,19 @@ mod app {
                             .shared
                             .usb_dev
                             .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-                            if configured {
-                                let packet =
-                                    UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, m.data()).unwrap();
-                                    ctx.shared
-                                        .usb_midi
-                                        .lock(|midi| match midi.send_packet(packet) {
-                                            Ok(_) => debug!("message sent to usb"),
-                                            Err(err) => error!("failed to send message: {}", err),
-                                        });
-                            }
+                        if configured {
+                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                CableNumber::Cable0,
+                                m.data(),
+                            )
+                            .unwrap();
+                            ctx.shared
+                                .usb_midi
+                                .lock(|midi| match midi.send_packet(packet) {
+                                    Ok(_) => debug!("message sent to usb"),
+                                    Err(err) => error!("failed to send message: {}", err),
+                                });
+                        }
                     }
                     Ok(None) => {}
                     Err(_) => error!("buffer overflow"),
@@ -350,7 +349,7 @@ mod app {
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, 
+    #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 64>=Vec::new()],
         shared =[usb_midi,usb_dev,handlers]
     )]
@@ -466,5 +465,4 @@ mod app {
         }
         blink::spawn_after(Duration::millis(500)).unwrap();
     }
-
 }
