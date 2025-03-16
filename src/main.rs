@@ -61,9 +61,10 @@ mod app {
         class_prelude::UsbBusAllocator,
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
-        UsbError,
     };
-    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
+    use usbd_midi::{
+        CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiEventPacketError, UsbMidiPacketReader,
+    };
 
     use ws2812_spi::Ws2812;
 
@@ -336,22 +337,9 @@ mod app {
                                     CableNumber::Cable0,
                                     m.data(),
                                 );
-                                match packet {
-                                    Ok(packet) => {
-                                        ctx.shared.usb_midi.lock(|midi| loop {
-                                            match midi.send_packet(packet.clone()) {
-                                                Ok(_) => break,
-                                                Err(err) => {
-                                                    error!("USB midi out error {:?}", err);
-                                                    if err != UsbError::WouldBlock {
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    }
-                                    Err(_) => error!("MIDI out packet error",),
-                                }
+                                ctx.shared
+                                    .usb_midi
+                                    .lock(|usbd_midi| send_to_usb_midi(packet, usbd_midi));
                             }
                         }
                         Ok(None) => {
@@ -404,40 +392,22 @@ mod app {
                                 Ok(_) => {
                                     if packet.is_sysex_end() {
                                         debug!("SysEx message end");
-                                        info!(
-                                            "Buffered SysEx message: {:?}",
-                                            sysex_receive_buffer
-                                        );
+                                        info!("Buffered SysEx message: {:?}", sysex_receive_buffer);
 
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
                                         ctx.shared.handlers.lock(|handlers| {
-                                            for response in handlers.process_sysex(sysex_receive_buffer.as_ref()) {
+                                            for response in handlers
+                                                .process_sysex(sysex_receive_buffer.as_ref())
+                                            {
                                                 for chunk in response.chunks(3) {
                                                     let packet =
                                                         UsbMidiEventPacket::try_from_payload_bytes(
                                                             CableNumber::Cable0,
                                                             chunk,
                                                         );
-                                                    match packet {
-                                                        Ok(packet) => loop {
-                                                            // Make sure to add some timeout in case the host
-                                                            // does not read the data.
-                                                            let result =
-                                                                usb_midi.send_packet(packet.clone());
-                                                            match result {
-                                                                Ok(_) => break,
-                                                                Err(err) => {
-                                                                    if err != usb_device::UsbError::WouldBlock {
-                                                                        break;
-                                                                    }
-                                                                }
-                                                            }
-                                                        },
-                                                        Err(_) => error!( "SysEx out packet error",),
-                                                    }
+                                                    send_to_usb_midi(packet, usb_midi);
                                                 }
-
                                             }
                                         });
                                     }
@@ -452,6 +422,28 @@ mod app {
                 }
             });
         });
+    }
+
+    fn send_to_usb_midi(
+        packet: Result<UsbMidiEventPacket, UsbMidiEventPacketError>,
+        usb_midi: &mut UsbMidiClass<UsbBus>,
+    ) {
+        match packet {
+            Ok(packet) => loop {
+                // Make sure to add some timeout in case the hostjob
+                // does not read the data.
+                let result = usb_midi.send_packet(packet.clone());
+                match result {
+                    Ok(_) => break,
+                    Err(err) => {
+                        if err != usb_device::UsbError::WouldBlock {
+                            break;
+                        }
+                    }
+                }
+            },
+            Err(_) => error!("USB MIDI out packet error",),
+        }
     }
 
     #[task(local = [led_spi], shared =[handlers])]
