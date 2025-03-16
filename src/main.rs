@@ -419,16 +419,20 @@ mod app {
         }
     }
 
-    #[task(shared = [usb_midi])]
+    #[task(shared = [usb_midi, usb_dev])]
     async fn send_to_usb_midi(
-        ctx: send_to_usb_midi::Context,
+        mut ctx: send_to_usb_midi::Context,
         packet: Result<UsbMidiEventPacket, UsbMidiEventPacketError>,
     ) {
-        // optionally send to USB if a device is listening
-        //        let configured = ctx
-        //          .shared
-        //          .usb_dev
-        //          .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+        let configured = ctx
+            .shared
+            .usb_dev
+            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+
+        if !configured {
+            return;
+        }
+
         let mut usb_midi = ctx.shared.usb_midi;
         match packet {
             Ok(packet) => {
