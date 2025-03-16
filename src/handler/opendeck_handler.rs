@@ -5,6 +5,7 @@ use crate::hmi::{
     inputs::{Edge, InputEvent, Pulse},
     leds::Leds,
 };
+use defmt::*;
 use opendeck::button::handler::Action;
 use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
@@ -85,8 +86,10 @@ fn firmware_version() -> opendeck::config::FirmwareVersion {
 }
 
 fn reboot() {
+    warn!("Rebooting...");
     cortex_m::peripheral::SCB::sys_reset();
 }
 fn bootloader() {
+    warn!("Rebooting to bootloader...");
     rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
 }
