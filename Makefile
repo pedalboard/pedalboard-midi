@@ -59,7 +59,7 @@ release: ## create a new release (RELEASE_LEVEL=minor make release)
 	gh release create --latest --generate-notes $$(git describe --tags --abbrev=0) ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 
 usbip-host: ## run usbip host on the device
-  pgrep usbipd || sudo usbipd -D
+	pgrep usbipd || sudo usbipd -D
 	sudo modprobe usbip_host
 	sudo usbip bind --busid 1-1.1
 
