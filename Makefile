@@ -58,6 +58,13 @@ release: ## create a new release (RELEASE_LEVEL=minor make release)
 	$(MAKE) uf2
 	gh release create --latest --generate-notes $$(git describe --tags --abbrev=0) ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 
+usbip-host: ## run usbip host on the device
+	sudo modprobe usbip_host
+	sudo usbip bind --busid 1-1.1
+
+usbip-attach: ## attach the device to the host
+	sudo usbip attach -r pi-dev -b 1-1.1
+
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
