@@ -431,7 +431,7 @@ mod app {
         match packet {
             Ok(packet) => {
                 // FIXME improve the retry and timeout handling
-                for _ in 0..10000 {
+                for _ in 0..1000000 {
                     let result = usb_midi.send_packet(packet.clone());
                     match result {
                         Ok(_) => return,
