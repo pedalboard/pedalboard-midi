@@ -303,7 +303,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out], shared = [handlers, usb_midi, usb_dev])]
+    #[task(local = [inputs, uart_midi_out], shared = [handlers])]
     async fn poll_input(mut ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
@@ -322,20 +322,11 @@ mod app {
                                     debug!("sending midi message to MIDI-OUT {:?}", mm);
                                     uart_midi_out.write(&mm).unwrap();
                                 }
-                                // optionally send to USB if a device is listening
-                                let configured = ctx
-                                    .shared
-                                    .usb_dev
-                                    .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-                                if configured {
-                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                        CableNumber::Cable0,
-                                        m.data(),
-                                    );
-                                    ctx.shared
-                                        .usb_midi
-                                        .lock(|usbd_midi| send_to_usb_midi(packet, usbd_midi));
-                                }
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    m.data(),
+                                );
+                                send_to_usb_midi::spawn(packet).unwrap();
                             }
                             Ok(None) => {
                                 more = false;
@@ -359,80 +350,102 @@ mod app {
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
-        ctx.shared.usb_dev.lock(|usb_dev| {
-            ctx.shared.usb_midi.lock(|usb_midi| {
-                // Check for new data
-                if !usb_dev.poll(&mut [usb_midi]) {
-                    return;
+
+        let usb_dev = ctx.shared.usb_dev;
+        let usb_midi = ctx.shared.usb_midi;
+
+        let mut buffer = [0; 64];
+        let mut received_size: usize = 0;
+
+        (usb_dev, usb_midi).lock(|usb_dev, usb_midi| {
+            if !usb_dev.poll(&mut [usb_midi]) {
+                match usb_midi.read(&mut buffer) {
+                    Err(_) => {
+                        error!("USB MIDI read error");
+                    }
+                    Ok(size) => {
+                        received_size = size;
+                    }
                 }
+            }
+        });
 
-                let mut buffer = [0; 64];
-                if let Ok(size) = usb_midi.read(&mut buffer) {
-                    let buffer_reader = UsbMidiPacketReader::new(&buffer, size);
-                    for packet in buffer_reader.into_iter().flatten() {
-                        if !packet.is_sysex() {
-                            if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
-                                ctx.shared.handlers.lock(|handlers| {
-                                    handlers.handle_midi_input(&m);
-                                });
-                            }
-                        } else {
-                            // If a packet containing a SysEx payload is detected, the data is saved
-                            // into a buffer and processed after the message is complete.
-                            if packet.is_sysex_start() {
-                                debug!("SysEx message start");
-                                sysex_receive_buffer.clear();
-                            }
+        let buffer_reader = UsbMidiPacketReader::new(&buffer, received_size);
+        for packet in buffer_reader.into_iter().flatten() {
+            if !packet.is_sysex() {
+                if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
+                    ctx.shared.handlers.lock(|handlers| {
+                        handlers.handle_midi_input(&m);
+                    });
+                }
+                continue;
+            }
 
-                            match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
-                                Ok(_) => {
-                                    if packet.is_sysex_end() {
-                                        debug!("SysEx message end");
-                                        info!("Buffered SysEx message: {:?}", sysex_receive_buffer);
+            // packet containing a SysEx payload is detected, the data is saved
+            // into a buffer and processed after the message is complete.
+            if packet.is_sysex_start() {
+                debug!("SysEx message start");
+                sysex_receive_buffer.clear();
+            }
 
-                                        // Process the SysEx message as request in a separate function
-                                        // and send an optional response back to the host.
-                                        ctx.shared.handlers.lock(|handlers| {
-                                            for response in handlers
-                                                .process_sysex(sysex_receive_buffer.as_ref())
-                                            {
-                                                for chunk in response.chunks(3) {
-                                                    let packet =
-                                                        UsbMidiEventPacket::try_from_payload_bytes(
-                                                            CableNumber::Cable0,
-                                                            chunk,
-                                                        );
-                                                    send_to_usb_midi(packet, usb_midi);
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                Err(_) => {
-                                    error!("SysEx buffer overflow");
-                                    break;
-                                }
+            match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
+                Ok(_) => {
+                    if packet.is_sysex_end() {
+                        debug!("SysEx message end");
+                        info!("Buffered SysEx message: {:?}", sysex_receive_buffer);
+
+                        // Process the SysEx message as request in a separate function
+                        // and send an optional response back to the host.
+                        let mut responses = opendeck::config::Responses::default();
+                        ctx.shared.handlers.lock(|handlers| {
+                            responses = handlers.process_sysex(sysex_receive_buffer.as_ref());
+                        });
+                        for response in responses {
+                            for chunk in response.chunks(3) {
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    chunk,
+                                );
+                                send_to_usb_midi::spawn(packet).unwrap();
                             }
                         }
                     }
                 }
-            });
-        });
+                Err(_) => {
+                    error!("SysEx buffer overflow");
+                    break;
+                }
+            }
+        }
     }
 
-    fn send_to_usb_midi(
+    #[task(shared = [usb_midi])]
+    async fn send_to_usb_midi(
+        ctx: send_to_usb_midi::Context,
         packet: Result<UsbMidiEventPacket, UsbMidiEventPacketError>,
-        usb_midi: &mut UsbMidiClass<UsbBus>,
     ) {
+        // optionally send to USB if a device is listening
+        //        let configured = ctx
+        //          .shared
+        //          .usb_dev
+        //          .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+        let mut usb_midi = ctx.shared.usb_midi;
         match packet {
             Ok(packet) => {
+                //
                 // FIXME improve the retry and timeout handling
-                for _ in 0..1000000 {
-                    let result = usb_midi.send_packet(packet.clone());
+                //
+                //
+                let mut result = Ok(0);
+                for i in 5..15 {
+                    usb_midi.lock(|usb_midi| {
+                        result = usb_midi.send_packet(packet.clone());
+                    });
                     match result {
                         Ok(_) => return,
                         Err(err) => {
                             if err != usb_device::UsbError::WouldBlock {
+                                Mono::delay(i.millis()).await;
                                 break;
                             }
                         }
