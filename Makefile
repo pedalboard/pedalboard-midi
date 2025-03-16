@@ -28,8 +28,8 @@ build: ## build
 lint: ## lint source code
 	cargo clippy --all-features
 
-debug: ## build and run by installing uf2 on the mounted pico
-	cargo run --config 'runner = "probe-run --chip RP2040"' --release
+attach: ## attach to the running program
+	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
 device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
