@@ -335,19 +335,23 @@ mod app {
                                 let packet = UsbMidiEventPacket::try_from_payload_bytes(
                                     CableNumber::Cable0,
                                     m.data(),
-                                )
-                                .unwrap();
-                                ctx.shared.usb_midi.lock(|midi| loop {
-                                    match midi.send_packet(packet.clone()) {
-                                        Ok(_) => break,
-                                        Err(err) => {
-                                            error!("USB midi out error {:?}", err);
-                                            if err != UsbError::WouldBlock {
-                                                break;
+                                );
+                                match packet {
+                                    Ok(packet) => {
+                                        ctx.shared.usb_midi.lock(|midi| loop {
+                                            match midi.send_packet(packet.clone()) {
+                                                Ok(_) => break,
+                                                Err(err) => {
+                                                    error!("USB midi out error {:?}", err);
+                                                    if err != UsbError::WouldBlock {
+                                                        break;
+                                                    }
+                                                }
                                             }
-                                        }
+                                        });
                                     }
-                                });
+                                    Err(_) => error!("MIDI out packet error",),
+                                }
                             }
                         }
                         Ok(None) => {
@@ -430,7 +434,7 @@ mod app {
                                                                 }
                                                             }
                                                         },
-                                                        Err(_) => error!( "SysEx response packet error",),
+                                                        Err(_) => error!( "SysEx out packet error",),
                                                     }
                                                 }
 
