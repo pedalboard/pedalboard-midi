@@ -61,6 +61,7 @@ mod app {
         class_prelude::UsbBusAllocator,
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
+        UsbError,
     };
     use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
@@ -322,7 +323,7 @@ mod app {
                         Ok(Some(m)) => {
                             // always send to UART out
                             if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
-                                debug!("sending midi message {:?}", mm);
+                                debug!("sending midi message to MIDI-OUT {:?}", mm);
                                 uart_midi_out.write(&mm).unwrap();
                             }
                             // optionally send to USB if a device is listening
@@ -336,12 +337,17 @@ mod app {
                                     m.data(),
                                 )
                                 .unwrap();
-                                ctx.shared
-                                    .usb_midi
-                                    .lock(|midi| match midi.send_packet(packet) {
-                                        Ok(_) => debug!("message sent to usb"),
-                                        Err(err) => error!("failed to send message: {}", err),
-                                    });
+                                ctx.shared.usb_midi.lock(|midi| loop {
+                                    match midi.send_packet(packet.clone()) {
+                                        Ok(_) => break,
+                                        Err(err) => {
+                                            error!("USB midi out error {:?}", err);
+                                            if err != UsbError::WouldBlock {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                });
                             }
                         }
                         Ok(None) => {
@@ -401,7 +407,6 @@ mod app {
 
                                         // Process the SysEx message as request in a separate function
                                         // and send an optional response back to the host.
-                                        //
                                         ctx.shared.handlers.lock(|handlers| {
                                             for response in handlers.process_sysex(sysex_receive_buffer.as_ref()) {
                                                 for chunk in response.chunks(3) {
@@ -434,7 +439,7 @@ mod app {
                                     }
                                 }
                                 Err(_) => {
-                                    error!("SysEx buffer overflow.");
+                                    error!("SysEx buffer overflow");
                                     break;
                                 }
                             }
