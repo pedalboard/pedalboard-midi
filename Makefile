@@ -70,6 +70,7 @@ usbip-host: ## run usbip host on the device
 	sudo usbip bind --busid 1-1.1
 
 usbip-attach: ## attach the device to the host
+	sudo modprobe vhci-hcd
 	sudo usbip attach -r pi-dev -b 1-1.1
 
 help:
