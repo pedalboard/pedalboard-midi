@@ -548,7 +548,8 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18f4776f9d450d481dc41e3dce9c10b11a9ec5955aca7c13215e94fe9477f2f7"
 dependencies = [
- "midi-types",
+ "defmt",
+ "midi-types 0.1.7",
 ]
 
 [[package]]
@@ -556,6 +557,15 @@ name = "midi-types"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef0bbe5256e5c434947d790788426bb65773502784aed7b23408f7e7fb4d8eb5"
+dependencies = [
+ "defmt",
+]
+
+[[package]]
+name = "midi-types"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8e625d62242efde26ba45da4737138504cfb4c369e25cffb5f28624fc859a59"
 dependencies = [
  "defmt",
 ]
@@ -708,7 +718,7 @@ dependencies = [
  "embedded-text",
  "heapless 0.8.0",
  "midi-convert",
- "midi-types",
+ "midi-types 0.2.0",
  "midi2",
  "movavg",
  "nb 1.1.0",
