@@ -353,7 +353,7 @@ mod app {
                 }
             });
         };
-        // schedule to run this task =nce per millis
+        // schedule to run this task once per millis
         poll_input::spawn_after(Duration::millis(1)).unwrap();
     }
 
@@ -429,19 +429,21 @@ mod app {
         usb_midi: &mut UsbMidiClass<UsbBus>,
     ) {
         match packet {
-            Ok(packet) => loop {
-                // Make sure to add some timeout in case the hostjob
-                // does not read the data.
-                let result = usb_midi.send_packet(packet.clone());
-                match result {
-                    Ok(_) => break,
-                    Err(err) => {
-                        if err != usb_device::UsbError::WouldBlock {
-                            break;
+            Ok(packet) => {
+                // FIXME improve the retry and timeout handling
+                for _ in 0..100 {
+                    let result = usb_midi.send_packet(packet.clone());
+                    match result {
+                        Ok(_) => return,
+                        Err(err) => {
+                            if err != usb_device::UsbError::WouldBlock {
+                                break;
+                            }
                         }
                     }
                 }
-            },
+                warn!("USB MIDI out packet timeout");
+            }
             Err(_) => error!("USB MIDI out packet error",),
         }
     }
