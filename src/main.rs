@@ -7,8 +7,11 @@ mod loudness;
 
 use defmt_rtt as _;
 use panic_probe as _;
-
 use rtic::app;
+
+use rtic_monotonics::rp2040::prelude::*;
+
+rp2040_timer_monotonic!(Mono);
 
 /// The linker will place this boot block at the start of our program image. We
 /// need this to help the ROM bootloader get our code up and running.
@@ -23,11 +26,12 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
-
+    use super::*;
     use crate::handler::Handler;
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
+    use crate::Mono;
     use core::mem::MaybeUninit;
-    use defmt::*;
+    use defmt::{debug, error, info, warn};
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
@@ -39,7 +43,7 @@ mod app {
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
-        fugit::{HertzU32, RateExtU32, TimerDurationU64},
+        fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
                 Gpio0, Gpio1, Gpio10, Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21,
@@ -51,7 +55,6 @@ mod app {
         i2c::I2C,
         pac::{I2C0, UART0},
         spi::Spi,
-        timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
         usb::UsbBus,
         Clock, Sio, Watchdog,
@@ -67,8 +70,6 @@ mod app {
     };
 
     use ws2812_spi::Ws2812;
-
-    type Duration = TimerDurationU64<1_000_000>;
 
     type MidiUartPins = (
         Pin<Gpio0, FunctionUart, PullDown>,
@@ -101,9 +102,6 @@ mod app {
         DigInPin<Gpio21>,
     >;
 
-    #[monotonic(binds = TIMER_IRQ_0, default = true)]
-    type MyMono = Monotonic<Alarm0>;
-
     #[shared]
     struct Shared {
         usb_midi: UsbMidiClass<'static, UsbBus>,
@@ -129,8 +127,9 @@ mod app {
         i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit(),
         adc: MaybeUninit<rp2040_hal::adc::Adc> = MaybeUninit::uninit()
     ])]
-    fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(ctx: init::Context) -> (Shared, Local) {
         let mut resets = ctx.device.RESETS;
+        Mono::start(ctx.device.TIMER, &resets);
         let mut watchdog = Watchdog::new(ctx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
@@ -144,9 +143,6 @@ mod app {
         )
         .ok()
         .unwrap();
-
-        let mut timer = Timer::new(ctx.device.TIMER, &mut resets, &clocks);
-        let mono = Monotonic::new(timer, timer.alarm_0().unwrap());
 
         let sio = Sio::new(ctx.device.SIO);
         let pins = Pins::new(
@@ -266,7 +262,7 @@ mod app {
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
         poll_input::spawn().unwrap();
-        display_out::spawn_after(Duration::secs(2)).unwrap();
+        display_out::spawn().unwrap();
 
         let handlers = crate::handler::Handlers::new();
 
@@ -285,7 +281,6 @@ mod app {
                 displays,
                 debug_led,
             },
-            init::Monotonics(mono),
         )
     }
 
@@ -309,52 +304,53 @@ mod app {
     }
 
     #[task(local = [inputs, uart_midi_out], shared = [handlers, usb_midi, usb_dev])]
-    fn poll_input(mut ctx: poll_input::Context) {
+    async fn poll_input(mut ctx: poll_input::Context) {
         let inputs = ctx.local.inputs;
+        let uart_midi_out = ctx.local.uart_midi_out;
+        loop {
+            if let Some(event) = inputs.update() {
+                ctx.shared.handlers.lock(|handlers| {
+                    let mut buf = [0x00u8; 6];
+                    let mut messages = handlers.handle_human_input(event);
+                    let mut more = true;
 
-        if let Some(event) = inputs.update() {
-            ctx.shared.handlers.lock(|handlers| {
-                let mut buf = [0x00u8; 6];
-                let mut messages = handlers.handle_human_input(event);
-                let mut more = true;
-
-                let uart_midi_out = ctx.local.uart_midi_out;
-                while more {
-                    match messages.next(&mut buf) {
-                        Ok(Some(m)) => {
-                            // always send to UART out
-                            if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
-                                debug!("sending midi message to MIDI-OUT {:?}", mm);
-                                uart_midi_out.write(&mm).unwrap();
+                    while more {
+                        match messages.next(&mut buf) {
+                            Ok(Some(m)) => {
+                                // always send to UART out
+                                if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                                    debug!("sending midi message to MIDI-OUT {:?}", mm);
+                                    uart_midi_out.write(&mm).unwrap();
+                                }
+                                // optionally send to USB if a device is listening
+                                let configured = ctx
+                                    .shared
+                                    .usb_dev
+                                    .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+                                if configured {
+                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        m.data(),
+                                    );
+                                    ctx.shared
+                                        .usb_midi
+                                        .lock(|usbd_midi| send_to_usb_midi(packet, usbd_midi));
+                                }
                             }
-                            // optionally send to USB if a device is listening
-                            let configured = ctx
-                                .shared
-                                .usb_dev
-                                .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-                            if configured {
-                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                    CableNumber::Cable0,
-                                    m.data(),
-                                );
-                                ctx.shared
-                                    .usb_midi
-                                    .lock(|usbd_midi| send_to_usb_midi(packet, usbd_midi));
+                            Ok(None) => {
+                                more = false;
                             }
-                        }
-                        Ok(None) => {
-                            more = false;
-                        }
-                        Err(_) => {
-                            more = false;
-                            error!("buffer overflow")
-                        }
-                    };
-                }
-            });
-        };
-        // schedule to run this task once per millis
-        poll_input::spawn_after(Duration::millis(1)).unwrap();
+                            Err(_) => {
+                                more = false;
+                                error!("buffer overflow")
+                            }
+                        };
+                    }
+                });
+            };
+            // run this task once per millis
+            Mono::delay(1.millis()).await;
+        }
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
@@ -449,33 +445,37 @@ mod app {
     }
 
     #[task(local = [led_spi], shared =[handlers])]
-    fn led_animation(mut ctx: led_animation::Context) {
-        ctx.shared.handlers.lock(|handlers| {
-            let data = handlers.leds().animate();
-            ctx.local
-                .led_spi
-                .write(brightness(data.iter().cloned(), 8))
-                .unwrap();
-        });
-        // schedule to run this task with 20Hz
-        led_animation::spawn_after(Duration::millis(50)).unwrap();
+    async fn led_animation(mut ctx: led_animation::Context) {
+        loop {
+            ctx.shared.handlers.lock(|handlers| {
+                let data = handlers.leds().animate();
+                ctx.local
+                    .led_spi
+                    .write(brightness(data.iter().cloned(), 8))
+                    .unwrap();
+            });
+            // run this task with 20Hz
+            Mono::delay(50.millis()).await;
+        }
     }
 
     #[task(local = [displays])]
-    fn display_out(ctx: display_out::Context) {
+    async fn display_out(ctx: display_out::Context) {
         ctx.local
             .displays
             .show(crate::hmi::display::DisplayLocation::L);
     }
 
     #[task(local = [debug_led, state: bool = false])]
-    fn blink(ctx: blink::Context) {
-        *ctx.local.state = !*ctx.local.state;
-        if *ctx.local.state {
-            ctx.local.debug_led.set_high().ok().unwrap();
-        } else {
-            ctx.local.debug_led.set_low().ok().unwrap();
+    async fn blink(ctx: blink::Context) {
+        loop {
+            *ctx.local.state = !*ctx.local.state;
+            if *ctx.local.state {
+                ctx.local.debug_led.set_high().ok().unwrap();
+            } else {
+                ctx.local.debug_led.set_low().ok().unwrap();
+            }
+            Mono::delay(500.millis()).await;
         }
-        blink::spawn_after(Duration::millis(500)).unwrap();
     }
 }
