@@ -226,9 +226,18 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "0.99.18"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f33878137e4dafd7fa914ad4e259e18a4e8e532b9617a2d0150262bf53abfce"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -553,9 +562,9 @@ dependencies = [
 
 [[package]]
 name = "midi2"
-version = "0.7.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e85b5f4b0ca082a51be5c50c046e50049894c67a09a2b4b7b7eaa03280086f1"
+checksum = "d20fb87e947169ef96e413b0b5f1629b70b4e3fc14fa9b09d052714bb60014aa"
 dependencies = [
  "derive_more",
  "fixed",
@@ -565,9 +574,9 @@ dependencies = [
 
 [[package]]
 name = "midi2_proc"
-version = "0.7.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9045b9fd56bbd7a6ed0977f5ca5911ea21d175035c7ca0ea097abd8c1abea2fe"
+checksum = "f610e79c947f6f8775d1513632143cc1beed591684b848a97634d75e946989e1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -657,7 +666,7 @@ checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#7db3c405f57bc9d02a40baf717f0ae2825d1d09a"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#b7bd8eba3ff86ba50bd7ffb23834896be4fe6c26"
 dependencies = [
  "defmt",
  "heapless 0.8.0",
