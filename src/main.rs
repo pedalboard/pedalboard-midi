@@ -27,6 +27,7 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
     use super::*;
+
     use crate::handler::Handler;
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use crate::Mono;
@@ -35,6 +36,8 @@ mod app {
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
+    use rtic_sync::channel::{Receiver, Sender, TrySendError};
+    use rtic_sync::make_channel;
 
     use heapless::Vec;
     use midi2::Data;
@@ -65,9 +68,7 @@ mod app {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{
-        CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiEventPacketError, UsbMidiPacketReader,
-    };
+    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
     use ws2812_spi::Ws2812;
 
@@ -120,7 +121,9 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
+        sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
     }
+    const USB_OUT_CAPACITY: usize = 32;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -258,10 +261,11 @@ mod app {
             AtomicDevice::new(i2c_bus),
         );
         displays.splash_screen();
-
+        let (s, r) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
+        send_to_usb_midi::spawn(r).unwrap();
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
-        poll_input::spawn().unwrap();
+        poll_input::spawn(s.clone()).unwrap();
         display_out::spawn().unwrap();
 
         let handlers = crate::handler::Handlers::new();
@@ -280,6 +284,7 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
+                sender: s,
             },
         )
     }
@@ -304,16 +309,18 @@ mod app {
     }
 
     #[task(local = [inputs, uart_midi_out], shared = [handlers])]
-    async fn poll_input(mut ctx: poll_input::Context) {
+    async fn poll_input(
+        mut ctx: poll_input::Context,
+        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+    ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
         loop {
             if let Some(event) = inputs.update() {
                 ctx.shared.handlers.lock(|handlers| {
-                    let mut buf = [0x00u8; 6];
                     let mut messages = handlers.handle_human_input(event);
                     let mut more = true;
-
+                    let mut buf = [0x00u8; 6];
                     while more {
                         match messages.next(&mut buf) {
                             Ok(Some(m)) => {
@@ -326,7 +333,23 @@ mod app {
                                     CableNumber::Cable0,
                                     m.data(),
                                 );
-                                send_to_usb_midi::spawn(packet).unwrap();
+                                match packet {
+                                    Ok(packet) => {
+                                        if let Err(err) = sender.try_send(packet) {
+                                            match err {
+                                                TrySendError::Full(_) => {
+                                                    error!("USB MIDI out queue full");
+                                                }
+                                                TrySendError::NoReceiver(_) => {
+                                                    error!("USB MIDI out queue has no receiver");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        error!("USB MIDI packet error");
+                                    }
+                                }
                             }
                             Ok(None) => {
                                 more = false;
@@ -345,7 +368,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new()],
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender],
         shared =[usb_midi,usb_dev,handlers]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -358,10 +381,11 @@ mod app {
         let mut received_size: usize = 0;
 
         (usb_dev, usb_midi).lock(|usb_dev, usb_midi| {
-            if !usb_dev.poll(&mut [usb_midi]) {
+            if usb_dev.poll(&mut [usb_midi]) {
                 match usb_midi.read(&mut buffer) {
-                    Err(_) => {
-                        error!("USB MIDI read error");
+                    Err(usb_device::UsbError::WouldBlock) => {}
+                    Err(err) => {
+                        error!("USB MIDI read error {:?}", err);
                     }
                     Ok(size) => {
                         received_size = size;
@@ -369,6 +393,10 @@ mod app {
                 }
             }
         });
+        if received_size == 0 {
+            return;
+        }
+        debug!("USB MIDI received");
 
         let buffer_reader = UsbMidiPacketReader::new(&buffer, received_size);
         for packet in buffer_reader.into_iter().flatten() {
@@ -406,7 +434,23 @@ mod app {
                                     CableNumber::Cable0,
                                     chunk,
                                 );
-                                send_to_usb_midi::spawn(packet).unwrap();
+                                match packet {
+                                    Ok(packet) => {
+                                        if let Err(err) = ctx.local.sender.try_send(packet) {
+                                            match err {
+                                                TrySendError::Full(_) => {
+                                                    error!("USB MIDI out queue full");
+                                                }
+                                                TrySendError::NoReceiver(_) => {
+                                                    error!("USB MIDI out queue has no receiver");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        error!("USB MIDI packet error");
+                                    }
+                                }
                             }
                         }
                     }
@@ -422,7 +466,7 @@ mod app {
     #[task(shared = [usb_midi, usb_dev])]
     async fn send_to_usb_midi(
         mut ctx: send_to_usb_midi::Context,
-        packet: Result<UsbMidiEventPacket, UsbMidiEventPacketError>,
+        mut receiver: Receiver<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
     ) {
         let configured = ctx
             .shared
@@ -433,31 +477,29 @@ mod app {
             return;
         }
 
+        info!("USB MIDI out ready to send");
         let mut usb_midi = ctx.shared.usb_midi;
-        match packet {
-            Ok(packet) => {
-                //
-                // FIXME improve the retry and timeout handling
-                //
-                //
-                let mut result = Ok(0);
-                for i in 5..15 {
-                    usb_midi.lock(|usb_midi| {
-                        result = usb_midi.send_packet(packet.clone());
-                    });
-                    match result {
-                        Ok(_) => return,
-                        Err(err) => {
-                            if err != usb_device::UsbError::WouldBlock {
-                                Mono::delay(i.millis()).await;
-                                break;
-                            }
-                        }
+        while let Ok(packet) = receiver.recv().await {
+            let mut result = Ok(0);
+            for i in 5..50 {
+                usb_midi.lock(|usb_midi| {
+                    result = usb_midi.send_packet(packet.clone());
+                });
+                let done = match result {
+                    Ok(_) => true,
+                    Err(usb_device::UsbError::WouldBlock) => {
+                        Mono::delay(i.millis()).await;
+                        false
                     }
+                    _ => true,
+                };
+                if done {
+                    break;
                 }
-                warn!("USB MIDI out packet timeout");
+                if i == 49 {
+                    warn!("USB MIDI out send timeout");
+                }
             }
-            Err(_) => error!("USB MIDI out packet error",),
         }
     }
 
