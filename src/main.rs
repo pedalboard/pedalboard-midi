@@ -424,35 +424,38 @@ mod app {
 
                         // Process the SysEx message as request in a separate function
                         // and send an optional response back to the host.
-                        let mut responses = opendeck::config::Responses::default();
                         ctx.shared.handlers.lock(|handlers| {
-                            responses = handlers.process_sysex(sysex_receive_buffer.as_ref());
-                        });
-                        for response in responses {
-                            for chunk in response.chunks(3) {
-                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                    CableNumber::Cable0,
-                                    chunk,
-                                );
-                                match packet {
-                                    Ok(packet) => {
-                                        if let Err(err) = ctx.local.sender.try_send(packet) {
-                                            match err {
-                                                TrySendError::Full(_) => {
-                                                    error!("USB MIDI out queue full");
-                                                }
-                                                TrySendError::NoReceiver(_) => {
-                                                    error!("USB MIDI out queue has no receiver");
+                            let mut responses =
+                                handlers.process_sysex(sysex_receive_buffer.as_ref());
+                            let output_buffer = &mut [0u8; 78];
+                            if let Ok(Some(response)) = responses.next(output_buffer) {
+                                for chunk in response.data().chunks(3) {
+                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        chunk,
+                                    );
+                                    match packet {
+                                        Ok(packet) => {
+                                            if let Err(err) = ctx.local.sender.try_send(packet) {
+                                                match err {
+                                                    TrySendError::Full(_) => {
+                                                        error!("USB MIDI out queue full");
+                                                    }
+                                                    TrySendError::NoReceiver(_) => {
+                                                        error!(
+                                                            "USB MIDI out queue has no receiver"
+                                                        );
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    Err(_) => {
-                                        error!("USB MIDI packet error");
+                                        Err(_) => {
+                                            error!("USB MIDI packet error");
+                                        }
                                     }
                                 }
                             }
-                        }
+                        });
                     }
                 }
                 Err(_) => {

@@ -1,4 +1,5 @@
 use midi2::BytesMessage;
+use opendeck::config::SysExResponseIterator;
 
 use crate::handler::Handler;
 use crate::hmi::{
@@ -11,6 +12,7 @@ use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
+pub type OpenDeckConfigResponses<'a> = SysExResponseIterator<'a, 2, 10, 2, 2, 8>;
 
 pub struct OpenDeck {
     config: OpenDeckConfig,
@@ -38,7 +40,7 @@ impl Handler for OpenDeck {
     fn leds(&mut self) -> &mut Leds {
         &mut self.leds
     }
-    fn process_sysex(&mut self, request: &[u8]) -> opendeck::config::Responses {
+    fn process_sysex<'a>(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
         self.config.process_sysex(request)
     }
 }
