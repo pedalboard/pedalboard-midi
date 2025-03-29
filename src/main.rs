@@ -419,39 +419,54 @@ mod app {
             match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
                 Ok(_) => {
                     if packet.is_sysex_end() {
-                        debug!("SysEx message end");
-                        info!("Buffered SysEx message: {:?}", sysex_receive_buffer);
+                        info!("SysEx IN message: {:?}", sysex_receive_buffer);
 
                         // Process the SysEx message as request in a separate function
                         // and send an optional response back to the host.
                         ctx.shared.handlers.lock(|handlers| {
                             let mut responses =
                                 handlers.process_sysex(sysex_receive_buffer.as_ref());
-                            let output_buffer = &mut [0u8; 78];
-                            if let Ok(Some(response)) = responses.next(output_buffer) {
-                                for chunk in response.data().chunks(3) {
-                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                        CableNumber::Cable0,
-                                        chunk,
-                                    );
-                                    match packet {
-                                        Ok(packet) => {
-                                            if let Err(err) = ctx.local.sender.try_send(packet) {
-                                                match err {
-                                                    TrySendError::Full(_) => {
-                                                        error!("USB MIDI out queue full");
-                                                    }
-                                                    TrySendError::NoReceiver(_) => {
-                                                        error!(
+                            let mut more = true;
+                            while more {
+                                let output_buffer = &mut [0u8; 78];
+                                match responses.next(output_buffer) {
+                                    Ok(Some(response)) => {
+                                        let res = response.data();
+                                        info!("SysEx OUT message: {:?}", res);
+                                        for chunk in res.chunks(3) {
+                                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                                CableNumber::Cable0,
+                                                chunk,
+                                            );
+                                            match packet {
+                                                Ok(packet) => {
+                                                    if let Err(err) =
+                                                        ctx.local.sender.try_send(packet)
+                                                    {
+                                                        match err {
+                                                            TrySendError::Full(_) => {
+                                                                error!("USB MIDI out queue full");
+                                                            }
+                                                            TrySendError::NoReceiver(_) => {
+                                                                error!(
                                                             "USB MIDI out queue has no receiver"
                                                         );
+                                                            }
+                                                        }
                                                     }
+                                                }
+                                                Err(_) => {
+                                                    error!("USB MIDI packet error");
                                                 }
                                             }
                                         }
-                                        Err(_) => {
-                                            error!("USB MIDI packet error");
-                                        }
+                                    }
+                                    Ok(None) => {
+                                        more = false;
+                                    }
+                                    Err(_) => {
+                                        more = false;
+                                        error!("SysEx buffer overflow");
                                     }
                                 }
                             }
