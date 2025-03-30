@@ -419,7 +419,7 @@ mod app {
             match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
                 Ok(_) => {
                     if packet.is_sysex_end() {
-                        info!("SysEx IN message: {:?}", sysex_receive_buffer);
+                        debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
                         // Process the SysEx message as request in a separate function
                         // and send an optional response back to the host.
@@ -432,7 +432,7 @@ mod app {
                                 match responses.next(output_buffer) {
                                     Ok(Some(response)) => {
                                         let res = response.data();
-                                        info!("SysEx OUT message: {:?}", res);
+                                        debug!("SysEx OUT message: {:?}", res);
                                         for chunk in res.chunks(3) {
                                             let packet = UsbMidiEventPacket::try_from_payload_bytes(
                                                 CableNumber::Cable0,
