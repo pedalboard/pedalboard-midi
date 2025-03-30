@@ -12,7 +12,7 @@ use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
-pub type OpenDeckConfigResponses<'a> = SysexResponseIterator<'a, 2, 10, 2, 2, 8>;
+pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
 
 pub struct OpenDeck {
     config: OpenDeckConfig,
@@ -39,6 +39,9 @@ impl Handler for OpenDeck {
     fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
     fn leds(&mut self) -> &mut Leds {
         &mut self.leds
+    }
+    fn config(&mut self) -> &mut OpenDeckConfig {
+        &mut self.config
     }
     fn process_sysex<'a>(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
         self.config.process_sysex(request)

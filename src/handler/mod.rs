@@ -5,16 +5,17 @@ use defmt::*;
 use midi2::prelude::*;
 use midi2::BytesMessage;
 use opendeck::handler::Messages;
-use opendeck_handler::OpenDeckConfigResponses;
+use opendeck_handler::{OpenDeckConfig, OpenDeckConfigResponses};
 use smart_leds::colors::*;
 
-mod opendeck_handler;
+pub mod opendeck_handler;
 
 pub trait Handler {
     fn handle_human_input(&mut self, e: InputEvent) -> Messages;
     fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>);
     fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses;
     fn leds(&mut self) -> &mut Leds;
+    fn config(&mut self) -> &mut OpenDeckConfig;
 }
 
 /// The router (dispatcher) for human input and midi input
@@ -74,5 +75,8 @@ impl Handler for Handlers {
 
     fn leds(&mut self) -> &mut Leds {
         self.opendeck.leds()
+    }
+    fn config(&mut self) -> &mut OpenDeckConfig {
+        self.opendeck.config()
     }
 }

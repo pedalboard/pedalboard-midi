@@ -28,6 +28,7 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 mod app {
     use super::*;
 
+    use crate::handler::opendeck_handler::OpenDeckConfigResponses;
     use crate::handler::Handler;
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use crate::Mono;
@@ -121,9 +122,10 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
     }
     const USB_OUT_CAPACITY: usize = 32;
+    const SYSEX_CAPACITY: usize = 1;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -261,11 +263,15 @@ mod app {
             AtomicDevice::new(i2c_bus),
         );
         displays.splash_screen();
-        let (s, r) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
-        send_to_usb_midi::spawn(r).unwrap();
+        let (usb_sender, usb_receiver) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
+        send_to_usb_midi::spawn(usb_receiver).unwrap();
+
+        let (sysex_sender, sysex_receiver) = make_channel!(OpenDeckConfigResponses, SYSEX_CAPACITY);
+        sysex_processor::spawn(sysex_receiver, usb_sender.clone()).unwrap();
+
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
-        poll_input::spawn(s.clone()).unwrap();
+        poll_input::spawn(usb_sender.clone()).unwrap();
         display_out::spawn().unwrap();
 
         let handlers = crate::handler::Handlers::new();
@@ -284,7 +290,7 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
-                sender: s,
+                sender: sysex_sender,
             },
         )
     }
@@ -423,59 +429,71 @@ mod app {
 
                         // Process the SysEx message as request in a separate function
                         // and send an optional response back to the host.
+                        let mut responses = OpenDeckConfigResponses::None;
                         ctx.shared.handlers.lock(|handlers| {
-                            let mut responses =
-                                handlers.process_sysex(sysex_receive_buffer.as_ref());
-                            let mut more = true;
-                            while more {
-                                let output_buffer = &mut [0u8; 78];
-                                match responses.next(output_buffer) {
-                                    Ok(Some(response)) => {
-                                        let res = response.data();
-                                        debug!("SysEx OUT message: {:?}", res);
-                                        for chunk in res.chunks(3) {
-                                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                                CableNumber::Cable0,
-                                                chunk,
-                                            );
-                                            match packet {
-                                                Ok(packet) => {
-                                                    if let Err(err) =
-                                                        ctx.local.sender.try_send(packet)
-                                                    {
-                                                        match err {
-                                                            TrySendError::Full(_) => {
-                                                                error!("USB MIDI out queue full");
-                                                            }
-                                                            TrySendError::NoReceiver(_) => {
-                                                                error!(
-                                                            "USB MIDI out queue has no receiver"
-                                                        );
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                Err(_) => {
-                                                    error!("USB MIDI packet error");
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        more = false;
-                                    }
-                                    Err(_) => {
-                                        more = false;
-                                        error!("SysEx buffer overflow");
-                                    }
+                            responses = handlers.process_sysex(sysex_receive_buffer.as_ref());
+                        });
+                        if let Err(err) = ctx.local.sender.try_send(responses) {
+                            match err {
+                                TrySendError::Full(_) => {
+                                    error!("sysex out queue full");
+                                }
+                                TrySendError::NoReceiver(_) => {
+                                    error!("sysex out queue has no receiver");
                                 }
                             }
-                        });
+                        }
                     }
                 }
                 Err(_) => {
                     error!("SysEx buffer overflow");
                     break;
+                }
+            }
+        }
+    }
+
+    #[task(shared = [handlers])]
+    async fn sysex_processor(
+        mut ctx: sysex_processor::Context,
+        mut receiver: Receiver<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
+        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+    ) {
+        while let Ok(responses) = &mut receiver.recv().await {
+            let output_buffer = &mut [0u8; 78];
+            let mut more = true;
+            let mut len;
+            while more {
+                len = 0;
+                ctx.shared.handlers.lock(|handlers| {
+                    match responses.next(output_buffer, handlers.config()) {
+                        Ok(Some(response)) => {
+                            len = response.data().len();
+                        }
+                        Ok(None) => {
+                            more = false;
+                        }
+                        Err(_) => {
+                            more = false;
+                            error!("SysEx buffer overflow");
+                        }
+                    }
+                });
+                if len == 0 {
+                    continue;
+                }
+                debug!("SysEx OUT message: {:?}", output_buffer[..len]);
+                for chunk in output_buffer[..len].chunks(3) {
+                    let packet =
+                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk);
+                    match packet {
+                        Ok(packet) => {
+                            sender.send(packet).await.unwrap();
+                        }
+                        Err(_) => {
+                            error!("USB MIDI packet error");
+                        }
+                    }
                 }
             }
         }
