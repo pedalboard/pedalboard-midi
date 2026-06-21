@@ -644,8 +644,8 @@ mod app {
                 info!("restoring {} config entries from flash", entries.len());
                 ctx.shared.opendeck.lock(|opendeck| {
                     use opendeck::{Amount, OpenDeckRequest, Wish};
+                    let mut buf = [0u8; 78];
                     for &(block, section, index, value) in &entries {
-                        // Reconstruct the raw SysEx bytes and process
                         let raw = [
                             0xF0, 0x00, 0x53, 0x43, 0x00, 0x00, 0x01, 0x00,
                             block, section,
@@ -653,7 +653,9 @@ mod app {
                             ((value >> 8) as u8) & 0x7F, (value as u8) & 0x7F,
                             0xF7,
                         ];
-                        opendeck.config.process_sysex(&raw);
+                        let mut responses = opendeck.config.process_sysex(&raw);
+                        // Must consume iterator to trigger process_req
+                        while let Ok(Some(_)) = responses.next(&mut buf, &mut opendeck.config) {}
                     }
                 });
             }
