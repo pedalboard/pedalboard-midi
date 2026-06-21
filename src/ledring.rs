@@ -51,7 +51,7 @@ impl LedRing {
             Animation::Fill(c, count) => {
                 let mut data = [RGB8::default(); LEDS_PER_RING];
                 for i in 0..(count as usize).min(LEDS_PER_RING) {
-                    data[(self.rotation as usize + i) % LEDS_PER_RING] = c;
+                    data[(self.rotation as usize + LEDS_PER_RING - i) % LEDS_PER_RING] = c;
                 }
                 data
             }
@@ -75,7 +75,7 @@ impl LedRing {
 
 impl Default for LedRing {
     fn default() -> Self {
-        Self::new(0)
+        Self::new(8)
     }
 }
 
