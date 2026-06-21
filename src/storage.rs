@@ -102,12 +102,12 @@ pub struct ConfigStore {
 }
 
 impl ConfigStore {
-    pub fn new() -> Self {
-        let config = MapConfig::try_new(0..STORAGE_SIZE as u32).expect("flash config");
-        Self {
+    pub fn try_new() -> Option<Self> {
+        let config = MapConfig::try_new(0..STORAGE_SIZE as u32)?;
+        Some(Self {
             map: MapStorage::new(FlashStorage, config, NoCache::new()),
             buf: [0u8; SECTOR_SIZE],
-        }
+        })
     }
 
     /// Store a config value.

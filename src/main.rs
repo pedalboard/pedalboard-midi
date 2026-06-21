@@ -637,12 +637,15 @@ mod app {
         mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     ) {
         info!("config persistence task started");
-        // Wait for first message before initializing flash store
         let Ok((block, section, index, value)) = receiver.recv().await else { return };
-        info!("initializing flash store");
-        let mut store = pedalboard_midi::storage::ConfigStore::new();
+        let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() else {
+            warn!("flash config store init failed, persistence disabled");
+            // Drain channel so senders don't block
+            while let Ok(_) = receiver.recv().await {}
+            return;
+        };
+        info!("flash store initialized, persisting first value");
         store.save(block, section, index, value).await;
-        info!("first value persisted");
         while let Ok((block, section, index, value)) = receiver.recv().await {
             store.save(block, section, index, value).await;
         }
