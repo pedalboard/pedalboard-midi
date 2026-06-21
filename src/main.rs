@@ -636,10 +636,11 @@ mod app {
         _ctx: persist::Context,
         mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     ) {
-        let mut store = pedalboard_midi::storage::ConfigStore::new();
         info!("config persistence ready");
+        let mut store: Option<pedalboard_midi::storage::ConfigStore> = None;
         while let Ok((block, section, index, value)) = receiver.recv().await {
-            store.save(block, section, index, value).await;
+            let s = store.get_or_insert_with(pedalboard_midi::storage::ConfigStore::new);
+            s.save(block, section, index, value).await;
             debug!("persisted: b={} s={} i={} v={}", block, section, index, value);
         }
     }
