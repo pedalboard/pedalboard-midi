@@ -95,9 +95,12 @@ impl ExpressionPedals {
         }
         self.sample_rate_reduction = 0;
         self.adc_fifo.resume();
-        while self.adc_fifo.len() < 2 {}
+        while self.adc_fifo.len() < 4 {}
         self.adc_fifo.pause();
 
+        // Discard first sample of each channel (ADC crosstalk settling)
+        let _discard_a: u16 = self.adc_fifo.read().unwrap_or(0);
+        let _discard_b: u16 = self.adc_fifo.read().unwrap_or(0);
         let exp_a: u16 = self.adc_fifo.read().unwrap_or(0);
         let exp_b: u16 = self.adc_fifo.read().unwrap_or(0);
         (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
