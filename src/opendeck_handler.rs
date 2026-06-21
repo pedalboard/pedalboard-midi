@@ -14,6 +14,8 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
+    ring_colors: [smart_leds::RGB8; 8],
+    single_colors: [smart_leds::RGB8; 2],
 }
 
 impl OpenDeck {
@@ -218,15 +220,40 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
+            ring_colors: [smart_leds::RGB8::default(); 8],
+            single_colors: [smart_leds::RGB8::default(); 2],
         }
     }
 
     /// Reset encoder rings to empty after boot glitches settle.
     pub fn reset_encoder_rings(&mut self) {
         self.leds
-            .set_ledring(RingAnim::Fill(CYAN, 0), LedRings::Vol);
+            .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Vol);
         self.leds
-            .set_ledring(RingAnim::Fill(CYAN, 0), LedRings::Gain);
+            .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Gain);
+    }
+
+    /// Cache colors from config (call after boot config).
+    pub fn cache_colors(&mut self) {
+        use opendeck::led::Color;
+        fn color_to_rgb(c: Color) -> smart_leds::RGB8 {
+            match c {
+                Color::Off => smart_leds::RGB8::new(0, 0, 0),
+                Color::Red => smart_leds::RGB8::new(255, 0, 0),
+                Color::Green => smart_leds::RGB8::new(0, 255, 0),
+                Color::Yellow => smart_leds::RGB8::new(255, 255, 0),
+                Color::Blue => smart_leds::RGB8::new(0, 0, 255),
+                Color::Magenta => smart_leds::RGB8::new(255, 0, 255),
+                Color::Cyan => smart_leds::RGB8::new(0, 255, 255),
+                Color::White => smart_leds::RGB8::new(255, 255, 255),
+            }
+        }
+        for i in 0..8 {
+            self.ring_colors[i] = color_to_rgb(self.config.output_color(i));
+        }
+        for i in 0..2 {
+            self.single_colors[i] = color_to_rgb(self.config.output_color(8 + i));
+        }
     }
 
     pub fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
@@ -272,8 +299,7 @@ impl OpenDeck {
     /// Sync opendeck output states to physical LEDs. Call once per animation frame.
     pub fn sync_output_leds(&mut self) {
         use crate::leds::Animation;
-        use opendeck::led::{Color, ControlType};
-        use smart_leds::RGB8;
+        use opendeck::led::ControlType;
 
         const RINGS: [LedRings; 8] = [
             LedRings::A, LedRings::B, LedRings::C, LedRings::D,
@@ -281,23 +307,10 @@ impl OpenDeck {
         ];
         const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
 
-        fn color_to_rgb(c: Color) -> RGB8 {
-            match c {
-                Color::Off => RGB8::new(0, 0, 0),
-                Color::Red => RGB8::new(255, 0, 0),
-                Color::Green => RGB8::new(0, 255, 0),
-                Color::Yellow => RGB8::new(255, 255, 0),
-                Color::Blue => RGB8::new(0, 0, 255),
-                Color::Magenta => RGB8::new(255, 0, 255),
-                Color::Cyan => RGB8::new(0, 255, 255),
-                Color::White => RGB8::new(255, 255, 255),
-            }
-        }
-
         // Outputs 0-7 → rings
         for i in 0..self.config.output_count().min(8) {
             let ct = self.config.output_control_type(i);
-            let rgb = color_to_rgb(self.config.output_color(i));
+            let rgb = self.ring_colors[i];
             let is_multi = matches!(ct,
                 ControlType::LocalCcMultiValue | ControlType::MidiInCcMultiValue |
                 ControlType::LocalNoteMultiValue | ControlType::MidiInNoteMultiValue
@@ -319,9 +332,8 @@ impl OpenDeck {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
-                let rgb = color_to_rgb(self.config.output_color(idx));
                 self.leds.set(
-                    if on { Animation::On(rgb) } else { Animation::Off },
+                    if on { Animation::On(self.single_colors[i]) } else { Animation::Off },
                     SINGLE_LEDS[i],
                 );
             }

@@ -355,6 +355,7 @@ mod app {
                 ));
             }
             opendeck.reset_encoder_rings();
+            opendeck.cache_colors();
         });
 
         loop {
