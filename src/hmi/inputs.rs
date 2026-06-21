@@ -6,13 +6,14 @@ use debouncr::{
 use embedded_hal::digital::InputPin;
 use movavg::MovAvg;
 use pedalboard_midi::events::{Edge, InputEvent, Pulse};
-use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
+use rotary_encoder_embedded::{quadrature::QuadratureTableMode, Direction, RotaryEncoder};
 use rp2040_hal::adc::AdcFifo;
 type Sma = MovAvg<u16, u32, 10>;
 
 pub struct Rotary<DT, CLK, B> {
-    encoder: RotaryEncoder<StandardMode, DT, CLK>,
+    encoder: RotaryEncoder<QuadratureTableMode, DT, CLK>,
     button: Button<B>,
+    cooldown: u8,
 }
 
 impl<DT, CLK, B> Rotary<DT, CLK, B>
@@ -23,14 +24,26 @@ where
 {
     pub fn new(pin_dt: DT, pin_clk: CLK, pin_b: B) -> Self {
         Rotary {
-            encoder: RotaryEncoder::new(pin_dt, pin_clk).into_standard_mode(),
+            encoder: RotaryEncoder::new(pin_dt, pin_clk).into_quadrature_table_mode(2),
             button: Button::new(pin_b),
+            cooldown: 0,
         }
     }
     fn update(&mut self) -> Option<Pulse> {
-        match self.encoder.update() {
-            Direction::Clockwise => Some(Pulse::Clockwise),
-            Direction::Anticlockwise => Some(Pulse::CounterClockwise),
+        let dir = self.encoder.update();
+        if self.cooldown > 0 {
+            self.cooldown -= 1;
+            return None;
+        }
+        match dir {
+            Direction::Clockwise => {
+                self.cooldown = 5; // ignore for 5 poll cycles (~5ms)
+                Some(Pulse::Clockwise)
+            }
+            Direction::Anticlockwise => {
+                self.cooldown = 5;
+                Some(Pulse::CounterClockwise)
+            }
             Direction::None => None,
         }
     }
@@ -185,6 +198,16 @@ where
         }
     }
 
+    /// Poll only encoders — call at high frequency to avoid missing transitions.
+    pub fn poll_encoders(&mut self, events: &mut heapless::Vec<InputEvent, 14>) {
+        if let Some(e) = self.vol_rotary.update().map(InputEvent::Vol) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.gain_rotary.update().map(InputEvent::Gain) {
+            events.push(e).ok();
+        }
+    }
+
     pub fn update(&mut self) -> heapless::Vec<InputEvent, 14> {
         let mut events = heapless::Vec::new();
         let (exp_a, exp_b) = self.exp.update();
@@ -211,12 +234,6 @@ where
             events.push(e).ok();
         }
         if let Some(e) = self.gain_rotary.button.update().map(InputEvent::GainButton) {
-            events.push(e).ok();
-        }
-        if let Some(e) = self.vol_rotary.update().map(InputEvent::Vol) {
-            events.push(e).ok();
-        }
-        if let Some(e) = self.gain_rotary.update().map(InputEvent::Gain) {
             events.push(e).ok();
         }
         if let Some(e) = exp_a.map(InputEvent::ExpressionPedalA) {

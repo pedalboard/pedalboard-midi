@@ -39,7 +39,7 @@ smart-leds = "0.4.0"
 ws2812-spi = "0.5.1"
 ssd1327-i2c = { git = "https://github.com/pedalboard/ssd1327-i2c", branch = "master" }
 # embedded-hal 1.0.0 needs to be released
-rotary-encoder-embedded = { git = "https://github.com/ost-ing/rotary-encoder-embedded.git", rev = "d1b8795" }
+rotary-encoder-embedded = { git = "https://github.com/ost-ing/rotary-encoder-embedded.git", rev = "e042248" }
 usb-device = { version = "0.3.2", features = ["defmt"] }
 
 midi-convert = { version = "0.2.0", features = ["defmt"] }

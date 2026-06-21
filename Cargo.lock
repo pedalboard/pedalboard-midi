@@ -913,7 +913,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#09993b06f112cd551bbcde6d8eb8902172a14796"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#55d6191377197abc6dfb164610c357d9f17a2fc5"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
@@ -1201,8 +1201,8 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 
 [[package]]
 name = "rotary-encoder-embedded"
-version = "0.3.1"
-source = "git+https://github.com/ost-ing/rotary-encoder-embedded.git?rev=d1b8795#d1b8795f71d8c13546385a9ce9f80c072189d834"
+version = "0.5.0"
+source = "git+https://github.com/ost-ing/rotary-encoder-embedded.git?rev=e042248#e042248ab6fd339ce5b7fd30d47e498754e4f5ef"
 dependencies = [
  "embedded-hal 1.0.0",
 ]

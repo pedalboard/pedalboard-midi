@@ -11,6 +11,7 @@ pub enum Animation {
     Toggle(RGB8, bool),
     Flash(RGB8),
     Loudness(f32),
+    Fill(RGB8, u8), // color, count (0-12)
 }
 
 #[derive(Copy, Clone)]
@@ -44,6 +45,13 @@ impl LedRing {
                         data[(self.rotation as usize + LEDS_PER_RING - i) % LEDS_PER_RING] =
                             crate::loudness::loudness_color(reference);
                     }
+                }
+                data
+            }
+            Animation::Fill(c, count) => {
+                let mut data = [RGB8::default(); LEDS_PER_RING];
+                for i in 0..(count as usize).min(LEDS_PER_RING) {
+                    data[(self.rotation as usize + i) % LEDS_PER_RING] = c;
                 }
                 data
             }

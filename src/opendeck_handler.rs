@@ -1,10 +1,12 @@
 use crate::events::{Edge, InputEvent, Pulse};
-use crate::leds::Leds;
+use crate::ledring::Animation as RingAnim;
+use crate::leds::{Animation::Flash, Led, LedRings, Leds};
 use midi2::BytesMessage;
 use opendeck::button::handler::Action;
 use opendeck::config::SysexResponseIterator;
 use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
+use smart_leds::colors::*;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
 pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
@@ -21,26 +23,105 @@ impl OpenDeck {
         reboot: fn(),
         bootloader: fn(),
     ) -> Self {
-        use opendeck::{Amount, Block, OpenDeckRequest, Wish};
-        use opendeck::encoder::EncoderSection;
         use opendeck::analog::AnalogSection;
+        use opendeck::encoder::EncoderSection;
+        use opendeck::{Amount, Block, OpenDeckRequest, Wish};
 
-        let mut config = opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader);
+        let mut config =
+            opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader);
 
         // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
         for i in 0..2u16 {
-            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::Enabled(true))));
-            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::MessageType(opendeck::encoder::EncoderMessageType::ControlChange))));
-            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::PulsesPerStep(1))));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Encoder(i, EncoderSection::Enabled(true)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Encoder(
+                    i,
+                    EncoderSection::MessageType(
+                        opendeck::encoder::EncoderMessageType::ControlChange,
+                    ),
+                ),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Encoder(i, EncoderSection::PulsesPerStep(1)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Encoder(i, EncoderSection::UpperLimit(12)),
+            ));
         }
 
         // Enable analog inputs with CC#2-3
         for i in 0..2u16 {
-            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Analog(i, AnalogSection::Enabled(true))));
-            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Analog(i, AnalogSection::MidiId(i + 2))));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Analog(i, AnalogSection::Enabled(true)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Analog(i, AnalogSection::MidiId(i + 2)),
+            ));
         }
 
-        OpenDeck { leds: Leds::default(), config }
+        // Configure LED outputs 0-5 to react to buttons 2-7 (LocalNoteSingleValue)
+        // Buttons default to: Note On/Off, midi_id=index, value=1, channel=Channel(0) → wire ch 1
+        use opendeck::led::{ControlType, LedSection};
+        use opendeck::ChannelOrAll;
+        for i in 0..6u16 {
+            let note = (i + 2) as u8;
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(i, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(i, LedSection::ActivationId(note)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(i, LedSection::ActivationValue(1)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(i, LedSection::Channel(ChannelOrAll::Channel(1))),
+            ));
+        }
+
+        // Reset encoder values to 0 (boot pin glitches may have incremented them)
+        for i in 0..2u16 {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Encoder(i, EncoderSection::RepeatedValue(0)),
+            ));
+        }
+
+        OpenDeck {
+            leds: Leds::default(),
+            config,
+        }
+    }
+
+    /// Reset encoder rings to empty after boot glitches settle.
+    pub fn reset_encoder_rings(&mut self) {
+        self.leds
+            .set_ledring(RingAnim::Fill(CYAN, 0), LedRings::Vol);
+        self.leds
+            .set_ledring(RingAnim::Fill(CYAN, 0), LedRings::Gain);
     }
 
     pub fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
@@ -60,10 +141,114 @@ impl OpenDeck {
         }
     }
 
-    pub fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
+    /// Call after consuming a locally-generated MIDI message to update LED outputs.
+    pub fn notify_local_midi(&mut self, raw: &[u8]) {
+        if raw.len() < 3 {
+            return;
+        }
+        let status = raw[0] & 0xF0;
+
+        // Update LED outputs only for Note On/Off
+        if status == 0x90 || status == 0x80 {
+            if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
+                let changed = self.config.notify_local_midi(channel, id, value, is_note_on);
+                if changed > 0 {
+                    self.sync_output_leds();
+                }
+            }
+        }
+
+        // Visualize encoder CC values on Vol/Gain rings
+        if status == 0xB0 {
+            let cc = raw[1];
+            let val = raw[2];
+            let fill = val.min(12);
+            match cc {
+                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol),
+                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain),
+                _ => {}
+            }
+        }
+    }
+
+    /// Process an incoming external MIDI message and update LED outputs.
+    pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) {
+        self.leds.set(Flash(DARK_BLUE), Led::Mon);
+        if let Some((channel, id, value, is_note_on)) = parse_bytes_message(m) {
+            let changed = self.config.notify_external_midi(channel, id, value, is_note_on);
+            if changed > 0 {
+                self.sync_output_leds();
+            }
+        }
+    }
 
     pub fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
         self.config.process_sysex(request)
+    }
+
+    /// Sync opendeck output states to physical LED rings (buttons only, 0-5).
+    fn sync_output_leds(&mut self) {
+        const RING_MAP: [LedRings; 6] = [
+            LedRings::A,
+            LedRings::B,
+            LedRings::C,
+            LedRings::D,
+            LedRings::E,
+            LedRings::F,
+        ];
+        for i in 0..self.config.output_count().min(6) {
+            let on = self.config.output_state(i);
+            self.leds.set_ledring(
+                if on {
+                    RingAnim::On(GREEN)
+                } else {
+                    RingAnim::Off
+                },
+                RING_MAP[i],
+            );
+        }
+    }
+}
+
+fn parse_midi_raw(raw: &[u8]) -> Option<(u8, u8, u8, bool)> {
+    if raw.len() < 3 {
+        return None;
+    }
+    let status = raw[0] & 0xF0;
+    let channel = (raw[0] & 0x0F) + 1;
+    let id = raw[1];
+    let value = raw[2];
+    match status {
+        0x90 if value > 0 => Some((channel, id, value, true)),
+        0x90 => Some((channel, id, value, false)), // velocity 0 = note off
+        0x80 => Some((channel, id, value, false)),
+        0xB0 => Some((channel, id, value, true)),
+        _ => None,
+    }
+}
+
+fn parse_bytes_message(m: &BytesMessage<&[u8]>) -> Option<(u8, u8, u8, bool)> {
+    use midi2::prelude::*;
+    match m {
+        BytesMessage::ChannelVoice1(cv) => {
+            use midi2::channel_voice1::ChannelVoice1;
+            match cv {
+                ChannelVoice1::NoteOn(n) => {
+                    let ch: u8 = u4::from(n.channel()).into();
+                    Some((ch + 1, n.note_number().into(), n.velocity().into(), true))
+                }
+                ChannelVoice1::NoteOff(n) => {
+                    let ch: u8 = u4::from(n.channel()).into();
+                    Some((ch + 1, n.note_number().into(), n.velocity().into(), false))
+                }
+                ChannelVoice1::ControlChange(cc) => {
+                    let ch: u8 = u4::from(cc.channel()).into();
+                    Some((ch + 1, cc.control().into(), cc.control_data().into(), true))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -93,7 +278,11 @@ mod tests {
 
     fn test_config() -> OpenDeck {
         OpenDeck::new(
-            opendeck::config::FirmwareVersion { major: 1, minor: 0, revision: 0 },
+            opendeck::config::FirmwareVersion {
+                major: 1,
+                minor: 0,
+                revision: 0,
+            },
             0x123456,
             noop,
             noop,
@@ -107,7 +296,6 @@ mod tests {
         let mut messages = od.handle_human_input(InputEvent::ButtonA(Edge::Activate));
         let result = messages.next(&mut buf);
         assert!(result.is_ok());
-        // Default button config sends Note On
         assert!(result.unwrap().is_some());
     }
 
@@ -118,7 +306,47 @@ mod tests {
         let mut messages = od.handle_human_input(InputEvent::ExpressionPedalA(2048));
         let result = messages.next(&mut buf);
         assert!(result.is_ok());
-        // Analog is enabled at boot, should produce CC
         assert!(result.unwrap().is_some());
+    }
+
+    #[test]
+    fn test_notify_local_midi_updates_output() {
+        use opendeck::led::{ControlType, LedSection};
+        use opendeck::ChannelOrAll;
+        use opendeck::{Amount, Block, OpenDeckRequest, Wish};
+
+        let mut od = test_config();
+
+        // Configure LED output 0: LocalNoteSingleValue, note 60, value 127, channel 1
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Led(0, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+        ));
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Led(0, LedSection::ActivationId(60)),
+        ));
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Led(0, LedSection::ActivationValue(127)),
+        ));
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Led(0, LedSection::Channel(ChannelOrAll::Channel(1))),
+        ));
+
+        assert!(!od.config.output_state(0));
+
+        // Simulate local Note On: channel 1, note 60, velocity 127
+        od.notify_local_midi(&[0x90, 60, 127]);
+        assert!(od.config.output_state(0));
+
+        // Simulate local Note Off
+        od.notify_local_midi(&[0x80, 60, 0]);
+        assert!(!od.config.output_state(0));
     }
 }
