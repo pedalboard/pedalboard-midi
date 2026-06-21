@@ -525,6 +525,10 @@ mod app {
                     }
                 }
             }
+            // Refresh cached colors after SysEx config changes
+            ctx.shared.opendeck.lock(|opendeck| {
+                opendeck.refresh_colors();
+            });
         }
     }
 
