@@ -120,7 +120,7 @@ impl ExpressionPedal {
     fn update(&mut self, value: u16) -> Option<u16> {
         let new = self.avg.feed(value);
 
-        if self.current.abs_diff(new) > 2 {
+        if self.current.abs_diff(new) > 20 {
             self.current = new;
             return Some(self.current);
         }
