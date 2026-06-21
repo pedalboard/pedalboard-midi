@@ -36,7 +36,7 @@ portable-atomic = { version = "1.13.1", features = ["critical-section"] }
 
 # hal drivers
 smart-leds = "0.4.0"
-ws2812-spi = "0.5.1"
+ws2812-pio = { git = "https://github.com/IVAN-MK7/ws2812-pio-rs.git", branch = "hal-0.12" }
 ssd1327-i2c = { git = "https://github.com/pedalboard/ssd1327-i2c", branch = "master" }
 # embedded-hal 1.0.0 needs to be released
 rotary-encoder-embedded = { git = "https://github.com/ost-ing/rotary-encoder-embedded.git", rev = "e042248" }

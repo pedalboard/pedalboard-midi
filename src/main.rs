@@ -27,11 +27,12 @@ mod app {
     use super::*;
 
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
+    use pedalboard_midi::leds::LedData;
     use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use crate::Mono;
     use core::mem::MaybeUninit;
     use defmt::{debug, error, info, warn};
-    use embedded_hal::{digital::OutputPin, spi::MODE_0};
+    use embedded_hal::digital::OutputPin;
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
@@ -47,15 +48,15 @@ mod app {
         fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
-                Gpio0, Gpio1, Gpio10, Gpio11, Gpio12, Gpio14, Gpio16, Gpio17, Gpio18, Gpio19,
+                Gpio0, Gpio1, Gpio10, Gpio11, Gpio16, Gpio17, Gpio18, Gpio19,
                 Gpio2, Gpio20, Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
             },
-            FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
+            FunctionI2C, FunctionSio, FunctionUart, Pin, Pins, PullDown, PullUp,
             SioInput, SioOutput,
         },
         i2c::I2C,
         pac::{I2C0, UART0},
-        spi::Spi,
+        pio::PIOExt,
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
         usb::UsbBus,
         Clock, Sio, Watchdog,
@@ -68,7 +69,7 @@ mod app {
     };
     use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
-    use ws2812_spi::Ws2812;
+    use ws2812_pio::Ws2812Direct;
 
     type MidiUartPins = (
         Pin<Gpio0, FunctionUart, PullDown>,
@@ -85,14 +86,10 @@ mod app {
         ),
     >;
 
-    type LedSpi = Spi<
-        rp2040_hal::spi::Enabled,
-        rp2040_hal::pac::SPI1,
-        (
-            Pin<Gpio11, FunctionSpi, PullDown>,
-            Pin<Gpio12, FunctionSpi, PullDown>,
-            Pin<Gpio14, FunctionSpi, PullDown>,
-        ),
+    type LedPio = Ws2812Direct<
+        rp2040_hal::pac::PIO0,
+        rp2040_hal::pio::SM0,
+        Pin<Gpio11, rp2040_hal::gpio::FunctionPio0, PullDown>,
     >;
 
     type DigInPin<P> = Pin<P, FunctionSio<SioInput>, PullUp>;
@@ -123,17 +120,22 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: InputPins,
-        led_spi: Ws2812<LedSpi>,
+        led_spi: LedPio,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
         sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
+        led_sender_midi: Sender<'static, LedData, LED_CAPACITY>,
+        led_sender_usb: Sender<'static, LedData, LED_CAPACITY>,
+        mon_sender_midi: Sender<'static, (), 1>,
+        mon_sender_usb: Sender<'static, (), 1>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
+    const LED_CAPACITY: usize = 1;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -237,17 +239,16 @@ mod app {
         let exp = ExpressionPedals::new_direct(adc, exp_a_pin, exp_b_pin);
         let inputs = Inputs::new(vol, gain, buttons, exp);
 
-        // Configure SPI for Ws2812 LEDs
-        let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
-        let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
-        let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
-        let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
-            &mut resets,
-            &clocks.system_clock,
-            3.MHz(),
-            MODE_0,
+        // Configure PIO for Ws2812 LEDs
+        let led_pin: Pin<Gpio11, rp2040_hal::gpio::FunctionPio0, PullDown> =
+            pins.gpio11.into_function();
+        let (mut pio0, sm0, _, _, _) = ctx.device.PIO0.split(&mut resets);
+        let led_spi = Ws2812Direct::new(
+            led_pin,
+            &mut pio0,
+            sm0,
+            clocks.peripheral_clock.freq(),
         );
-        let led_spi = Ws2812::new(spi);
 
         // Configure I²C for OLED display
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
@@ -274,9 +275,13 @@ mod app {
 
         let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
 
+        let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
+        let (mon_sender, mon_receiver) = make_channel!((), 1);
+
         blink::spawn().unwrap();
-        led_animation::spawn().unwrap();
-        poll_input::spawn(usb_sender.clone(), display_sender).unwrap();
+        led_writer::spawn(led_receiver).unwrap();
+        mon_off::spawn(mon_receiver, led_sender.clone()).unwrap();
+        poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
         display_out::spawn(display_receiver).unwrap();
 
         let opendeck = OpenDeck::new(
@@ -305,23 +310,33 @@ mod app {
                 displays,
                 debug_led,
                 sender: sysex_sender,
+                led_sender_midi: led_sender.clone(),
+                led_sender_usb: led_sender,
+                mon_sender_midi: mon_sender.clone(),
+                mon_sender_usb: mon_sender,
             },
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [opendeck])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, mon_sender_midi], shared = [opendeck])]
     fn midi_in(mut ctx: midi_in::Context) {
         use midi2::prelude::*;
 
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
-                ctx.shared.opendeck.lock(|opendeck| {
+                let led_data = ctx.shared.opendeck.lock(|opendeck| {
                     let mut buf = [0x00u8; 3];
                     m.render_slice(&mut buf);
                     if let Ok(m) = BytesMessage::try_from(&buf[..]) {
-                        opendeck.handle_midi_input(&m);
+                        Some(opendeck.handle_midi_input(&m))
+                    } else {
+                        None
                     }
                 });
+                if let Some(data) = led_data {
+                    ctx.local.led_sender_midi.try_send(data).ok();
+                    ctx.local.mon_sender_midi.try_send(()).ok();
+                }
             }
             Err(nb::Error::WouldBlock) => {}
             Err(_) => error!("failed to receive midi message"),
@@ -333,6 +348,7 @@ mod app {
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+        mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
     ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
@@ -359,14 +375,13 @@ mod app {
 
         loop {
             let mut events = heapless::Vec::<_, 14>::new();
-            // Poll encoders at high frequency without yielding
             inputs.poll_encoders(&mut events);
-            // Poll buttons, analog, and encoder buttons at 1ms rate
             let slow_events = inputs.update();
             for e in slow_events.iter() {
                 events.push(*e).ok();
             }
             let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
+            let mut led_data: Option<LedData> = None;
             if !events.is_empty() {
                 ctx.shared.opendeck.lock(|opendeck| {
                     for event in events {
@@ -382,11 +397,15 @@ mod app {
                         }
                     }
                     for raw in &all_sent {
-                        opendeck.notify_local_midi(raw);
+                        led_data = Some(opendeck.notify_local_midi(raw));
                     }
                 });
             }
-            // Send outside the lock
+            // Send LED update outside the lock
+            if let Some(data) = led_data {
+                led_sender.try_send(data).ok();
+            }
+            // Send MIDI outside the lock
             for raw in &all_sent {
                 if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
                     uart_midi_out.write(&mm).ok();
@@ -405,7 +424,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new(), sender],
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb],
         shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -439,15 +458,15 @@ mod app {
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
                 if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        opendeck.handle_midi_input(&m);
+                    let led_data = ctx.shared.opendeck.lock(|opendeck| {
+                        opendeck.handle_midi_input(&m)
                     });
+                    ctx.local.led_sender_usb.try_send(led_data).ok();
+                    ctx.local.mon_sender_usb.try_send(()).ok();
                 }
                 continue;
             }
 
-            // packet containing a SysEx payload is detected, the data is saved
-            // into a buffer and processed after the message is complete.
             if packet.is_sysex_start() {
                 debug!("SysEx message start");
                 sysex_receive_buffer.clear();
@@ -525,10 +544,6 @@ mod app {
                     }
                 }
             }
-            // Refresh cached colors after SysEx config changes
-            ctx.shared.opendeck.lock(|opendeck| {
-                opendeck.refresh_colors();
-            });
         }
     }
 
@@ -565,18 +580,31 @@ mod app {
         }
     }
 
-    #[task(local = [led_spi], shared =[opendeck])]
-    async fn led_animation(mut ctx: led_animation::Context) {
-        loop {
-            let data = ctx.shared.opendeck.lock(|opendeck| {
-                opendeck.sync_output_leds();
-                opendeck.leds.animate()
-            });
+    #[task(local = [led_spi])]
+    async fn led_writer(
+        ctx: led_writer::Context,
+        mut receiver: Receiver<'static, LedData, LED_CAPACITY>,
+    ) {
+        while let Ok(data) = receiver.recv().await {
             ctx.local
                 .led_spi
                 .write(brightness(data.iter().cloned(), 8))
                 .unwrap();
-            Mono::delay(33.millis()).await;
+        }
+    }
+
+    #[task(shared = [opendeck])]
+    async fn mon_off(
+        mut ctx: mon_off::Context,
+        mut receiver: Receiver<'static, (), 1>,
+        mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
+    ) {
+        while let Ok(()) = receiver.recv().await {
+            Mono::delay(100.millis()).await;
+            // Drain any extra signals that arrived during the delay
+            while receiver.try_recv().is_ok() {}
+            let data = ctx.shared.opendeck.lock(|opendeck| opendeck.clear_mon());
+            led_sender.try_send(data).ok();
         }
     }
 
