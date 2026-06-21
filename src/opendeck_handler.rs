@@ -364,4 +364,13 @@ mod tests {
         od.notify_local_midi(&[0x80, 60, 0]);
         assert!(!od.config.output_state(0));
     }
+
+    #[test]
+    fn test_encoder_button_triggers_output() {
+        let mut od = test_config();
+        // Boot config sets LED output 0: note=0, value=1, ch=1, LocalNoteSingleValue
+        assert!(!od.config.output_state(0));
+        od.notify_local_midi(&[0x90, 0, 1]); // Note On, note 0, vel 1
+        assert!(od.config.output_state(0), "encoder button should turn on output 0");
+    }
 }
