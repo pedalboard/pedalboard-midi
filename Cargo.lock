@@ -913,7 +913,6 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#612368c7b871173dafb6baad6e387e57cc9978c2"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
@@ -994,7 +993,7 @@ dependencies = [
  "tinybmp",
  "usb-device",
  "usbd-midi",
- "ws2812-spi",
+ "ws2812-pio",
 ]
 
 [[package]]
@@ -1198,6 +1197,9 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "rotary-encoder-embedded"
@@ -1484,7 +1486,16 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66df34e571fa9993fa6f99131a374d58ca3d694b75f9baac93458fe0d6057bf0"
 dependencies = [
- "smart-leds-trait",
+ "smart-leds-trait 0.3.2",
+]
+
+[[package]]
+name = "smart-leds-trait"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebf6d833fa93f16a1c1874e62c2aebe8567e5bdd436d59bf543ed258b6f7a8e3"
+dependencies = [
+ "rgb",
 ]
 
 [[package]]
@@ -1778,13 +1789,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "ws2812-spi"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2fd98e2b649252eced2ec3aa8d5048e7d2ac294276b0567939bbf47741f9934"
+name = "ws2812-pio"
+version = "0.10.0"
+source = "git+https://github.com/IVAN-MK7/ws2812-pio-rs.git?branch=hal-0.12#234d5fae13e88ce38089b9d9a268d352684836f1"
 dependencies = [
- "embedded-hal 1.0.0",
- "smart-leds-trait",
+ "cortex-m",
+ "embedded-hal 0.2.7",
+ "fugit",
+ "nb 1.1.0",
+ "pio",
+ "rp2040-hal",
+ "smart-leds-trait 0.2.1",
+ "smart-leds-trait 0.3.2",
 ]
 
 [[package]]

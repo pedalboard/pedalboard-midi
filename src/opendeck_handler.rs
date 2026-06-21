@@ -280,6 +280,26 @@ impl OpenDeck {
         self.config.process_sysex(request)
     }
 
+    /// Whether locally-generated MIDI should be sent on DIN MIDI out.
+    pub fn din_midi_enabled(&self) -> bool {
+        self.config.global_midi().din_midi_enabled()
+    }
+
+    /// Whether incoming DIN MIDI should be forwarded to USB MIDI out.
+    pub fn din_to_usb_thru(&self) -> bool {
+        self.config.global_midi().din_to_usb_thru()
+    }
+
+    /// Whether incoming USB MIDI should be forwarded to DIN MIDI out.
+    pub fn usb_to_din_thru(&self) -> bool {
+        self.config.global_midi().usb_to_din_thru()
+    }
+
+    /// Whether incoming USB MIDI should be forwarded back to USB MIDI out.
+    pub fn usb_to_usb_thru(&self) -> bool {
+        self.config.global_midi().usb_to_usb_thru()
+    }
+
     /// Render current LED state (for use after sysex config changes).
     pub fn render_leds(&self) -> LedData {
         self.leds.render()
@@ -493,5 +513,57 @@ mod tests {
 
         od.notify_local_midi(&[0x80, 60, 0]);
         assert!(!od.config.output_state(0));
+    }
+
+    /// Routing defaults: DIN off, all thru off
+    #[test]
+    fn test_routing_defaults() {
+        let od = test_config();
+        // Per wiki: all routing defaults are 0 (disabled)
+        assert!(!od.din_midi_enabled());
+        assert!(!od.din_to_usb_thru());
+        assert!(!od.usb_to_din_thru());
+        assert!(!od.usb_to_usb_thru());
+    }
+
+    /// Routing can be enabled via SysEx configuration
+    #[test]
+    fn test_routing_enable_via_config() {
+        use opendeck::global::{GlobalSection, MidiIndex};
+        use opendeck::{Amount, Block, OpenDeckRequest, Wish};
+
+        let mut od = test_config();
+
+        // Enable DIN MIDI state
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Global(GlobalSection::Midi(MidiIndex::DINMIDIstate, 1)),
+        ));
+        assert!(od.din_midi_enabled());
+
+        // Enable DIN→USB thru
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Global(GlobalSection::Midi(MidiIndex::DINtoUSBthru, 1)),
+        ));
+        assert!(od.din_to_usb_thru());
+
+        // Enable USB→DIN thru
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Global(GlobalSection::Midi(MidiIndex::USBtoDINthru, 1)),
+        ));
+        assert!(od.usb_to_din_thru());
+
+        // Enable USB→USB thru
+        od.config.process_req(OpenDeckRequest::Configuration(
+            Wish::Set,
+            Amount::Single,
+            Block::Global(GlobalSection::Midi(MidiIndex::USBtoUSBthru, 1)),
+        ));
+        assert!(od.usb_to_usb_thru());
     }
 }
