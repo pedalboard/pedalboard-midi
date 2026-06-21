@@ -185,6 +185,27 @@ impl OpenDeck {
             ));
         }
 
+        // Set LED colors: buttons=Green, encoders/expression=Cyan
+        use opendeck::led::Color;
+        for i in [0u16, 1, 2, 4] { // buttons A,B,C,E
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set, Amount::Single,
+                Block::Led(i, LedSection::ColorTesting(Color::Green)),
+            ));
+        }
+        for i in [3u16, 5, 6, 7] { // expression D,F + encoders Vol,Gain
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set, Amount::Single,
+                Block::Led(i, LedSection::ColorTesting(Color::Cyan)),
+            ));
+        }
+        for i in [8u16, 9] { // encoder buttons
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set, Amount::Single,
+                Block::Led(i, LedSection::ColorTesting(Color::Green)),
+            ));
+        }
+
         // Reset encoder values to 0 (boot pin glitches may have incremented them)
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
@@ -251,7 +272,8 @@ impl OpenDeck {
     /// Sync opendeck output states to physical LEDs. Call once per animation frame.
     pub fn sync_output_leds(&mut self) {
         use crate::leds::Animation;
-        use opendeck::led::ControlType;
+        use opendeck::led::{Color, ControlType};
+        use smart_leds::RGB8;
 
         const RINGS: [LedRings; 8] = [
             LedRings::A, LedRings::B, LedRings::C, LedRings::D,
@@ -259,9 +281,23 @@ impl OpenDeck {
         ];
         const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
 
+        fn color_to_rgb(c: Color) -> RGB8 {
+            match c {
+                Color::Off => RGB8::new(0, 0, 0),
+                Color::Red => RGB8::new(255, 0, 0),
+                Color::Green => RGB8::new(0, 255, 0),
+                Color::Yellow => RGB8::new(255, 255, 0),
+                Color::Blue => RGB8::new(0, 0, 255),
+                Color::Magenta => RGB8::new(255, 0, 255),
+                Color::Cyan => RGB8::new(0, 255, 255),
+                Color::White => RGB8::new(255, 255, 255),
+            }
+        }
+
         // Outputs 0-7 → rings
         for i in 0..self.config.output_count().min(8) {
             let ct = self.config.output_control_type(i);
+            let rgb = color_to_rgb(self.config.output_color(i));
             let is_multi = matches!(ct,
                 ControlType::LocalCcMultiValue | ControlType::MidiInCcMultiValue |
                 ControlType::LocalNoteMultiValue | ControlType::MidiInNoteMultiValue
@@ -269,11 +305,11 @@ impl OpenDeck {
             if is_multi {
                 let level = self.config.output_level(i);
                 let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
-                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
+                self.leds.set_ledring(RingAnim::Fill(rgb, fill), RINGS[i]);
             } else {
                 let on = self.config.output_state(i);
                 self.leds.set_ledring(
-                    if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                    if on { RingAnim::On(rgb) } else { RingAnim::Off },
                     RINGS[i],
                 );
             }
@@ -283,8 +319,9 @@ impl OpenDeck {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
+                let rgb = color_to_rgb(self.config.output_color(idx));
                 self.leds.set(
-                    if on { Animation::On(GREEN) } else { Animation::Off },
+                    if on { Animation::On(rgb) } else { Animation::Off },
                     SINGLE_LEDS[i],
                 );
             }
