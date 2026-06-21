@@ -32,7 +32,7 @@ mod app {
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use crate::Mono;
     use core::mem::MaybeUninit;
-    use defmt::{debug, error, info, warn};
+    use defmt::{debug, error, info};
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
@@ -342,7 +342,7 @@ mod app {
                                 // always send to UART out
                                 if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
                                     debug!("sending midi message to MIDI-OUT {:?}", mm);
-                                    uart_midi_out.write(&mm).unwrap();
+                                    uart_midi_out.write(&mm).ok();
                                 }
                                 let packet = UsbMidiEventPacket::try_from_payload_bytes(
                                     CableNumber::Cable0,
@@ -513,36 +513,29 @@ mod app {
         mut ctx: send_to_usb_midi::Context,
         mut receiver: Receiver<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
     ) {
-        let configured = ctx
-            .shared
-            .usb_dev
-            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-
-        if !configured {
-            return;
+        // Wait until USB is configured
+        loop {
+            let configured = ctx
+                .shared
+                .usb_dev
+                .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+            if configured {
+                break;
+            }
+            Mono::delay(100.millis()).await;
         }
 
         info!("USB MIDI out ready to send");
         let mut usb_midi = ctx.shared.usb_midi;
         while let Ok(packet) = receiver.recv().await {
-            let mut result = Ok(0);
-            for i in 5..50 {
-                usb_midi.lock(|usb_midi| {
-                    result = usb_midi.send_packet(packet.clone());
-                });
-                let done = match result {
-                    Ok(_) => true,
+            for _ in 0..10 {
+                let result = usb_midi.lock(|usb_midi| usb_midi.send_packet(packet.clone()));
+                match result {
+                    Ok(_) => break,
                     Err(usb_device::UsbError::WouldBlock) => {
-                        Mono::delay(i.millis()).await;
-                        false
+                        Mono::delay(1.millis()).await;
                     }
-                    _ => true,
-                };
-                if done {
-                    break;
-                }
-                if i == 49 {
-                    warn!("USB MIDI out send timeout");
+                    Err(_) => break,
                 }
             }
         }
