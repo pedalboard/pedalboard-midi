@@ -59,6 +59,16 @@ impl OpenDeck {
             ));
         }
 
+        // Set encoder button velocity to 127 (avoid collision with CC values)
+        use opendeck::button::ButtonSection;
+        for i in 0..2u16 {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Button(i, ButtonSection::Value(127)),
+            ));
+        }
+
         // Enable analog inputs with CC#2-3
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
@@ -139,7 +149,7 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(idx, LedSection::ActivationValue(1)),
+                Block::Led(idx, LedSection::ActivationValue(127)),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
