@@ -107,15 +107,14 @@ pub fn encode_key(block: u8, section: u8, index: u8) -> u16 {
 /// Persistent config store wrapping sequential-storage map.
 pub struct ConfigStore {
     map: MapStorage<u16, FlashStorage, NoCache>,
-    buf: [u8; 512],
+    buf: [u8; 256],
 }
 
 impl ConfigStore {
     pub fn new() -> Self {
-        let config = MapConfig::new(0..STORAGE_SIZE as u32);
         Self {
-            map: MapStorage::new(FlashStorage, config, NoCache::new()),
-            buf: [0u8; 512],
+            map: MapStorage::new(FlashStorage, MapConfig::new(0..STORAGE_SIZE as u32), NoCache::new()),
+            buf: [0u8; 256],
         }
     }
 
