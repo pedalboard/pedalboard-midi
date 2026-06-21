@@ -563,13 +563,11 @@ mod app {
     #[task(local = [led_spi], shared =[opendeck])]
     async fn led_animation(mut ctx: led_animation::Context) {
         loop {
-            ctx.shared.opendeck.lock(|opendeck| {
-                let data = opendeck.leds.animate();
-                ctx.local
-                    .led_spi
-                    .write(brightness(data.iter().cloned(), 8))
-                    .unwrap();
-            });
+            let data = ctx.shared.opendeck.lock(|opendeck| opendeck.leds.animate());
+            ctx.local
+                .led_spi
+                .write(brightness(data.iter().cloned(), 8))
+                .unwrap();
             // run this task with 50Hz
             Mono::delay(20.millis()).await;
         }
