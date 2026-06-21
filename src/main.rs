@@ -331,52 +331,40 @@ mod app {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
         loop {
-            if let Some(event) = inputs.update() {
+            let events = inputs.update();
+            for event in events {
                 ctx.shared.handlers.lock(|handlers| {
                     let mut messages = handlers.handle_human_input(event);
-                    let mut more = true;
                     let mut buf = [0x00u8; 6];
-                    while more {
-                        match messages.next(&mut buf) {
-                            Ok(Some(m)) => {
-                                // always send to UART out
-                                if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
-                                    debug!("sending midi message to MIDI-OUT {:?}", mm);
-                                    uart_midi_out.write(&mm).ok();
-                                }
-                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                    CableNumber::Cable0,
-                                    m.data(),
-                                );
-                                match packet {
-                                    Ok(packet) => {
-                                        if let Err(err) = sender.try_send(packet) {
-                                            match err {
-                                                TrySendError::Full(_) => {
-                                                    error!("USB MIDI out queue full");
-                                                }
-                                                TrySendError::NoReceiver(_) => {
-                                                    error!("USB MIDI out queue has no receiver");
-                                                }
-                                            }
+                    while let Ok(Some(m)) = messages.next(&mut buf) {
+                        if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                            debug!("sending midi message to MIDI-OUT {:?}", mm);
+                            uart_midi_out.write(&mm).ok();
+                        }
+                        let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                            CableNumber::Cable0,
+                            m.data(),
+                        );
+                        match packet {
+                            Ok(packet) => {
+                                if let Err(err) = sender.try_send(packet) {
+                                    match err {
+                                        TrySendError::Full(_) => {
+                                            error!("USB MIDI out queue full");
+                                        }
+                                        TrySendError::NoReceiver(_) => {
+                                            error!("USB MIDI out queue has no receiver");
                                         }
                                     }
-                                    Err(_) => {
-                                        error!("USB MIDI packet error");
-                                    }
                                 }
                             }
-                            Ok(None) => {
-                                more = false;
-                            }
                             Err(_) => {
-                                more = false;
-                                error!("buffer overflow")
+                                error!("USB MIDI packet error");
                             }
-                        };
+                        }
                     }
                 });
-            };
+            }
             // run this task once per millis
             Mono::delay(1.millis()).await;
         }

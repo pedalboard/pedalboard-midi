@@ -185,23 +185,46 @@ where
         }
     }
 
-    pub fn update(&mut self) -> Option<InputEvent> {
+    pub fn update(&mut self) -> heapless::Vec<InputEvent, 14> {
+        let mut events = heapless::Vec::new();
         let (exp_a, exp_b) = self.exp.update();
-        self.buttons
-            .a
-            .update()
-            .map(InputEvent::ButtonA)
-            .or_else(|| self.buttons.b.update().map(InputEvent::ButtonB))
-            .or_else(|| self.buttons.c.update().map(InputEvent::ButtonC))
-            .or_else(|| self.buttons.d.update().map(InputEvent::ButtonD))
-            .or_else(|| self.buttons.e.update().map(InputEvent::ButtonE))
-            .or_else(|| self.buttons.f.update().map(InputEvent::ButtonF))
-            .or_else(|| self.vol_rotary.button.update().map(InputEvent::VolButton))
-            .or_else(|| self.gain_rotary.button.update().map(InputEvent::GainButton))
-            .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
-            .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| exp_a.map(InputEvent::ExpressionPedalA))
-            .or_else(|| exp_b.map(InputEvent::ExpressionPedalB))
-            .or(None)
+
+        if let Some(e) = self.buttons.a.update().map(InputEvent::ButtonA) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.b.update().map(InputEvent::ButtonB) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.c.update().map(InputEvent::ButtonC) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.d.update().map(InputEvent::ButtonD) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.e.update().map(InputEvent::ButtonE) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.f.update().map(InputEvent::ButtonF) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.vol_rotary.button.update().map(InputEvent::VolButton) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.gain_rotary.button.update().map(InputEvent::GainButton) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.vol_rotary.update().map(InputEvent::Vol) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.gain_rotary.update().map(InputEvent::Gain) {
+            events.push(e).ok();
+        }
+        if let Some(e) = exp_a.map(InputEvent::ExpressionPedalA) {
+            events.push(e).ok();
+        }
+        if let Some(e) = exp_b.map(InputEvent::ExpressionPedalB) {
+            events.push(e).ok();
+        }
+        events
     }
 }
