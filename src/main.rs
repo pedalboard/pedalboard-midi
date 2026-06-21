@@ -366,37 +366,38 @@ mod app {
             for e in slow_events.iter() {
                 events.push(*e).ok();
             }
-            for event in events {
-                let mut sent: heapless::Vec<[u8; 3], 4> = heapless::Vec::new();
+            let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
+            if !events.is_empty() {
                 ctx.shared.opendeck.lock(|opendeck| {
-                    let mut messages = opendeck.handle_human_input(event);
-                    let mut buf = [0x00u8; 6];
-                    while let Ok(Some(m)) = messages.next(&mut buf) {
-                        let data = m.data();
-                        if data.len() >= 3 {
-                            let mut raw = [0u8; 3];
-                            raw.copy_from_slice(&data[..3]);
-                            sent.push(raw).ok();
+                    for event in events {
+                        let mut messages = opendeck.handle_human_input(event);
+                        let mut buf = [0x00u8; 6];
+                        while let Ok(Some(m)) = messages.next(&mut buf) {
+                            let data = m.data();
+                            if data.len() >= 3 {
+                                let mut raw = [0u8; 3];
+                                raw.copy_from_slice(&data[..3]);
+                                all_sent.push(raw).ok();
+                            }
                         }
                     }
-                    // Notify LED outputs
-                    for raw in &sent {
+                    for raw in &all_sent {
                         opendeck.notify_local_midi(raw);
                     }
                 });
-                // Send outside the lock
-                for raw in &sent {
-                    if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
-                        uart_midi_out.write(&mm).ok();
-                        display_sender.try_send(*raw).ok();
-                    }
-                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                        CableNumber::Cable0,
-                        raw,
-                    );
-                    if let Ok(packet) = packet {
-                        sender.try_send(packet).ok();
-                    }
+            }
+            // Send outside the lock
+            for raw in &all_sent {
+                if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
+                    uart_midi_out.write(&mm).ok();
+                    display_sender.try_send(*raw).ok();
+                }
+                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                    CableNumber::Cable0,
+                    raw,
+                );
+                if let Ok(packet) = packet {
+                    sender.try_send(packet).ok();
                 }
             }
             Mono::delay(1.millis()).await;
@@ -571,8 +572,7 @@ mod app {
                 .led_spi
                 .write(brightness(data.iter().cloned(), 8))
                 .unwrap();
-            // run this task with 50Hz
-            Mono::delay(20.millis()).await;
+            Mono::delay(33.millis()).await;
         }
     }
 
