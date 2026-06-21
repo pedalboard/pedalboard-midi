@@ -71,6 +71,11 @@ impl OpenDeck {
                 Amount::Single,
                 Block::Analog(i, AnalogSection::MidiId(i + 2)),
             ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Analog(i, AnalogSection::UpperADCOffset(14)),
+            ));
         }
 
         // Configure LED outputs 0-5 to react to buttons A-F (notes 2-7)
