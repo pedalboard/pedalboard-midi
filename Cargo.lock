@@ -427,6 +427,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-storage"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a21dea9854beb860f3062d10228ce9b976da520a73474aed3171ec276bc0c032"
+
+[[package]]
+name = "embedded-storage-async"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1763775e2323b7d5f0aa6090657f5e21cfa02ede71f5dc40eead06d64dcd15cc"
+dependencies = [
+ "embedded-storage",
+]
+
+[[package]]
 name = "embedded-text"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -972,6 +987,8 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-bus",
  "embedded-midi",
+ "embedded-storage",
+ "embedded-storage-async",
  "embedded-text",
  "heapless 0.9.3",
  "midi-convert",
@@ -988,6 +1005,7 @@ dependencies = [
  "rtic",
  "rtic-monotonics",
  "rtic-sync",
+ "sequential-storage",
  "smart-leds",
  "ssd1327-i2c",
  "tinybmp",
@@ -1442,6 +1460,15 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "sequential-storage"
+version = "7.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "574e5a379bf43653079b34cb4cf32958404b5f42e0ed5b5adcdff02c2de04d4d"
+dependencies = [
+ "embedded-storage-async",
+]
 
 [[package]]
 name = "sha3"
