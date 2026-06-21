@@ -236,7 +236,7 @@ mod app {
         let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
         let exp_adc_fifo = adc
             .build_fifo()
-            .clock_divider(0, 0)
+            .clock_divider(96, 0) // ~500us per sample for settling
             .round_robin((&exp_a_pin, &exp_b_pin))
             .start_paused();
         let exp = ExpressionPedals::new(exp_adc_fifo);
