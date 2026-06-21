@@ -636,11 +636,15 @@ mod app {
         _ctx: persist::Context,
         mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     ) {
+        info!("config persistence task started");
+        // Wait for first message before initializing flash store
+        let Ok((block, section, index, value)) = receiver.recv().await else { return };
+        info!("initializing flash store");
         let mut store = pedalboard_midi::storage::ConfigStore::new();
-        info!("config persistence ready");
+        store.save(block, section, index, value).await;
+        info!("first value persisted");
         while let Ok((block, section, index, value)) = receiver.recv().await {
             store.save(block, section, index, value).await;
-            debug!("persisted: b={} s={} i={} v={}", block, section, index, value);
         }
     }
 
