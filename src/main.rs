@@ -32,7 +32,7 @@ mod app {
     use crate::Mono;
     use core::mem::MaybeUninit;
     use defmt::{debug, error, info, warn};
-    use embedded_hal::{digital::OutputPin, spi::MODE_0};
+    use embedded_hal::digital::OutputPin;
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
@@ -48,15 +48,15 @@ mod app {
         fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
-                Gpio0, Gpio1, Gpio10, Gpio11, Gpio12, Gpio14, Gpio16, Gpio17, Gpio18, Gpio19,
+                Gpio0, Gpio1, Gpio10, Gpio11, Gpio16, Gpio17, Gpio18, Gpio19,
                 Gpio2, Gpio20, Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
             },
-            FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
+            FunctionI2C, FunctionSio, FunctionUart, Pin, Pins, PullDown, PullUp,
             SioInput, SioOutput,
         },
         i2c::I2C,
         pac::{I2C0, UART0},
-        spi::Spi,
+        pio::PIOExt,
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
         usb::UsbBus,
         Clock, Sio, Watchdog,
@@ -69,7 +69,7 @@ mod app {
     };
     use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
-    use ws2812_spi::Ws2812;
+    use ws2812_pio::Ws2812Direct;
 
     type MidiUartPins = (
         Pin<Gpio0, FunctionUart, PullDown>,
@@ -86,14 +86,10 @@ mod app {
         ),
     >;
 
-    type LedSpi = Spi<
-        rp2040_hal::spi::Enabled,
-        rp2040_hal::pac::SPI1,
-        (
-            Pin<Gpio11, FunctionSpi, PullDown>,
-            Pin<Gpio12, FunctionSpi, PullDown>,
-            Pin<Gpio14, FunctionSpi, PullDown>,
-        ),
+    type LedPio = Ws2812Direct<
+        rp2040_hal::pac::PIO0,
+        rp2040_hal::pio::SM0,
+        Pin<Gpio11, rp2040_hal::gpio::FunctionPio0, PullDown>,
     >;
 
     type DigInPin<P> = Pin<P, FunctionSio<SioInput>, PullUp>;
@@ -124,7 +120,7 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: InputPins,
-        led_spi: Ws2812<LedSpi>,
+        led_spi: LedPio,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
             AtomicDevice<'static, I2CBus>,
@@ -241,17 +237,16 @@ mod app {
         let exp = ExpressionPedals::new_direct(adc, exp_a_pin, exp_b_pin);
         let inputs = Inputs::new(vol, gain, buttons, exp);
 
-        // Configure SPI for Ws2812 LEDs
-        let spi_sclk = pins.gpio14.into_function::<FunctionSpi>();
-        let spi_mosi = pins.gpio11.into_function::<FunctionSpi>();
-        let spi_miso = pins.gpio12.into_function::<FunctionSpi>();
-        let spi = Spi::<_, _, _, 8u8>::new(ctx.device.SPI1, (spi_mosi, spi_miso, spi_sclk)).init(
-            &mut resets,
-            &clocks.system_clock,
-            3.MHz(),
-            MODE_0,
+        // Configure PIO for Ws2812 LEDs
+        let led_pin: Pin<Gpio11, rp2040_hal::gpio::FunctionPio0, PullDown> =
+            pins.gpio11.into_function();
+        let (mut pio0, sm0, _, _, _) = ctx.device.PIO0.split(&mut resets);
+        let led_spi = Ws2812Direct::new(
+            led_pin,
+            &mut pio0,
+            sm0,
+            clocks.peripheral_clock.freq(),
         );
-        let led_spi = Ws2812::new(spi);
 
         // Configure I²C for OLED display
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
