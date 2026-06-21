@@ -14,6 +14,7 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
+    colors: [smart_leds::RGB8; 10],
 }
 
 impl OpenDeck {
@@ -218,15 +219,33 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
+            colors: [smart_leds::RGB8::default(); 10],
         }
     }
 
     /// Reset encoder rings to empty after boot glitches settle.
     pub fn reset_encoder_rings(&mut self) {
+        self.refresh_colors();
         self.leds
             .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Vol);
         self.leds
             .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Gain);
+    }
+
+    pub fn refresh_colors(&mut self) {
+        use opendeck::led::Color;
+        for i in 0..10 {
+            self.colors[i] = match self.config.output_color(i) {
+                Color::Red => smart_leds::RGB8::new(255, 0, 0),
+                Color::Green => smart_leds::RGB8::new(0, 255, 0),
+                Color::Yellow => smart_leds::RGB8::new(255, 255, 0),
+                Color::Blue => smart_leds::RGB8::new(0, 0, 255),
+                Color::Magenta => smart_leds::RGB8::new(255, 0, 255),
+                Color::Cyan => smart_leds::RGB8::new(0, 255, 255),
+                Color::White => smart_leds::RGB8::new(255, 255, 255),
+                _ => smart_leds::RGB8::new(0, 255, 0),
+            };
+        }
     }
 
     /// Cache colors from config (call after boot config).
@@ -267,13 +286,15 @@ impl OpenDeck {
     }
 
     pub fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
-        self.config.process_sysex(request)
+        let r = self.config.process_sysex(request);
+        self.refresh_colors();
+        r
     }
 
     /// Sync opendeck output states to physical LEDs. Call once per animation frame.
     pub fn sync_output_leds(&mut self) {
         use crate::leds::Animation;
-        use opendeck::led::{Color, ControlType};
+        use opendeck::led::ControlType;
 
         const RINGS: [LedRings; 8] = [
             LedRings::A, LedRings::B, LedRings::C, LedRings::D,
@@ -281,23 +302,10 @@ impl OpenDeck {
         ];
         const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
 
-        fn color_to_rgb(c: Color) -> smart_leds::RGB8 {
-            match c {
-                Color::Off => smart_leds::RGB8::new(0, 0, 0),
-                Color::Red => smart_leds::RGB8::new(255, 0, 0),
-                Color::Green => smart_leds::RGB8::new(0, 255, 0),
-                Color::Yellow => smart_leds::RGB8::new(255, 255, 0),
-                Color::Blue => smart_leds::RGB8::new(0, 0, 255),
-                Color::Magenta => smart_leds::RGB8::new(255, 0, 255),
-                Color::Cyan => smart_leds::RGB8::new(0, 255, 255),
-                Color::White => smart_leds::RGB8::new(255, 255, 255),
-            }
-        }
-
         // Outputs 0-7 → rings
         for i in 0..self.config.output_count().min(8) {
             let ct = self.config.output_control_type(i);
-            let rgb = color_to_rgb(self.config.output_color(i));
+            let rgb = self.colors[i];
             let is_multi = matches!(ct,
                 ControlType::LocalCcMultiValue | ControlType::MidiInCcMultiValue |
                 ControlType::LocalNoteMultiValue | ControlType::MidiInNoteMultiValue
@@ -319,9 +327,8 @@ impl OpenDeck {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
-                let rgb = color_to_rgb(self.config.output_color(idx));
                 self.leds.set(
-                    if on { Animation::On(rgb) } else { Animation::Off },
+                    if on { Animation::On(self.colors[idx]) } else { Animation::Off },
                     SINGLE_LEDS[i],
                 );
             }
