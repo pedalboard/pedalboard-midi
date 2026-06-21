@@ -631,23 +631,40 @@ mod app {
         }
     }
 
-    #[task]
+    #[task(shared = [opendeck])]
     async fn persist(
-        _ctx: persist::Context,
+        mut ctx: persist::Context,
         mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     ) {
-        info!("config persistence task started");
-        let Ok((block, section, index, value)) = receiver.recv().await else { return };
-        let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() else {
+        info!("config persistence: loading from flash");
+        if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
+            // Load persisted config and replay as SET commands
+            let entries = store.load_all().await;
+            if !entries.is_empty() {
+                info!("restoring {} config entries from flash", entries.len());
+                ctx.shared.opendeck.lock(|opendeck| {
+                    use opendeck::{Amount, OpenDeckRequest, Wish};
+                    for &(block, section, index, value) in &entries {
+                        // Reconstruct the raw SysEx bytes and process
+                        let raw = [
+                            0xF0, 0x00, 0x53, 0x43, 0x00, 0x00, 0x01, 0x00,
+                            block, section,
+                            (index >> 7) & 0x7F, index & 0x7F,
+                            ((value >> 8) as u8) & 0x7F, (value as u8) & 0x7F,
+                            0xF7,
+                        ];
+                        opendeck.config.process_sysex(&raw);
+                    }
+                });
+            }
+            info!("config persistence ready");
+            // Enter persist loop
+            while let Ok((block, section, index, value)) = receiver.recv().await {
+                store.save(block, section, index, value).await;
+            }
+        } else {
             warn!("flash config store init failed, persistence disabled");
-            // Drain channel so senders don't block
             while let Ok(_) = receiver.recv().await {}
-            return;
-        };
-        info!("flash store initialized, persisting first value");
-        store.save(block, section, index, value).await;
-        while let Ok((block, section, index, value)) = receiver.recv().await {
-            store.save(block, section, index, value).await;
         }
     }
 

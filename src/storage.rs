@@ -131,4 +131,20 @@ impl ConfigStore {
     pub async fn erase_all(&mut self) {
         let _ = self.map.erase_all().await;
     }
+
+    /// Load all stored config entries. Returns (block, section, index, value) tuples.
+    pub async fn load_all(&mut self) -> heapless::Vec<(u8, u8, u8, u16), 128> {
+        let mut entries = heapless::Vec::new();
+        let Ok(mut iter) = self.map.fetch_all_items(&mut self.buf).await else {
+            return entries;
+        };
+        let mut item_buf = [0u8; 64];
+        while let Ok(Some((key, ConfigValue(value)))) = iter.next::<ConfigValue>(&mut item_buf).await {
+            let block = ((key >> 13) & 0x07) as u8;
+            let section = ((key >> 8) & 0x1F) as u8;
+            let index = (key & 0xFF) as u8;
+            entries.push((block, section, index, value)).ok();
+        }
+        entries
+    }
 }
