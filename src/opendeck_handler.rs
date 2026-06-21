@@ -55,7 +55,7 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Encoder(i, EncoderSection::UpperLimit(24)),
+                Block::Encoder(i, EncoderSection::UpperLimit(127)),
             ));
         }
 
