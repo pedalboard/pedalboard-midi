@@ -27,16 +27,17 @@ impl OpenDeck {
 
         let mut config = opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader);
 
-        // Configure encoders: enabled, CC mode, pulses_per_step=1
+        // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::Enabled(true))));
             config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::MessageType(opendeck::encoder::EncoderMessageType::ControlChange))));
             config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::PulsesPerStep(1))));
         }
 
-        // Enable analog inputs
+        // Enable analog inputs with CC#2-3
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Analog(i, AnalogSection::Enabled(true))));
+            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Analog(i, AnalogSection::MidiId(i + 2))));
         }
 
         OpenDeck { leds: Leds::default(), config }
