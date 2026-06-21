@@ -14,8 +14,6 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
-    prev_levels: [u8; 10],
-    prev_states: [bool; 10],
 }
 
 impl OpenDeck {
@@ -199,8 +197,6 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
-            prev_levels: [255; 10],
-            prev_states: [false; 10],
         }
     }
 
@@ -236,10 +232,7 @@ impl OpenDeck {
         }
         let is_cc = (raw[0] & 0xF0) == 0xB0;
         if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
-            let changed = self.config.notify_local_midi(channel, id, value, is_note_on, is_cc);
-            if changed > 0 {
-                self.sync_output_leds();
-            }
+            self.config.notify_local_midi(channel, id, value, is_note_on, is_cc);
         }
     }
 
@@ -247,10 +240,7 @@ impl OpenDeck {
     pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) {
         self.leds.set(Flash(DARK_BLUE), Led::Mon);
         if let Some((channel, id, value, is_note_on, is_cc)) = parse_bytes_message(m) {
-            let changed = self.config.notify_external_midi(channel, id, value, is_note_on, is_cc);
-            if changed > 0 {
-                self.sync_output_leds();
-            }
+            self.config.notify_external_midi(channel, id, value, is_note_on, is_cc);
         }
     }
 
@@ -258,8 +248,8 @@ impl OpenDeck {
         self.config.process_sysex(request)
     }
 
-    /// Sync opendeck output states to physical LEDs.
-    fn sync_output_leds(&mut self) {
+    /// Sync opendeck output states to physical LEDs. Call once per animation frame.
+    pub fn sync_output_leds(&mut self) {
         use crate::leds::Animation;
         use opendeck::led::ControlType;
 
@@ -278,20 +268,14 @@ impl OpenDeck {
             );
             if is_multi {
                 let level = self.config.output_level(i);
-                if level != self.prev_levels[i] {
-                    self.prev_levels[i] = level;
-                    let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
-                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
-                }
+                let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
+                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
             } else {
                 let on = self.config.output_state(i);
-                if on != self.prev_states[i] {
-                    self.prev_states[i] = on;
-                    self.leds.set_ledring(
-                        if on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                        RINGS[i],
-                    );
-                }
+                self.leds.set_ledring(
+                    if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                    RINGS[i],
+                );
             }
         }
         // Outputs 8-9 → single LEDs (always on/off)
@@ -299,13 +283,10 @@ impl OpenDeck {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
-                if on != self.prev_states[idx] {
-                    self.prev_states[idx] = on;
-                    self.leds.set(
-                        if on { Animation::On(GREEN) } else { Animation::Off },
-                        SINGLE_LEDS[i],
-                    );
-                }
+                self.leds.set(
+                    if on { Animation::On(GREEN) } else { Animation::Off },
+                    SINGLE_LEDS[i],
+                );
             }
         }
     }

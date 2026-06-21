@@ -563,7 +563,10 @@ mod app {
     #[task(local = [led_spi], shared =[opendeck])]
     async fn led_animation(mut ctx: led_animation::Context) {
         loop {
-            let data = ctx.shared.opendeck.lock(|opendeck| opendeck.leds.animate());
+            let data = ctx.shared.opendeck.lock(|opendeck| {
+                opendeck.sync_output_leds();
+                opendeck.leds.animate()
+            });
             ctx.local
                 .led_spi
                 .write(brightness(data.iter().cloned(), 8))
