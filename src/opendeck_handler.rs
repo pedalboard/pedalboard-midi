@@ -30,7 +30,7 @@ impl OpenDeck {
         use opendeck::{Amount, Block, OpenDeckRequest, Wish};
 
         let mut config =
-            opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader);
+            opendeck::config::Config::new_with_adc_max(firmware_version, hardware_uid, reboot, bootloader, 4095);
 
         // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
         for i in 0..2u16 {
