@@ -135,6 +135,7 @@ mod app {
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
+    const DISPLAY_LOG_CAPACITY: usize = 8;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -278,10 +279,12 @@ mod app {
         let (sysex_sender, sysex_receiver) = make_channel!(OpenDeckConfigResponses, SYSEX_CAPACITY);
         sysex_processor::spawn(sysex_receiver, usb_sender.clone()).unwrap();
 
+        let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
+
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
-        poll_input::spawn(usb_sender.clone()).unwrap();
-        display_out::spawn().unwrap();
+        poll_input::spawn(usb_sender.clone(), display_sender).unwrap();
+        display_out::spawn(display_receiver).unwrap();
 
         let handlers = crate::handler::Handlers::new();
 
@@ -327,6 +330,7 @@ mod app {
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
     ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
@@ -340,6 +344,9 @@ mod app {
                         if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
                             debug!("sending midi message to MIDI-OUT {:?}", mm);
                             uart_midi_out.write(&mm).ok();
+                            let mut raw = [0u8; 3];
+                            mm.render_slice(&mut raw);
+                            display_sender.try_send(raw).ok();
                         }
                         let packet = UsbMidiEventPacket::try_from_payload_bytes(
                             CableNumber::Cable0,
@@ -545,10 +552,31 @@ mod app {
     }
 
     #[task(local = [displays])]
-    async fn display_out(ctx: display_out::Context) {
-        ctx.local
-            .displays
-            .show(crate::hmi::display::DisplayLocation::L);
+    async fn display_out(
+        ctx: display_out::Context,
+        mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+    ) {
+        let displays = ctx.local.displays;
+        displays.splash_screen();
+        Mono::delay(2000.millis()).await;
+
+        let mut midi_log = pedalboard_midi::display::MidiLog::new();
+        loop {
+            // Drain all pending messages
+            while let Ok(raw) = receiver.try_recv() {
+                let status = raw[0] & 0xF0;
+                let ch = (raw[0] & 0x0F) + 1;
+                match status {
+                    0x90 => midi_log.push_note_on(ch, raw[1], raw[2]),
+                    0x80 => midi_log.push_note_off(ch, raw[1]),
+                    0xB0 => midi_log.push_cc(ch, raw[1], raw[2]),
+                    0xC0 => midi_log.push_program_change(ch, raw[1]),
+                    _ => midi_log.push_raw("..."),
+                }
+            }
+            displays.draw_midi_log(&midi_log);
+            Mono::delay(200.millis()).await;
+        }
     }
 
     #[task(local = [debug_led, state: bool = false])]

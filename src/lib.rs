@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod display;
 pub mod events;
 pub mod leds;
 pub mod ledring;
