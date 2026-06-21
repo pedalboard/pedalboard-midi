@@ -73,12 +73,12 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 0-5 to react to buttons 2-7 (LocalNoteSingleValue)
-        // Buttons default to: Note On/Off, midi_id=index, value=1, channel=Channel(0) → wire ch 1
+        // Configure LED outputs 0-7 to react to buttons (LocalNoteSingleValue)
+        // Buttons: 0=VolBtn(note0), 1=GainBtn(note1), 2-7=ButtonA-F(note2-7)
         use opendeck::led::{ControlType, LedSection};
         use opendeck::ChannelOrAll;
-        for i in 0..6u16 {
-            let note = (i + 2) as u8;
+        for i in 0..8u16 {
+            let note = i as u8;
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
@@ -199,9 +199,12 @@ impl OpenDeck {
         self.config.process_sysex(request)
     }
 
-    /// Sync opendeck output states to physical LED rings (buttons only, 0-5).
+    /// Sync opendeck output states to physical LED rings.
     fn sync_output_leds(&mut self) {
-        const RING_MAP: [LedRings; 6] = [
+        // Output 0=VolBtn, 1=GainBtn, 2=BtnA, 3=BtnB, 4=BtnC, 5=BtnD, 6=BtnE, 7=BtnF
+        const RING_MAP: [LedRings; 8] = [
+            LedRings::Vol,
+            LedRings::Gain,
             LedRings::A,
             LedRings::B,
             LedRings::C,
@@ -209,16 +212,15 @@ impl OpenDeck {
             LedRings::E,
             LedRings::F,
         ];
-        for i in 0..self.config.output_count().min(6) {
+        for i in 0..self.config.output_count().min(8) {
             let on = self.config.output_state(i);
-            self.leds.set_ledring(
-                if on {
-                    RingAnim::On(GREEN)
-                } else {
-                    RingAnim::Off
-                },
-                RING_MAP[i],
-            );
+            if on {
+                self.leds.set_ledring(RingAnim::On(GREEN), RING_MAP[i]);
+            } else if i >= 2 {
+                // Button rings: off when released
+                self.leds.set_ledring(RingAnim::Off, RING_MAP[i]);
+            }
+            // Vol/Gain (i<2): don't set Off — encoder fill will restore
         }
     }
 }
