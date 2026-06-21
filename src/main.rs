@@ -129,6 +129,8 @@ mod app {
         sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
         led_sender_midi: Sender<'static, LedData, LED_CAPACITY>,
         led_sender_usb: Sender<'static, LedData, LED_CAPACITY>,
+        mon_sender_midi: Sender<'static, (), 1>,
+        mon_sender_usb: Sender<'static, (), 1>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
@@ -274,9 +276,11 @@ mod app {
         let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
 
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
+        let (mon_sender, mon_receiver) = make_channel!((), 1);
 
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
+        mon_off::spawn(mon_receiver, led_sender.clone()).unwrap();
         poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
         display_out::spawn(display_receiver).unwrap();
 
@@ -308,11 +312,13 @@ mod app {
                 sender: sysex_sender,
                 led_sender_midi: led_sender.clone(),
                 led_sender_usb: led_sender,
+                mon_sender_midi: mon_sender.clone(),
+                mon_sender_usb: mon_sender,
             },
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi], shared = [opendeck])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, mon_sender_midi], shared = [opendeck])]
     fn midi_in(mut ctx: midi_in::Context) {
         use midi2::prelude::*;
 
@@ -329,6 +335,7 @@ mod app {
                 });
                 if let Some(data) = led_data {
                     ctx.local.led_sender_midi.try_send(data).ok();
+                    ctx.local.mon_sender_midi.try_send(()).ok();
                 }
             }
             Err(nb::Error::WouldBlock) => {}
@@ -417,7 +424,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb],
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb],
         shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -455,6 +462,7 @@ mod app {
                         opendeck.handle_midi_input(&m)
                     });
                     ctx.local.led_sender_usb.try_send(led_data).ok();
+                    ctx.local.mon_sender_usb.try_send(()).ok();
                 }
                 continue;
             }
@@ -582,6 +590,21 @@ mod app {
                 .led_spi
                 .write(brightness(data.iter().cloned(), 8))
                 .unwrap();
+        }
+    }
+
+    #[task(shared = [opendeck])]
+    async fn mon_off(
+        mut ctx: mon_off::Context,
+        mut receiver: Receiver<'static, (), 1>,
+        mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
+    ) {
+        while let Ok(()) = receiver.recv().await {
+            Mono::delay(100.millis()).await;
+            // Drain any extra signals that arrived during the delay
+            while receiver.try_recv().is_ok() {}
+            let data = ctx.shared.opendeck.lock(|opendeck| opendeck.clear_mon());
+            led_sender.try_send(data).ok();
         }
     }
 
