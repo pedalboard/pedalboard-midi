@@ -170,13 +170,15 @@ impl OpenDeck {
             }
         }
 
-        // Visualize encoder CC values on Vol/Gain rings
+        // Visualize CC values on LED rings
         if status == 0xB0 {
             let cc = raw[1];
-            let fill = raw[2].min(12);
+            let val = raw[2];
             match cc {
-                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol),
-                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain),
+                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Vol),
+                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Gain),
+                2 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::A),
+                3 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::C),
                 _ => {}
             }
         }
