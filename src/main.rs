@@ -569,10 +569,12 @@ mod app {
                 opendeck.sync_output_leds();
                 opendeck.leds.animate()
             });
-            ctx.local
-                .led_spi
-                .write(brightness(data.iter().cloned(), 8))
-                .unwrap();
+            cortex_m::interrupt::free(|_| {
+                ctx.local
+                    .led_spi
+                    .write(brightness(data.iter().cloned(), 8))
+                    .unwrap();
+            });
             Mono::delay(33.millis()).await;
         }
     }
