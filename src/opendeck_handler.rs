@@ -155,6 +155,19 @@ impl OpenDeck {
                 if changed > 0 {
                     self.sync_output_leds();
                 }
+                // Encoder buttons: flash Vol/Gain ring green on press
+                let note = raw[1];
+                if note == 0 {
+                    self.leds.set_ledring(
+                        if is_note_on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                        LedRings::Vol,
+                    );
+                } else if note == 1 {
+                    self.leds.set_ledring(
+                        if is_note_on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                        LedRings::Gain,
+                    );
+                }
             }
         }
 
