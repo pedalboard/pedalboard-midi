@@ -97,30 +97,48 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 0-5 to react to buttons A-F (notes 2-7)
+        // Configure LED outputs for buttons A-C, E (notes 2-4, 6)
         use opendeck::led::{ControlType, LedSection};
         use opendeck::ChannelOrAll;
-        for i in 0..6u16 {
-            let note = (i + 2) as u8;
+        for (idx, note) in [(0u16, 2u8), (1, 3), (2, 4), (4, 6)] {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(i, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+                Block::Led(idx, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(i, LedSection::ActivationId(note)),
+                Block::Led(idx, LedSection::ActivationId(note)),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(i, LedSection::ActivationValue(1)),
+                Block::Led(idx, LedSection::ActivationValue(1)),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(i, LedSection::Channel(ChannelOrAll::Channel(1))),
+                Block::Led(idx, LedSection::Channel(ChannelOrAll::Channel(1))),
+            ));
+        }
+
+        // Configure LED outputs 3(D) and 5(F) for expression pedals CC#2-3
+        for (idx, cc) in [(3u16, 2u8), (5, 3)] {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ControlType(ControlType::LocalCcMultiValue)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ActivationId(cc)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::Channel(ChannelOrAll::Channel(1))),
             ));
         }
 
@@ -256,7 +274,6 @@ impl OpenDeck {
             );
             if is_multi {
                 let level = self.config.output_level(i);
-                // Scale: values >12 assumed to be 0-127 range
                 let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
                 self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
             } else {
