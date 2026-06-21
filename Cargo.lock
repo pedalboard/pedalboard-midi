@@ -915,7 +915,6 @@ name = "opendeck"
 version = "0.1.0"
 source = "git+https://github.com/pedalboard/opendeck?branch=main#09993b06f112cd551bbcde6d8eb8902172a14796"
 dependencies = [
- "defmt 1.1.0",
  "heapless 0.9.3",
  "int-enum",
  "midi2",

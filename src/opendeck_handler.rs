@@ -21,10 +21,25 @@ impl OpenDeck {
         reboot: fn(),
         bootloader: fn(),
     ) -> Self {
-        OpenDeck {
-            leds: Leds::default(),
-            config: opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader),
+        use opendeck::{Amount, Block, OpenDeckRequest, Wish};
+        use opendeck::encoder::EncoderSection;
+        use opendeck::analog::AnalogSection;
+
+        let mut config = opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader);
+
+        // Configure encoders: enabled, CC mode, pulses_per_step=1
+        for i in 0..2u16 {
+            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::Enabled(true))));
+            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::MessageType(opendeck::encoder::EncoderMessageType::ControlChange))));
+            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Encoder(i, EncoderSection::PulsesPerStep(1))));
         }
+
+        // Enable analog inputs
+        for i in 0..2u16 {
+            config.process_req(OpenDeckRequest::Configuration(Wish::Set, Amount::Single, Block::Analog(i, AnalogSection::Enabled(true))));
+        }
+
+        OpenDeck { leds: Leds::default(), config }
     }
 
     pub fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
@@ -96,13 +111,13 @@ mod tests {
     }
 
     #[test]
-    fn test_expression_pedal_disabled_by_default() {
+    fn test_expression_pedal_produces_cc() {
         let mut od = test_config();
         let mut buf = [0u8; 6];
         let mut messages = od.handle_human_input(InputEvent::ExpressionPedalA(2048));
         let result = messages.next(&mut buf);
         assert!(result.is_ok());
-        // Analog is disabled by default, no message
-        assert!(result.unwrap().is_none());
+        // Analog is enabled at boot, should produce CC
+        assert!(result.unwrap().is_some());
     }
 }

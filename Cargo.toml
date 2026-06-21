@@ -47,9 +47,7 @@ embedded-midi = { git = "https://github.com/rust-midi/embedded-midi.git", branch
 usbd-midi = { version = "0.5.1" }
 midi-types = { version = "0.2.0", features = ["defmt"] }
 # midi crates
-opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", features = [
-  "defmt",
-] }
+opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main" }
 midi2 = { version = "0.11", default-features = false, features = [
   "channel-voice1",
   "sysex7",
@@ -66,7 +64,7 @@ tinybmp = "0.7.0"
 
 [patch.crates-io]
 
-# [dev-dependencies]
+[dev-dependencies]
 
 [features]
 
