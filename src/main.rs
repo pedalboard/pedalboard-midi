@@ -131,11 +131,16 @@ mod app {
         led_sender_usb: Sender<'static, LedData, LED_CAPACITY>,
         mon_sender_midi: Sender<'static, (), 1>,
         mon_sender_usb: Sender<'static, (), 1>,
+        usb_sender_din_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
+        din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 1;
+    const DIN_THRU_CAPACITY: usize = 8;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -277,6 +282,7 @@ mod app {
 
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
+        let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
 
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
@@ -314,28 +320,43 @@ mod app {
                 led_sender_usb: led_sender,
                 mon_sender_midi: mon_sender.clone(),
                 mon_sender_usb: mon_sender,
+                usb_sender_din_thru: usb_sender.clone(),
+                usb_sender_usb_thru: usb_sender.clone(),
+                din_thru_receiver,
+                din_thru_sender,
             },
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, mon_sender_midi], shared = [opendeck])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, mon_sender_midi, usb_sender_din_thru], shared = [opendeck])]
     fn midi_in(mut ctx: midi_in::Context) {
         use midi2::prelude::*;
 
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
-                let led_data = ctx.shared.opendeck.lock(|opendeck| {
+                let (led_data, din_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
                     let mut buf = [0x00u8; 3];
                     m.render_slice(&mut buf);
-                    if let Ok(m) = BytesMessage::try_from(&buf[..]) {
+                    let thru = opendeck.din_to_usb_thru();
+                    let ld = if let Ok(m) = BytesMessage::try_from(&buf[..]) {
                         Some(opendeck.handle_midi_input(&m))
                     } else {
                         None
-                    }
+                    };
+                    (ld, if thru { Some(buf) } else { None })
                 });
                 if let Some(data) = led_data {
                     ctx.local.led_sender_midi.try_send(data).ok();
                     ctx.local.mon_sender_midi.try_send(()).ok();
+                }
+                if let Some(raw) = din_to_usb {
+                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                        CableNumber::Cable0,
+                        &raw,
+                    );
+                    if let Ok(packet) = packet {
+                        ctx.local.usb_sender_din_thru.try_send(packet).ok();
+                    }
                 }
             }
             Err(nb::Error::WouldBlock) => {}
@@ -343,7 +364,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out], shared = [opendeck])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -352,6 +373,7 @@ mod app {
     ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
+        let din_thru_receiver = ctx.local.din_thru_receiver;
 
         // Skip boot glitches — discard input events for first 200ms
         for _ in 0..200 {
@@ -374,6 +396,13 @@ mod app {
         });
 
         loop {
+            // Drain USB→DIN thru messages
+            while let Ok(raw) = din_thru_receiver.try_recv() {
+                if let Ok(mm) = MidiMessage::try_parse_slice(&raw) {
+                    uart_midi_out.write(&mm).ok();
+                }
+            }
+
             let mut events = heapless::Vec::<_, 14>::new();
             inputs.poll_encoders(&mut events);
             let slow_events = inputs.update();
@@ -382,8 +411,10 @@ mod app {
             }
             let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
+            let mut din_enabled = true;
             if !events.is_empty() {
                 ctx.shared.opendeck.lock(|opendeck| {
+                    din_enabled = opendeck.din_midi_enabled();
                     for event in events {
                         let mut messages = opendeck.handle_human_input(event);
                         let mut buf = [0x00u8; 6];
@@ -407,10 +438,15 @@ mod app {
             }
             // Send MIDI outside the lock
             for raw in &all_sent {
-                if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
-                    uart_midi_out.write(&mm).ok();
-                    display_sender.try_send(*raw).ok();
+                // DIN MIDI out (only if enabled)
+                if din_enabled {
+                    if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
+                        uart_midi_out.write(&mm).ok();
+                    }
                 }
+                // Display log (always for locally-generated messages)
+                display_sender.try_send(*raw).ok();
+                // USB MIDI out (always for locally-generated messages)
                 let packet = UsbMidiEventPacket::try_from_payload_bytes(
                     CableNumber::Cable0,
                     raw,
@@ -424,7 +460,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb],
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender],
         shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -457,12 +493,28 @@ mod app {
         let buffer_reader = UsbMidiPacketReader::new(&buffer, received_size);
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
-                if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
-                    let led_data = ctx.shared.opendeck.lock(|opendeck| {
-                        opendeck.handle_midi_input(&m)
+                if let Ok(m) = midi2::BytesMessage::try_from(packet.payload_bytes()) {
+                    let (led_data, usb_to_din, usb_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
+                        let to_din = opendeck.usb_to_din_thru();
+                        let to_usb = opendeck.usb_to_usb_thru();
+                        let ld = opendeck.handle_midi_input(&m);
+                        (ld, to_din, to_usb)
                     });
                     ctx.local.led_sender_usb.try_send(led_data).ok();
                     ctx.local.mon_sender_usb.try_send(()).ok();
+                    // USB→DIN thru
+                    if usb_to_din {
+                        let raw = packet.payload_bytes();
+                        if raw.len() >= 3 {
+                            let mut arr = [0u8; 3];
+                            arr.copy_from_slice(&raw[..3]);
+                            ctx.local.din_thru_sender.try_send(arr).ok();
+                        }
+                    }
+                    // USB→USB thru
+                    if usb_to_usb {
+                        ctx.local.usb_sender_usb_thru.try_send(packet.clone()).ok();
+                    }
                 }
                 continue;
             }
