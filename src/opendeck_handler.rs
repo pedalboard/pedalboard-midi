@@ -177,8 +177,8 @@ impl OpenDeck {
             match cc {
                 0 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Vol),
                 1 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Gain),
-                2 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::A),
-                3 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::C),
+                2 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::D),
+                3 => self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::F),
                 _ => {}
             }
         }
