@@ -293,6 +293,7 @@ impl OpenDeck {
 
     /// Sync opendeck output states to physical LEDs. Call once per animation frame.
     pub fn sync_output_leds(&mut self) {
+        self.refresh_colors();
         use crate::leds::Animation;
         use opendeck::led::ControlType;
 
