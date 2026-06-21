@@ -95,12 +95,11 @@ impl ExpressionPedals {
         }
         self.sample_rate_reduction = 0;
         self.adc_fifo.resume();
-        while self.adc_fifo.len() < 2 {}
+        while self.adc_fifo.len() < 1 {}
         self.adc_fifo.pause();
 
-        let exp_a: u16 = self.adc_fifo.read().unwrap_or(0); //self.adc.read(&mut self.exp_a_pin).unwrap();
-        let exp_b: u16 = self.adc_fifo.read().unwrap_or(0); // self.adc.read(&mut self.exp_b_pin).unwrap();
-        (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
+        let exp_a: u16 = self.adc_fifo.read().unwrap_or(0);
+        (self.exp_a.update(exp_a), None)
     }
 }
 
