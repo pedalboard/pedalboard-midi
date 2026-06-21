@@ -636,12 +636,10 @@ mod app {
         _ctx: persist::Context,
         mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     ) {
-        info!("config persistence ready");
-        let mut store: Option<pedalboard_midi::storage::ConfigStore> = None;
+        info!("config persistence ready (dry-run, flash writes disabled)");
         while let Ok((block, section, index, value)) = receiver.recv().await {
-            let s = store.get_or_insert_with(pedalboard_midi::storage::ConfigStore::new);
-            s.save(block, section, index, value).await;
-            debug!("persisted: b={} s={} i={} v={}", block, section, index, value);
+            // TODO: enable once flash writes from RAM are implemented
+            debug!("would persist: b={} s={} i={} v={}", block, section, index, value);
         }
     }
 
