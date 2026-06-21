@@ -20,7 +20,7 @@ pub struct OpenDeck {
 }
 
 impl Handler for OpenDeck {
-    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
+    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages<'_> {
         match event {
             InputEvent::Vol(pulse) => self.config.handle_encoder(0, pulse.into()),
             InputEvent::Gain(pulse) => self.config.handle_encoder(1, pulse.into()),

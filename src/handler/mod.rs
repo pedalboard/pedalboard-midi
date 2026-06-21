@@ -11,7 +11,7 @@ use smart_leds::colors::*;
 pub mod opendeck_handler;
 
 pub trait Handler {
-    fn handle_human_input(&mut self, e: InputEvent) -> Messages;
+    fn handle_human_input(&mut self, e: InputEvent) -> Messages<'_>;
     fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>);
     fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses;
     fn leds(&mut self) -> &mut Leds;
@@ -33,7 +33,7 @@ impl Handlers {
 }
 
 impl Handler for Handlers {
-    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages {
+    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages<'_> {
         info!("handle input event {:?}", event);
         let r = self.opendeck.handle_human_input(event);
         // FIXME only flash when a message was received

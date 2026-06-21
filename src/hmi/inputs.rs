@@ -112,8 +112,8 @@ impl ExpressionPedals {
         while self.adc_fifo.len() < 2 {}
         self.adc_fifo.pause();
 
-        let exp_a: u16 = self.adc_fifo.read(); //self.adc.read(&mut self.exp_a_pin).unwrap();
-        let exp_b: u16 = self.adc_fifo.read(); // self.adc.read(&mut self.exp_b_pin).unwrap();
+        let exp_a: u16 = self.adc_fifo.read().unwrap_or(0); //self.adc.read(&mut self.exp_a_pin).unwrap();
+        let exp_b: u16 = self.adc_fifo.read().unwrap_or(0); // self.adc.read(&mut self.exp_b_pin).unwrap();
         (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
     }
 }
