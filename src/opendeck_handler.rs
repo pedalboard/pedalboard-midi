@@ -59,8 +59,8 @@ impl OpenDeck {
             ));
         }
 
-        // Enable analog input 0 only (CC#2) - input 1 disconnected
-        for i in 0..1u16 {
+        // Enable analog inputs with CC#2-3
+        for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,

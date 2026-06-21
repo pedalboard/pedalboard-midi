@@ -99,8 +99,8 @@ impl ExpressionPedals {
         self.adc_fifo.pause();
 
         let exp_a: u16 = self.adc_fifo.read().unwrap_or(0);
-        let _exp_b: u16 = self.adc_fifo.read().unwrap_or(0); // discard - disconnected
-        (self.exp_a.update(exp_a), None)
+        let exp_b: u16 = self.adc_fifo.read().unwrap_or(0);
+        (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
     }
 }
 
@@ -120,7 +120,7 @@ impl ExpressionPedal {
     fn update(&mut self, value: u16) -> Option<u16> {
         let new = self.avg.feed(value);
 
-        if self.current.abs_diff(new) > 150 {
+        if self.current.abs_diff(new) > 2 {
             self.current = new;
             return Some(self.current);
         }
