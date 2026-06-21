@@ -377,9 +377,10 @@ mod app {
                     let mut messages = opendeck.handle_human_input(event);
                     let mut buf = [0x00u8; 6];
                     while let Ok(Some(m)) = messages.next(&mut buf) {
-                        if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                        let data = m.data();
+                        if data.len() >= 3 {
                             let mut raw = [0u8; 3];
-                            mm.render_slice(&mut raw);
+                            raw.copy_from_slice(&data[..3]);
                             sent.push(raw).ok();
                         }
                     }
