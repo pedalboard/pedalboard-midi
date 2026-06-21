@@ -8,8 +8,8 @@ use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 use smart_leds::colors::*;
 
-pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
-pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
+pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10>;
+pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
@@ -105,6 +105,26 @@ impl OpenDeck {
             ));
         }
 
+        // Configure LED outputs 6-9 for CC visualization (LocalCcMultiValue)
+        // 6=Vol(CC#0), 7=Gain(CC#1), 8=ExpA(CC#2), 9=ExpB(CC#3)
+        for (idx, cc) in [(6u16, 0u8), (7, 1), (8, 2), (9, 3)] {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ControlType(ControlType::LocalCcMultiValue)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ActivationId(cc)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::Channel(ChannelOrAll::Channel(1))),
+            ));
+        }
+
         // Reset encoder values to 0 (boot pin glitches may have incremented them)
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
@@ -150,45 +170,10 @@ impl OpenDeck {
         if raw.len() < 3 {
             return;
         }
-        let status = raw[0] & 0xF0;
-
-        // Update LED outputs only for Note On/Off
-        if status == 0x90 || status == 0x80 {
-            if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
-                let changed = self.config.notify_local_midi(channel, id, value, is_note_on);
-                if changed > 0 {
-                    self.sync_output_leds();
-                }
-                // Encoder buttons: flash Vol/Gain ring green on press
-                let note = raw[1];
-                if note == 0 {
-                    self.leds.set_ledring(
-                        if is_note_on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                        LedRings::Vol,
-                    );
-                } else if note == 1 {
-                    self.leds.set_ledring(
-                        if is_note_on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                        LedRings::Gain,
-                    );
-                }
-            }
-        }
-
-        // Visualize CC values on LED rings
-        if status == 0xB0 {
-            let cc = raw[1];
-            let val = raw[2];
-            match cc {
-                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Vol),
-                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, val.min(12)), LedRings::Gain),
-                2 => if !self.config.output_state(3) {
-                    self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::D);
-                }
-                3 => if !self.config.output_state(5) {
-                    self.leds.set_ledring(RingAnim::Fill(CYAN, ((val as u16 * 12) / 127) as u8), LedRings::F);
-                }
-                _ => {}
+        if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
+            let changed = self.config.notify_local_midi(channel, id, value, is_note_on);
+            if changed > 0 {
+                self.sync_output_leds();
             }
         }
     }
@@ -210,20 +195,28 @@ impl OpenDeck {
 
     /// Sync opendeck output states to physical LED rings.
     fn sync_output_leds(&mut self) {
-        const RING_MAP: [LedRings; 6] = [
-            LedRings::A,
-            LedRings::B,
-            LedRings::C,
-            LedRings::D,
-            LedRings::E,
-            LedRings::F,
+        // Outputs 0-5: buttons A-F (on/off green)
+        const BTN_RINGS: [LedRings; 6] = [
+            LedRings::A, LedRings::B, LedRings::C,
+            LedRings::D, LedRings::E, LedRings::F,
         ];
-        for i in 0..self.config.output_count().min(6) {
+        for i in 0..6 {
             let on = self.config.output_state(i);
             self.leds.set_ledring(
                 if on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                RING_MAP[i],
+                BTN_RINGS[i],
             );
+        }
+        // Outputs 6-9: CC level (Vol, Gain, ExpA/D, ExpB/F)
+        const CC_RINGS: [LedRings; 4] = [
+            LedRings::Vol, LedRings::Gain, LedRings::D, LedRings::F,
+        ];
+        for (i, &ring) in CC_RINGS.iter().enumerate() {
+            let level = self.config.output_level(6 + i);
+            if level > 0 {
+                let fill = ((level as u16 * 12) / 127).min(12) as u8;
+                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
+            }
         }
     }
 }

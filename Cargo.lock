@@ -913,7 +913,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#a96af55edbfa0e0631c0d191f6763a99e4be2f77"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#cc204a1191cfc4671a0ff7c1fb25acef29452bc0"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
