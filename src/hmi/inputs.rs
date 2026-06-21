@@ -7,7 +7,7 @@ use embedded_hal::digital::InputPin;
 use movavg::MovAvg;
 use pedalboard_midi::events::{Edge, InputEvent, Pulse};
 use rotary_encoder_embedded::{quadrature::QuadratureTableMode, Direction, RotaryEncoder};
-use rp2040_hal::adc::AdcFifo;
+use rp2040_hal::adc::{Adc, AdcPin};
 type Sma = MovAvg<u16, u32, 10>;
 
 pub struct Rotary<DT, CLK, B> {
@@ -76,16 +76,24 @@ pub struct ExpressionPedals {
     sample_rate_reduction: u8,
     exp_a: ExpressionPedal,
     exp_b: ExpressionPedal,
-    adc_fifo: AdcFifo<'static, u16>,
+    adc: &'static mut rp2040_hal::adc::Adc,
+    pin_a: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio27, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
+    pin_b: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio28, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
 }
 
 impl ExpressionPedals {
-    pub fn new(adc_fifo: AdcFifo<'static, u16>) -> Self {
+    pub fn new_direct(
+        adc: &'static mut rp2040_hal::adc::Adc,
+        pin_a: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio27, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
+        pin_b: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio28, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
+    ) -> Self {
         ExpressionPedals {
             sample_rate_reduction: 0,
             exp_a: ExpressionPedal::new(),
             exp_b: ExpressionPedal::new(),
-            adc_fifo,
+            adc,
+            pin_a,
+            pin_b,
         }
     }
     fn update(&mut self) -> (Option<u16>, Option<u16>) {
@@ -94,16 +102,10 @@ impl ExpressionPedals {
             return (None, None);
         }
         self.sample_rate_reduction = 0;
-        self.adc_fifo.resume();
-        while self.adc_fifo.len() < 4 {}
-        self.adc_fifo.pause();
 
-        // Discard first sample of each channel (ADC crosstalk settling)
-        let _discard_a: u16 = self.adc_fifo.read().unwrap_or(0);
-        let _discard_b: u16 = self.adc_fifo.read().unwrap_or(0);
-        let exp_a: u16 = self.adc_fifo.read().unwrap_or(0);
-        let exp_b: u16 = self.adc_fifo.read().unwrap_or(0);
-        (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
+        let val_a: u16 = self.adc.read(&mut self.pin_a).unwrap_or(0);
+        let val_b: u16 = self.adc.read(&mut self.pin_b).unwrap_or(0);
+        (self.exp_a.update(val_a), self.exp_b.update(val_b))
     }
 }
 
