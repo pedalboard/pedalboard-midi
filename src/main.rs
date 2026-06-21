@@ -267,15 +267,14 @@ mod app {
             &clocks.system_clock,
         );
 
-        // Read AT24CS01 serial number (128-bit unique ID at security register address 0x58, offset 0x80)
+        // Read AT24CS01 serial number (128-bit unique ID)
+        // Security register device address: 0x58 (A2=A1=A0=0), serial at word address 0x80
         let mut serial_number = [0u8; 16];
         let eeprom_serial_ok = {
             use embedded_hal::i2c::I2c;
             i2c.write_read(0x58u8, &[0x80u8], &mut serial_number).is_ok()
+                || i2c.write_read(0x58u8, &[0x00u8], &mut serial_number).is_ok()
         };
-        if !eeprom_serial_ok {
-            defmt::warn!("Failed to read EEPROM serial number");
-        }
 
         let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
         let mut displays = crate::hmi::display::Displays::new(
