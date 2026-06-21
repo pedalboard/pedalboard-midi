@@ -55,7 +55,7 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Encoder(i, EncoderSection::UpperLimit(12)),
+                Block::Encoder(i, EncoderSection::UpperLimit(127)),
             ));
         }
 
@@ -208,15 +208,22 @@ impl OpenDeck {
             );
         }
         // Outputs 6-9: CC level (Vol, Gain, ExpA/D, ExpB/F)
-        const CC_RINGS: [LedRings; 4] = [
-            LedRings::Vol, LedRings::Gain, LedRings::D, LedRings::F,
+        const CC_RINGS: [(LedRings, Option<usize>); 4] = [
+            (LedRings::Vol, None),   // no button conflict
+            (LedRings::Gain, None),  // no button conflict
+            (LedRings::D, Some(3)),  // shared with button output 3
+            (LedRings::F, Some(5)),  // shared with button output 5
         ];
-        for (i, &ring) in CC_RINGS.iter().enumerate() {
-            let level = self.config.output_level(6 + i);
-            if level > 0 {
-                let fill = ((level as u16 * 12) / 127).min(12) as u8;
-                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
+        for (i, &(ring, btn)) in CC_RINGS.iter().enumerate() {
+            // Don't overwrite if the button for this ring is currently pressed
+            if let Some(b) = btn {
+                if self.config.output_state(b) {
+                    continue;
+                }
             }
+            let level = self.config.output_level(6 + i);
+            let fill = ((level as u16 * 12) / 127).min(12) as u8;
+            self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
         }
     }
 }
