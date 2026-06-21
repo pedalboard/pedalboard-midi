@@ -207,10 +207,14 @@ impl OpenDeck {
                 BTN_RINGS[i],
             );
         }
-        // Outputs 6-7: Encoder level → single LEDs (Mode=Vol, Mon=Gain)
+        // Outputs 6-7: Encoder level → Vol/Gain rings + single LEDs
         use crate::leds::Animation;
         let vol_level = self.config.output_level(6);
         let gain_level = self.config.output_level(7);
+        let vol_fill = ((vol_level as u16 * 12) / 24).min(12) as u8;
+        let gain_fill = ((gain_level as u16 * 12) / 24).min(12) as u8;
+        self.leds.set_ledring(RingAnim::Fill(CYAN, vol_fill), LedRings::Vol);
+        self.leds.set_ledring(RingAnim::Fill(CYAN, gain_fill), LedRings::Gain);
         self.leds.set(
             if vol_level > 0 { Animation::On(CYAN) } else { Animation::Off },
             Led::Mode,
