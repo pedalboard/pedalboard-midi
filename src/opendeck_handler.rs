@@ -207,12 +207,22 @@ impl OpenDeck {
                 BTN_RINGS[i],
             );
         }
-        // Outputs 6-9: CC level (Vol, Gain, ExpA/D, ExpB/F)
-        const CC_RINGS: [(LedRings, Option<usize>, u16); 4] = [
-            (LedRings::Vol, None, 24),   // encoder: max=24
-            (LedRings::Gain, None, 24),  // encoder: max=24
-            (LedRings::D, Some(3), 127), // expression pedal: max=127
-            (LedRings::F, Some(5), 127), // expression pedal: max=127
+        // Outputs 6-7: Encoder level → single LEDs (Mode=Vol, Mon=Gain)
+        use crate::leds::Animation;
+        let vol_level = self.config.output_level(6);
+        let gain_level = self.config.output_level(7);
+        self.leds.set(
+            if vol_level > 0 { Animation::On(CYAN) } else { Animation::Off },
+            Led::Mode,
+        );
+        self.leds.set(
+            if gain_level > 0 { Animation::On(CYAN) } else { Animation::Off },
+            Led::Mon,
+        );
+        // Outputs 8-9: Expression pedal level → rings D, F
+        const CC_RINGS: [(LedRings, Option<usize>, u16); 2] = [
+            (LedRings::D, Some(3), 127),
+            (LedRings::F, Some(5), 127),
         ];
         for (i, &(ring, btn, max)) in CC_RINGS.iter().enumerate() {
             if let Some(b) = btn {
@@ -220,7 +230,7 @@ impl OpenDeck {
                     continue;
                 }
             }
-            let level = self.config.output_level(6 + i);
+            let level = self.config.output_level(8 + i);
             let fill = ((level as u16 * 12) / max).min(12) as u8;
             self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
         }
