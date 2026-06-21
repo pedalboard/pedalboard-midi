@@ -237,7 +237,7 @@ mod app {
         let exp_adc_fifo = adc
             .build_fifo()
             .clock_divider(0, 0)
-            .round_robin((&exp_a_pin,))
+            .round_robin((&exp_a_pin, &exp_b_pin))
             .start_paused();
         let exp = ExpressionPedals::new(exp_adc_fifo);
         let inputs = Inputs::new(vol, gain, buttons, exp);
