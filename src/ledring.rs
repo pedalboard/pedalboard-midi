@@ -11,6 +11,7 @@ pub enum Animation {
     Toggle(RGB8, bool),
     Flash(RGB8),
     Loudness(f32),
+    Fill(RGB8, u8), // color, count (0-12)
 }
 
 #[derive(Copy, Clone)]
@@ -47,6 +48,13 @@ impl LedRing {
                 }
                 data
             }
+            Animation::Fill(c, count) => {
+                let mut data = [RGB8::default(); LEDS_PER_RING];
+                for i in 0..(count as usize).min(LEDS_PER_RING) {
+                    data[(self.rotation as usize + i) % LEDS_PER_RING] = c;
+                }
+                data
+            }
         }
     }
 
@@ -68,5 +76,57 @@ impl LedRing {
 impl Default for LedRing {
     fn default() -> Self {
         Self::new(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ledring_default_off() {
+        let mut ring = LedRing::default();
+        let data = ring.animate();
+        for led in data.iter() {
+            assert_eq!(*led, RGB8::default());
+        }
+    }
+
+    #[test]
+    fn test_ledring_on() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(255, 0, 0);
+        ring.set(Animation::On(color));
+        let data = ring.animate();
+        for led in data.iter() {
+            assert_eq!(*led, color);
+        }
+    }
+
+    #[test]
+    fn test_ledring_flash_clears() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(0, 255, 0);
+        ring.set(Animation::Flash(color));
+
+        let data = ring.animate();
+        assert_eq!(data[0], color);
+
+        let data = ring.animate();
+        assert_eq!(data[0], RGB8::default());
+    }
+
+    #[test]
+    fn test_ledring_toggle() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(0, 0, 255);
+
+        ring.set(Animation::Toggle(color, false));
+        let data = ring.animate();
+        assert_eq!(data[0], RGB8::default());
+
+        ring.set(Animation::Toggle(color, false));
+        let data = ring.animate();
+        assert_eq!(data[0], color);
     }
 }

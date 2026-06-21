@@ -1,40 +1,22 @@
-use super::ledring::LedRing;
-use crate::hmi::ledring::LEDS_PER_RING;
+use crate::ledring::{LedRing, LEDS_PER_RING};
 use colorous::Gradient;
-use rp2040_hal::{
-    gpio::{
-        bank0::{Gpio11, Gpio12, Gpio14},
-        FunctionSpi, Pin, PullDown,
-    },
-    pac::SPI1,
-    spi::{Enabled, Spi},
-};
 use smart_leds::RGB8;
-use ws2812_spi::Ws2812;
 
 const NUM_LEDS: usize = 2;
 const NUM_LED_RINGS: usize = 8;
-const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
+pub const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
 
-pub type LedSpi = Spi<
-    Enabled,
-    SPI1,
-    (
-        Pin<Gpio11, FunctionSpi, PullDown>,
-        Pin<Gpio12, FunctionSpi, PullDown>,
-        Pin<Gpio14, FunctionSpi, PullDown>,
-    ),
->;
-
-pub type LedDriver = Ws2812<LedSpi>;
+pub type LedData = [RGB8; LED_OUTPUTS];
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum Led {
     Mode,
     Mon,
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum LedRings {
     Gain,
     F,
@@ -46,9 +28,8 @@ pub enum LedRings {
     A,
 }
 
-pub type LedData = [RGB8; LED_OUTPUTS];
-
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum Animation {
     On(RGB8),
     Off,
@@ -68,30 +49,20 @@ impl Leds {
         Leds {
             sawtooth: Sawtooth::new(),
             animations: [Animation::Off; NUM_LEDS],
-            ledrings: [
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-                LedRing::default(),
-            ],
+            ledrings: [LedRing::default(); NUM_LED_RINGS],
         }
     }
+
     pub fn animate(&mut self) -> LedData {
         let mut data: LedData = [RGB8::default(); LED_OUTPUTS];
         self.sawtooth.next();
 
-        // process the led ring animations
-        for (ring_index, mut ring) in self.ledrings.into_iter().enumerate() {
+        for (ring_index, ring) in self.ledrings.iter_mut().enumerate() {
             for (led_index, ring_led) in ring.animate().into_iter().enumerate() {
                 data[ring_index * LEDS_PER_RING + led_index] = ring_led;
             }
         }
 
-        // process the single led animations
         for (single, a) in self.animations.into_iter().enumerate() {
             let led = (NUM_LED_RINGS * LEDS_PER_RING) + single;
             match a {
@@ -133,7 +104,8 @@ impl Leds {
             _ => self.animations[index] = a,
         }
     }
-    pub fn set_ledring(&mut self, a: super::ledring::Animation, r: LedRings) {
+
+    pub fn set_ledring(&mut self, a: crate::ledring::Animation, r: LedRings) {
         let ri = r as usize;
         self.ledrings[ri].set(a)
     }
@@ -174,5 +146,55 @@ impl Sawtooth {
             max: 16,
             min: 8,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smart_leds::colors::*;
+
+    #[test]
+    fn test_leds_default_all_off() {
+        let mut leds = Leds::new();
+        let data = leds.animate();
+        for led in data.iter() {
+            assert_eq!(*led, RGB8::default());
+        }
+    }
+
+    #[test]
+    fn test_set_led_on() {
+        let mut leds = Leds::new();
+        leds.set(Animation::On(RED), Led::Mon);
+        let data = leds.animate();
+        let mon_index = NUM_LED_RINGS * LEDS_PER_RING + Led::Mon as usize;
+        assert_eq!(data[mon_index], RED);
+    }
+
+    #[test]
+    fn test_flash_turns_off_after_one_frame() {
+        let mut leds = Leds::new();
+        leds.set(Animation::Flash(GREEN), Led::Mode);
+        let data = leds.animate();
+        let mode_index = NUM_LED_RINGS * LEDS_PER_RING + Led::Mode as usize;
+        assert_eq!(data[mode_index], GREEN);
+
+        // Next frame should be off
+        let data = leds.animate();
+        assert_eq!(data[mode_index], RGB8::default());
+    }
+
+    #[test]
+    fn test_toggle_flips_state() {
+        let mut leds = Leds::new();
+        leds.set(Animation::Toggle(BLUE, false), Led::Mon);
+        let data = leds.animate();
+        let mon_index = NUM_LED_RINGS * LEDS_PER_RING + Led::Mon as usize;
+        assert_eq!(data[mon_index], RGB8::default());
+
+        leds.set(Animation::Toggle(BLUE, false), Led::Mon);
+        let data = leds.animate();
+        assert_eq!(data[mon_index], BLUE);
     }
 }

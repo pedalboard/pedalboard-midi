@@ -28,8 +28,8 @@ build: ## build
 lint: ## lint source code
 	cargo clippy --all-features
 
-debug: ## build and run by installing uf2 on the mounted pico
-	cargo run --config 'runner = "probe-run --chip RP2040"' --release
+attach: ## attach to the running program
+	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
 device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
@@ -38,6 +38,12 @@ bootsel: device ## restart the RP2040 in bootsel mode
 	-aconnect -d 128:1 16:0 
 	amidi -S 'F0 00 53 43 00 00 55 F7' -p "$(DEVICE)"
 	-aconnect 128:1 16:0
+
+reboot: device ## reboot the RP2040
+	-aconnect -d 128:1 16:0 
+	amidi -S 'F0 00 53 43 00 00 7F F7' -p "$(DEVICE)"
+	-aconnect 128:1 16:0
+
 
 install-latest-release: bootsel mount ## install the latest release from github
 	curl -L https://github.com/pedalboard/pedalboard-midi/releases/latest/download/pedalboard-midi.uf2 -o $(MOUNT_POINT)/pm.uf2
@@ -57,6 +63,15 @@ release: ## create a new release (RELEASE_LEVEL=minor make release)
 	cargo release --no-publish --execute ${RELEASE_LEVEL}
 	$(MAKE) uf2
 	gh release create --latest --generate-notes $$(git describe --tags --abbrev=0) ./target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
+
+usbip-host: ## run usbip host on the device
+	pgrep usbipd || sudo usbipd -D
+	sudo modprobe usbip_host
+	sudo usbip bind --busid 1-1.1
+
+usbip-attach: ## attach the device to the host
+	sudo modprobe vhci-hcd
+	sudo usbip attach -r pi-dev -b 1-1.1
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

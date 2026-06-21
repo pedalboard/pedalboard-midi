@@ -67,6 +67,13 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             DisplayLocation::R => self.display_r.show(),
         }
     }
+
+    pub fn draw_midi_log(&mut self, midi_log: &pedalboard_midi::display::MidiLog) {
+        if let Some(display) = &mut self.display_l.driver {
+            midi_log.draw(display).ok();
+            display.flush().ok();
+        }
+    }
 }
 
 struct Display<I2C> {

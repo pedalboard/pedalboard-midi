@@ -1,15 +1,15 @@
 #![no_std]
 #![no_main]
 
-mod devices;
-mod handler;
 mod hmi;
-mod loudness;
 
 use defmt_rtt as _;
 use panic_probe as _;
-
 use rtic::app;
+
+use rtic_monotonics::rp2040::prelude::*;
+
+rp2040_timer_monotonic!(Mono);
 
 /// The linker will place this boot block at the start of our program image. We
 /// need this to help the ROM bootloader get our code up and running.
@@ -24,25 +24,31 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
 #[app(device = rp2040_hal::pac, dispatchers = [SW0_IRQ])]
 mod app {
+    use super::*;
 
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
+    use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
+    use crate::Mono;
     use core::mem::MaybeUninit;
-    use defmt::*;
+    use defmt::{debug, error, info, warn};
     use embedded_hal::{digital::OutputPin, spi::MODE_0};
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
+    use rtic_sync::channel::{Receiver, Sender, TrySendError};
+    use rtic_sync::make_channel;
 
     use heapless::Vec;
+    use midi2::Data;
     use midi_convert::midi_types::MidiMessage;
     use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
         adc::{Adc, AdcPin},
         clocks::init_clocks_and_plls,
-        fugit::{HertzU32, RateExtU32, TimerDurationU64},
+        fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
-                Gpio0, Gpio1, Gpio10, Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21,
-                Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
+                Gpio0, Gpio1, Gpio10, Gpio11, Gpio12, Gpio14, Gpio16, Gpio17, Gpio18, Gpio19,
+                Gpio2, Gpio20, Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
             },
             FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
             SioInput, SioOutput,
@@ -50,7 +56,6 @@ mod app {
         i2c::I2C,
         pac::{I2C0, UART0},
         spi::Spi,
-        timer::{monotonic::Monotonic, Alarm0, Timer},
         uart::{DataBits, Reader, StopBits, UartConfig, UartPeripheral, Writer},
         usb::UsbBus,
         Clock, Sio, Watchdog,
@@ -61,11 +66,9 @@ mod app {
         device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid},
         prelude::UsbDeviceState,
     };
-    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiPacketReader, UsbMidiEventPacket};
+    use usbd_midi::{CableNumber, UsbMidiClass, UsbMidiEventPacket, UsbMidiPacketReader};
 
     use ws2812_spi::Ws2812;
-
-    type Duration = TimerDurationU64<1_000_000>;
 
     type MidiUartPins = (
         Pin<Gpio0, FunctionUart, PullDown>,
@@ -79,6 +82,16 @@ mod app {
         (
             Pin<Gpio24, FunctionI2C, PullUp>,
             Pin<Gpio25, FunctionI2C, PullUp>,
+        ),
+    >;
+
+    type LedSpi = Spi<
+        rp2040_hal::spi::Enabled,
+        rp2040_hal::pac::SPI1,
+        (
+            Pin<Gpio11, FunctionSpi, PullDown>,
+            Pin<Gpio12, FunctionSpi, PullDown>,
+            Pin<Gpio14, FunctionSpi, PullDown>,
         ),
     >;
 
@@ -98,15 +111,11 @@ mod app {
         DigInPin<Gpio21>,
     >;
 
-
-    #[monotonic(binds = TIMER_IRQ_0, default = true)]
-    type MyMono = Monotonic<Alarm0>;
-
     #[shared]
     struct Shared {
         usb_midi: UsbMidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        handlers: crate::handler::Handlers<crate::handler::dispatch::HandlerEnum>,
+        opendeck: OpenDeck,
     }
 
     #[local]
@@ -114,21 +123,26 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: InputPins,
-        led_spi: crate::hmi::leds::LedDriver,
+        led_spi: Ws2812<LedSpi>,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
+        sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
     }
+    const USB_OUT_CAPACITY: usize = 32;
+    const SYSEX_CAPACITY: usize = 1;
+    const DISPLAY_LOG_CAPACITY: usize = 8;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
         i2c_bus: MaybeUninit<AtomicCell<I2CBus>> = MaybeUninit::uninit(),
         adc: MaybeUninit<rp2040_hal::adc::Adc> = MaybeUninit::uninit()
     ])]
-    fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(ctx: init::Context) -> (Shared, Local) {
         let mut resets = ctx.device.RESETS;
+        Mono::start(ctx.device.TIMER, &resets);
         let mut watchdog = Watchdog::new(ctx.device.WATCHDOG);
 
         let clocks = init_clocks_and_plls(
@@ -142,9 +156,6 @@ mod app {
         )
         .ok()
         .unwrap();
-
-        let mut timer = Timer::new(ctx.device.TIMER, &mut resets, &clocks);
-        let mono = Monotonic::new(timer, timer.alarm_0().unwrap());
 
         let sio = Sio::new(ctx.device.SIO);
         let pins = Pins::new(
@@ -260,20 +271,36 @@ mod app {
             AtomicDevice::new(i2c_bus),
         );
         displays.splash_screen();
+        let (usb_sender, usb_receiver) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
+        send_to_usb_midi::spawn(usb_receiver).unwrap();
+
+        let (sysex_sender, sysex_receiver) = make_channel!(OpenDeckConfigResponses, SYSEX_CAPACITY);
+        sysex_processor::spawn(sysex_receiver, usb_sender.clone()).unwrap();
+
+        let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
 
         blink::spawn().unwrap();
         led_animation::spawn().unwrap();
-        poll_input::spawn().unwrap();
-        display_out::spawn_after(Duration::secs(2)).unwrap();
+        poll_input::spawn(usb_sender.clone(), display_sender).unwrap();
+        display_out::spawn(display_receiver).unwrap();
 
-       let handlers = crate::handler::dispatch::create();
+        let opendeck = OpenDeck::new(
+            opendeck::config::FirmwareVersion {
+                major: 1,
+                minor: 0,
+                revision: 0,
+            },
+            0x123456,
+            reboot,
+            bootloader,
+        );
 
         info!("pedalboard-midi initialized");
         (
             Shared {
                 usb_midi,
                 usb_dev,
-                handlers: crate::handler::Handlers::new(handlers),
+                opendeck,
             },
             Local {
                 uart_midi_out,
@@ -282,17 +309,23 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
+                sender: sysex_sender,
             },
-            init::Monotonics(mono),
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [handlers])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in], shared = [opendeck])]
     fn midi_in(mut ctx: midi_in::Context) {
+        use midi2::prelude::*;
+
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
-                ctx.shared.handlers.lock(|handlers| {
-                    handlers.process_midi_input(m);
+                ctx.shared.opendeck.lock(|opendeck| {
+                    let mut buf = [0x00u8; 3];
+                    m.render_slice(&mut buf);
+                    if let Ok(m) = BytesMessage::try_from(&buf[..]) {
+                        opendeck.handle_midi_input(&m);
+                    }
                 });
             }
             Err(nb::Error::WouldBlock) => {}
@@ -300,169 +333,300 @@ mod app {
         }
     }
 
-    #[task(local = [uart_midi_out], shared = [usb_midi, usb_dev])]
-    fn midi_out(mut ctx: midi_out::Context, messages: crate::handler::MidiMessages) {
-        let msgs = messages.messages();
-        // always send to UART out
-        let uart_midi_out = ctx.local.uart_midi_out;
-        for message in msgs.iter() {
-            uart_midi_out.write(message).unwrap();
-        }
-
-        // optionally send to USB if a device is listening
-        let configured = ctx
-            .shared
-            .usb_dev
-            .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
-        if !configured {
-            return;
-        }
-        for message in msgs.into_iter() {
-            let mut bytes = [0; 3];
-            message.render_slice(&mut bytes);
-            let packet =
-                UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &bytes).unwrap();
-            ctx.shared
-                .usb_midi
-                .lock(|midi| match midi.send_packet(packet) {
-                    Ok(_) => debug!("message sent to usb"),
-                    Err(err) => error!("failed to send message: {}", err),
-                });
-        }
-    }
-
-    #[task(local = [inputs], shared = [handlers])]
-    fn poll_input(mut ctx: poll_input::Context) {
+    #[task(local = [inputs, uart_midi_out], shared = [opendeck])]
+    async fn poll_input(
+        mut ctx: poll_input::Context,
+        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+    ) {
         let inputs = ctx.local.inputs;
+        let uart_midi_out = ctx.local.uart_midi_out;
 
-        if let Some(event) = inputs.update() {
-            ctx.shared.handlers.lock(|handlers| {
-                let actions = handlers.handle_human_input(event);
-                if !actions.midi_messages.is_empty() {
-                    midi_out::spawn(actions.midi_messages).unwrap();
+        // Skip boot glitches — discard input events for first 200ms
+        for _ in 0..200 {
+            let mut discard = heapless::Vec::<_, 14>::new();
+            inputs.poll_encoders(&mut discard);
+            inputs.update();
+            Mono::delay(1.millis()).await;
+        }
+        // Reset encoder values and rings after glitches
+        ctx.shared.opendeck.lock(|opendeck| {
+            use opendeck::{Amount, Block, OpenDeckRequest, Wish};
+            use opendeck::encoder::EncoderSection;
+            for i in 0..2u16 {
+                opendeck.config.process_req(OpenDeckRequest::Configuration(
+                    Wish::Set, Amount::Single,
+                    Block::Encoder(i, EncoderSection::RepeatedValue(0)),
+                ));
+            }
+            opendeck.reset_encoder_rings();
+        });
+
+        loop {
+            let mut events = heapless::Vec::<_, 14>::new();
+            // Poll encoders at high frequency without yielding
+            inputs.poll_encoders(&mut events);
+            // Poll buttons, analog, and encoder buttons at 1ms rate
+            let slow_events = inputs.update();
+            for e in slow_events.iter() {
+                events.push(*e).ok();
+            }
+            for event in events {
+                let mut sent: heapless::Vec<[u8; 3], 4> = heapless::Vec::new();
+                ctx.shared.opendeck.lock(|opendeck| {
+                    let mut messages = opendeck.handle_human_input(event);
+                    let mut buf = [0x00u8; 6];
+                    while let Ok(Some(m)) = messages.next(&mut buf) {
+                        if let Ok(mm) = MidiMessage::try_parse_slice(m.data()) {
+                            let mut raw = [0u8; 3];
+                            mm.render_slice(&mut raw);
+                            sent.push(raw).ok();
+                        }
+                    }
+                    // Notify LED outputs
+                    for raw in &sent {
+                        opendeck.notify_local_midi(raw);
+                    }
+                });
+                // Send outside the lock
+                for raw in &sent {
+                    if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
+                        uart_midi_out.write(&mm).ok();
+                        display_sender.try_send(*raw).ok();
+                    }
+                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                        CableNumber::Cable0,
+                        raw,
+                    );
+                    if let Ok(packet) = packet {
+                        sender.try_send(packet).ok();
+                    }
                 }
-            });
-        };
-        // schedule to run this task once per millis
-        poll_input::spawn_after(Duration::millis(1)).unwrap();
+            }
+            Mono::delay(1.millis()).await;
+        }
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, 
-        local = [ buf: Vec::<u8, 64>=Vec::new()],
-        shared =[usb_midi,usb_dev,handlers]
+    #[task(binds = USBCTRL_IRQ, priority = 3,
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender],
+        shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
-        ctx.shared.usb_dev.lock(|usb_dev| {
-            ctx.shared.usb_midi.lock(|usb_midi| {
-                // Check for new data
-                if !usb_dev.poll(&mut [usb_midi]) {
-                    return;
+
+        let usb_dev = ctx.shared.usb_dev;
+        let usb_midi = ctx.shared.usb_midi;
+
+        let mut buffer = [0; 64];
+        let mut received_size: usize = 0;
+
+        (usb_dev, usb_midi).lock(|usb_dev, usb_midi| {
+            if usb_dev.poll(&mut [usb_midi]) {
+                match usb_midi.read(&mut buffer) {
+                    Err(usb_device::UsbError::WouldBlock) => {}
+                    Err(err) => {
+                        error!("USB MIDI read error {:?}", err);
+                    }
+                    Ok(size) => {
+                        received_size = size;
+                    }
                 }
+            }
+        });
+        if received_size == 0 {
+            return;
+        }
+        debug!("USB MIDI received");
 
-                let mut buffer = [0; 64];
-                if let Ok(size) = usb_midi.read(&mut buffer) {
-                    let buffer_reader = UsbMidiPacketReader::new(&buffer, size);
-                    for packet in buffer_reader.into_iter().flatten() {
-                        if !packet.is_sysex() {
-                            if let Ok(message) = MidiMessage::try_parse_slice(packet.as_raw_bytes())
-                            {
-                                ctx.shared.handlers.lock(|handlers| {
-                                    handlers.process_midi_input(message);
-                                });
-                            }
-                        } else {
-                            // If a packet containing a SysEx payload is detected, the data is saved
-                            // into a buffer and processed after the message is complete.
-                            if packet.is_sysex_start() {
-                                debug!("SysEx message start");
-                                sysex_receive_buffer.clear();
-                            }
+        let buffer_reader = UsbMidiPacketReader::new(&buffer, received_size);
+        for packet in buffer_reader.into_iter().flatten() {
+            if !packet.is_sysex() {
+                if let Ok(m) = midi2::BytesMessage::try_from(packet.as_raw_bytes()) {
+                    ctx.shared.opendeck.lock(|opendeck| {
+                        opendeck.handle_midi_input(&m);
+                    });
+                }
+                continue;
+            }
 
-                            match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
-                                Ok(_) => {
-                                    if packet.is_sysex_end() {
-                                        debug!("SysEx message end");
-                                        info!(
-                                            "Buffered SysEx message: {:?}",
-                                            sysex_receive_buffer
-                                        );
+            // packet containing a SysEx payload is detected, the data is saved
+            // into a buffer and processed after the message is complete.
+            if packet.is_sysex_start() {
+                debug!("SysEx message start");
+                sysex_receive_buffer.clear();
+            }
 
-                                        // Process the SysEx message as request in a separate function
-                                        // and send an optional response back to the host.
-                                        //
-                                        ctx.shared.handlers.lock(|handlers| {
-                                            for response in handlers.process_sysex(sysex_receive_buffer.as_ref()) {
-                                                for chunk in response.chunks(3) {
-                                                    let packet =
-                                                        UsbMidiEventPacket::try_from_payload_bytes(
-                                                            CableNumber::Cable0,
-                                                            chunk,
-                                                        );
-                                                    match packet {
-                                                        Ok(packet) => loop {
-                                                            // Make sure to add some timeout in case the host
-                                                            // does not read the data.
-                                                            let result =
-                                                                usb_midi.send_packet(packet.clone());
-                                                            match result {
-                                                                Ok(_) => break,
-                                                                Err(err) => {
-                                                                    if err != usb_device::UsbError::WouldBlock {
-                                                                        break;
-                                                                    }
-                                                                }
-                                                            }
-                                                        },
-                                                        Err(_) => error!( "SysEx response packet error",),
-                                                    }
-                                                }
+            match sysex_receive_buffer.extend_from_slice(packet.payload_bytes()) {
+                Ok(_) => {
+                    if packet.is_sysex_end() {
+                        debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
-                                            }
-                                        });
-                                    }
+                        let mut responses = OpenDeckConfigResponses::None;
+                        ctx.shared.opendeck.lock(|opendeck| {
+                            responses = opendeck.process_sysex(sysex_receive_buffer.as_ref());
+                        });
+                        if let Err(err) = ctx.local.sender.try_send(responses) {
+                            match err {
+                                TrySendError::Full(_) => {
+                                    error!("sysex out queue full");
                                 }
-                                Err(_) => {
-                                    error!("SysEx buffer overflow.");
-                                    break;
+                                TrySendError::NoReceiver(_) => {
+                                    error!("sysex out queue has no receiver");
                                 }
                             }
                         }
                     }
                 }
-            });
-        });
+                Err(_) => {
+                    error!("SysEx buffer overflow");
+                    break;
+                }
+            }
+        }
     }
 
-    #[task(local = [led_spi], shared =[handlers])]
-    fn led_animation(mut ctx: led_animation::Context) {
-        ctx.shared.handlers.lock(|handlers| {
-            let data = handlers.leds().animate();
-            ctx.local
-                .led_spi
-                .write(brightness(data.iter().cloned(), 8))
-                .unwrap();
-        });
-        // schedule to run this task with 20Hz
-        led_animation::spawn_after(Duration::millis(50)).unwrap();
+    #[task(shared = [opendeck])]
+    async fn sysex_processor(
+        mut ctx: sysex_processor::Context,
+        mut receiver: Receiver<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
+        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+    ) {
+        while let Ok(responses) = &mut receiver.recv().await {
+            let output_buffer = &mut [0u8; 78];
+            let mut more = true;
+            let mut len;
+            while more {
+                len = 0;
+                ctx.shared.opendeck.lock(|opendeck| {
+                    match responses.next(output_buffer, &mut opendeck.config) {
+                        Ok(Some(response)) => {
+                            len = response.data().len();
+                        }
+                        Ok(None) => {
+                            more = false;
+                        }
+                        Err(_) => {
+                            more = false;
+                            error!("SysEx buffer overflow");
+                        }
+                    }
+                });
+                if len == 0 {
+                    continue;
+                }
+                debug!("SysEx OUT message: {:?}", output_buffer[..len]);
+                for chunk in output_buffer[..len].chunks(3) {
+                    let packet =
+                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk);
+                    match packet {
+                        Ok(packet) => {
+                            sender.send(packet).await.unwrap();
+                        }
+                        Err(_) => {
+                            error!("USB MIDI packet error");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[task(shared = [usb_midi, usb_dev])]
+    async fn send_to_usb_midi(
+        mut ctx: send_to_usb_midi::Context,
+        mut receiver: Receiver<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+    ) {
+        // Wait until USB is configured
+        loop {
+            let configured = ctx
+                .shared
+                .usb_dev
+                .lock(|usb_dev| usb_dev.state() == UsbDeviceState::Configured);
+            if configured {
+                break;
+            }
+            Mono::delay(100.millis()).await;
+        }
+
+        info!("USB MIDI out ready to send");
+        let mut usb_midi = ctx.shared.usb_midi;
+        while let Ok(packet) = receiver.recv().await {
+            for _ in 0..10 {
+                let result = usb_midi.lock(|usb_midi| usb_midi.send_packet(packet.clone()));
+                match result {
+                    Ok(_) => break,
+                    Err(usb_device::UsbError::WouldBlock) => {
+                        Mono::delay(1.millis()).await;
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+
+    #[task(local = [led_spi], shared =[opendeck])]
+    async fn led_animation(mut ctx: led_animation::Context) {
+        loop {
+            ctx.shared.opendeck.lock(|opendeck| {
+                let data = opendeck.leds.animate();
+                ctx.local
+                    .led_spi
+                    .write(brightness(data.iter().cloned(), 8))
+                    .unwrap();
+            });
+            // run this task with 50Hz
+            Mono::delay(20.millis()).await;
+        }
     }
 
     #[task(local = [displays])]
-    fn display_out(ctx: display_out::Context) {
-        ctx.local
-            .displays
-            .show(crate::hmi::display::DisplayLocation::L);
+    async fn display_out(
+        ctx: display_out::Context,
+        mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+    ) {
+        let displays = ctx.local.displays;
+        displays.splash_screen();
+        Mono::delay(2000.millis()).await;
+
+        let mut midi_log = pedalboard_midi::display::MidiLog::new();
+        loop {
+            // Drain all pending messages
+            while let Ok(raw) = receiver.try_recv() {
+                let status = raw[0] & 0xF0;
+                let ch = (raw[0] & 0x0F) + 1;
+                match status {
+                    0x90 => midi_log.push_note_on(ch, raw[1], raw[2]),
+                    0x80 => midi_log.push_note_off(ch, raw[1]),
+                    0xB0 => midi_log.push_cc(ch, raw[1], raw[2]),
+                    0xC0 => midi_log.push_program_change(ch, raw[1]),
+                    _ => midi_log.push_raw("..."),
+                }
+            }
+            displays.draw_midi_log(&midi_log);
+            Mono::delay(200.millis()).await;
+        }
     }
 
     #[task(local = [debug_led, state: bool = false])]
-    fn blink(ctx: blink::Context) {
-        *ctx.local.state = !*ctx.local.state;
-        if *ctx.local.state {
-            ctx.local.debug_led.set_high().ok().unwrap();
-        } else {
-            ctx.local.debug_led.set_low().ok().unwrap();
+    async fn blink(ctx: blink::Context) {
+        loop {
+            *ctx.local.state = !*ctx.local.state;
+            if *ctx.local.state {
+                ctx.local.debug_led.set_high().ok().unwrap();
+            } else {
+                ctx.local.debug_led.set_low().ok().unwrap();
+            }
+            Mono::delay(500.millis()).await;
         }
-        blink::spawn_after(Duration::millis(500)).unwrap();
     }
 
+    fn reboot() {
+        warn!("Rebooting...");
+        cortex_m::peripheral::SCB::sys_reset();
+    }
+
+    fn bootloader() {
+        warn!("Rebooting to bootloader...");
+        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+    }
 }

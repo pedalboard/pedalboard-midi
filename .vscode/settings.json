@@ -2,4 +2,7 @@
     "rust-analyzer.cargo.target": "thumbv6m-none-eabi",
     "rust-analyzer.checkOnSave.allTargets": false,
     "editor.formatOnSave": true
+    "rust-analyzer.checkOnSave.extraArgs": [
+        "--bins"
+    ]
 }

@@ -3,40 +3,17 @@ use debouncr::{
     Edge::{Falling, Rising},
     Repeat5,
 };
-use defmt::Format;
 use embedded_hal::digital::InputPin;
 use movavg::MovAvg;
-use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
+use pedalboard_midi::events::{Edge, InputEvent, Pulse};
+use rotary_encoder_embedded::{quadrature::QuadratureTableMode, Direction, RotaryEncoder};
 use rp2040_hal::adc::AdcFifo;
 type Sma = MovAvg<u16, u32, 10>;
 
-use midi_types::Value7;
-
-#[derive(Format)]
-pub enum Edge {
-    Activate,
-    Deactivate,
-}
-#[derive(Format)]
-pub enum InputEvent {
-    ButtonA(Edge),
-    ButtonB(Edge),
-    ButtonC(Edge),
-    ButtonD(Edge),
-    ButtonE(Edge),
-    ButtonF(Edge),
-    ExpressionPedalA(Value7),
-    ExpressionPedalB(Value7),
-    VolButton(Edge),
-    Vol(Value7),
-    GainButton(Edge),
-    Gain(Value7),
-}
-
 pub struct Rotary<DT, CLK, B> {
-    encoder: RotaryEncoder<StandardMode, DT, CLK>,
+    encoder: RotaryEncoder<QuadratureTableMode, DT, CLK>,
     button: Button<B>,
-    value: u8,
+    cooldown: u8,
 }
 
 impl<DT, CLK, B> Rotary<DT, CLK, B>
@@ -47,24 +24,25 @@ where
 {
     pub fn new(pin_dt: DT, pin_clk: CLK, pin_b: B) -> Self {
         Rotary {
-            encoder: RotaryEncoder::new(pin_dt, pin_clk).into_standard_mode(),
+            encoder: RotaryEncoder::new(pin_dt, pin_clk).into_quadrature_table_mode(2),
             button: Button::new(pin_b),
-            value: 0u8,
+            cooldown: 0,
         }
     }
-    fn update(&mut self) -> Option<Value7> {
-        match self.encoder.update() {
+    fn update(&mut self) -> Option<Pulse> {
+        let dir = self.encoder.update();
+        if self.cooldown > 0 {
+            self.cooldown -= 1;
+            return None;
+        }
+        match dir {
             Direction::Clockwise => {
-                if self.value < 127 {
-                    self.value += 1
-                }
-                Some(Value7::new(self.value))
+                self.cooldown = 5; // ignore for 5 poll cycles (~5ms)
+                Some(Pulse::Clockwise)
             }
             Direction::Anticlockwise => {
-                if self.value > 1 {
-                    self.value -= 1;
-                }
-                Some(Value7::new(self.value))
+                self.cooldown = 5;
+                Some(Pulse::CounterClockwise)
             }
             Direction::None => None,
         }
@@ -110,7 +88,7 @@ impl ExpressionPedals {
             adc_fifo,
         }
     }
-    fn update(&mut self) -> (Option<Value7>, Option<Value7>) {
+    fn update(&mut self) -> (Option<u16>, Option<u16>) {
         self.sample_rate_reduction += 1;
         if self.sample_rate_reduction <= 25 {
             return (None, None);
@@ -120,14 +98,14 @@ impl ExpressionPedals {
         while self.adc_fifo.len() < 2 {}
         self.adc_fifo.pause();
 
-        let exp_a: u16 = self.adc_fifo.read(); //self.adc.read(&mut self.exp_a_pin).unwrap();
-        let exp_b: u16 = self.adc_fifo.read(); // self.adc.read(&mut self.exp_b_pin).unwrap();
+        let exp_a: u16 = self.adc_fifo.read().unwrap_or(0); //self.adc.read(&mut self.exp_a_pin).unwrap();
+        let exp_b: u16 = self.adc_fifo.read().unwrap_or(0); // self.adc.read(&mut self.exp_b_pin).unwrap();
         (self.exp_a.update(exp_a), self.exp_b.update(exp_b))
     }
 }
 
 pub struct ExpressionPedal {
-    current: u8,
+    current: u16,
     avg: Sma,
 }
 
@@ -139,12 +117,12 @@ impl ExpressionPedal {
         }
     }
 
-    fn update(&mut self, value: u16) -> Option<Value7> {
-        let new = (self.avg.feed(value) >> 5) as u8;
+    fn update(&mut self, value: u16) -> Option<u16> {
+        let new = self.avg.feed(value);
 
         if self.current.abs_diff(new) > 2 {
             self.current = new;
-            return Some(Value7::new(self.current));
+            return Some(self.current);
         }
 
         None
@@ -220,23 +198,50 @@ where
         }
     }
 
-    pub fn update(&mut self) -> Option<InputEvent> {
+    /// Poll only encoders — call at high frequency to avoid missing transitions.
+    pub fn poll_encoders(&mut self, events: &mut heapless::Vec<InputEvent, 14>) {
+        if let Some(e) = self.vol_rotary.update().map(InputEvent::Vol) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.gain_rotary.update().map(InputEvent::Gain) {
+            events.push(e).ok();
+        }
+    }
+
+    pub fn update(&mut self) -> heapless::Vec<InputEvent, 14> {
+        let mut events = heapless::Vec::new();
         let (exp_a, exp_b) = self.exp.update();
-        self.buttons
-            .a
-            .update()
-            .map(InputEvent::ButtonA)
-            .or_else(|| self.buttons.b.update().map(InputEvent::ButtonB))
-            .or_else(|| self.buttons.c.update().map(InputEvent::ButtonC))
-            .or_else(|| self.buttons.d.update().map(InputEvent::ButtonD))
-            .or_else(|| self.buttons.e.update().map(InputEvent::ButtonE))
-            .or_else(|| self.buttons.f.update().map(InputEvent::ButtonF))
-            .or_else(|| self.vol_rotary.button.update().map(InputEvent::VolButton))
-            .or_else(|| self.gain_rotary.button.update().map(InputEvent::GainButton))
-            .or_else(|| self.vol_rotary.update().map(InputEvent::Vol))
-            .or_else(|| self.gain_rotary.update().map(InputEvent::Gain))
-            .or_else(|| exp_a.map(InputEvent::ExpressionPedalA))
-            .or_else(|| exp_b.map(InputEvent::ExpressionPedalB))
-            .or(None)
+
+        if let Some(e) = self.buttons.a.update().map(InputEvent::ButtonA) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.b.update().map(InputEvent::ButtonB) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.c.update().map(InputEvent::ButtonC) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.d.update().map(InputEvent::ButtonD) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.e.update().map(InputEvent::ButtonE) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.buttons.f.update().map(InputEvent::ButtonF) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.vol_rotary.button.update().map(InputEvent::VolButton) {
+            events.push(e).ok();
+        }
+        if let Some(e) = self.gain_rotary.button.update().map(InputEvent::GainButton) {
+            events.push(e).ok();
+        }
+        if let Some(e) = exp_a.map(InputEvent::ExpressionPedalA) {
+            events.push(e).ok();
+        }
+        if let Some(e) = exp_b.map(InputEvent::ExpressionPedalB) {
+            events.push(e).ok();
+        }
+        events
     }
 }
