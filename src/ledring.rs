@@ -70,3 +70,55 @@ impl Default for LedRing {
         Self::new(0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ledring_default_off() {
+        let mut ring = LedRing::default();
+        let data = ring.animate();
+        for led in data.iter() {
+            assert_eq!(*led, RGB8::default());
+        }
+    }
+
+    #[test]
+    fn test_ledring_on() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(255, 0, 0);
+        ring.set(Animation::On(color));
+        let data = ring.animate();
+        for led in data.iter() {
+            assert_eq!(*led, color);
+        }
+    }
+
+    #[test]
+    fn test_ledring_flash_clears() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(0, 255, 0);
+        ring.set(Animation::Flash(color));
+
+        let data = ring.animate();
+        assert_eq!(data[0], color);
+
+        let data = ring.animate();
+        assert_eq!(data[0], RGB8::default());
+    }
+
+    #[test]
+    fn test_ledring_toggle() {
+        let mut ring = LedRing::default();
+        let color = RGB8::new(0, 0, 255);
+
+        ring.set(Animation::Toggle(color, false));
+        let data = ring.animate();
+        assert_eq!(data[0], RGB8::default());
+
+        ring.set(Animation::Toggle(color, false));
+        let data = ring.animate();
+        assert_eq!(data[0], color);
+    }
+}

@@ -3,7 +3,6 @@
 
 mod handler;
 mod hmi;
-mod loudness;
 
 use defmt_rtt as _;
 use panic_probe as _;
@@ -50,8 +49,8 @@ mod app {
         fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
-                Gpio0, Gpio1, Gpio10, Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20, Gpio21,
-                Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
+                Gpio0, Gpio1, Gpio10, Gpio11, Gpio12, Gpio14, Gpio16, Gpio17, Gpio18, Gpio19,
+                Gpio2, Gpio20, Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
             },
             FunctionI2C, FunctionSio, FunctionSpi, FunctionUart, Pin, Pins, PullDown, PullUp,
             SioInput, SioOutput,
@@ -88,6 +87,16 @@ mod app {
         ),
     >;
 
+    type LedSpi = Spi<
+        rp2040_hal::spi::Enabled,
+        rp2040_hal::pac::SPI1,
+        (
+            Pin<Gpio11, FunctionSpi, PullDown>,
+            Pin<Gpio12, FunctionSpi, PullDown>,
+            Pin<Gpio14, FunctionSpi, PullDown>,
+        ),
+    >;
+
     type DigInPin<P> = Pin<P, FunctionSio<SioInput>, PullUp>;
     pub type InputPins = Inputs<
         DigInPin<Gpio6>,
@@ -116,7 +125,7 @@ mod app {
         uart_midi_out: MidiOut,
         uart_midi_in: MidiIn,
         inputs: InputPins,
-        led_spi: crate::hmi::leds::LedDriver,
+        led_spi: Ws2812<LedSpi>,
         displays: crate::hmi::display::Displays<
             AtomicDevice<'static, I2CBus>,
             AtomicDevice<'static, I2CBus>,

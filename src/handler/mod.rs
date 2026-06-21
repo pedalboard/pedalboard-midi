@@ -1,11 +1,11 @@
 use crate::handler::opendeck_handler::OpenDeck;
 use crate::hmi::inputs::InputEvent;
-use crate::hmi::leds::{Animation::Flash, Led, LedRings, Leds};
 use defmt::*;
 use midi2::prelude::*;
 use midi2::BytesMessage;
 use opendeck::handler::Messages;
 use opendeck_handler::{OpenDeckConfig, OpenDeckConfigResponses};
+use pedalboard_midi::leds::{Animation::Flash, Led, LedRings, Leds};
 use smart_leds::colors::*;
 
 pub mod opendeck_handler;
@@ -57,7 +57,7 @@ impl Handler for Handlers {
 
                 debug!("loudness {}", lufs);
                 self.leds().set_ledring(
-                    super::hmi::ledring::Animation::Loudness(lufs),
+                    pedalboard_midi::ledring::Animation::Loudness(lufs),
                     LedRings::Vol,
                 );
             }

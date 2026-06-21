@@ -20,3 +20,26 @@ pub fn loudness_color(lufs: f32) -> RGB8 {
 pub fn loudness_step(step: usize) -> f32 {
     -72.0 + ((step * 6) as f32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_loudness_step_increases() {
+        for i in 0..11 {
+            assert!(loudness_step(i + 1) > loudness_step(i));
+        }
+    }
+
+    #[test]
+    fn test_loudness_color_ranges() {
+        assert_eq!(loudness_color(-110.0), WHITE);
+        assert_eq!(loudness_color(-70.0), CYAN);
+        assert_eq!(loudness_color(-30.0), GREEN);
+        assert_eq!(loudness_color(-20.0), YELLOW);
+        assert_eq!(loudness_color(-15.0), ORANGE_RED);
+        assert_eq!(loudness_color(-8.0), RED);
+        assert_eq!(loudness_color(0.0), DARK_RED);
+    }
+}

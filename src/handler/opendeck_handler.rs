@@ -2,10 +2,8 @@ use midi2::BytesMessage;
 use opendeck::config::SysexResponseIterator;
 
 use crate::handler::Handler;
-use crate::hmi::{
-    inputs::{Edge, InputEvent, Pulse},
-    leds::Leds,
-};
+use crate::hmi::inputs::{Edge, InputEvent, Pulse};
+use pedalboard_midi::leds::Leds;
 use defmt::*;
 use opendeck::button::handler::Action;
 use opendeck::encoder::handler::EncoderPulse;
