@@ -1001,6 +1001,7 @@ dependencies = [
  "portable-atomic",
  "rotary-encoder-embedded",
  "rp2040-boot2",
+ "rp2040-flash",
  "rp2040-hal",
  "rtic",
  "rtic-monotonics",
@@ -1249,6 +1250,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c92f344f63f950ee36cf4080050e4dce850839b9175da38f9d2ffb69b4dbb21"
 dependencies = [
  "crc-any",
+]
+
+[[package]]
+name = "rp2040-flash"
+version = "0.6.0"
+source = "git+https://github.com/pedalboard/rp2040-flash?branch=master#b69e7a963dd852afc8ba83609804558e2c458a1d"
+dependencies = [
+ "rp2040-hal",
 ]
 
 [[package]]

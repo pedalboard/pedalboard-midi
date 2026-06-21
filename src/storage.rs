@@ -1,16 +1,15 @@
 //! Flash-based persistent configuration storage for RP2040.
 //!
 //! Uses the last 64KB of flash (16 pages of 4KB each) with `sequential-storage`
-//! for wear-leveled key-value storage.
+//! for wear-leveled key-value storage. Flash operations use `rp2040-flash` which
+//! executes from RAM to avoid XIP conflicts.
 
-use embedded_storage_async::nor_flash::{
-    ErrorType, MultiwriteNorFlash, NorFlash, ReadNorFlash,
-};
 use embedded_storage::nor_flash::{NorFlashError, NorFlashErrorKind};
+use embedded_storage_async::nor_flash::{ErrorType, MultiwriteNorFlash, NorFlash, ReadNorFlash};
 use sequential_storage::cache::NoCache;
 use sequential_storage::map::{MapConfig, MapStorage, SerializationError, Value};
 
-const STORAGE_ORIGIN: u32 = 0x001F_0000;
+const STORAGE_ORIGIN: u32 = 0x001F_0000; // offset from flash start (2MB - 64KB)
 const STORAGE_SIZE: usize = 64 * 1024;
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
@@ -47,34 +46,22 @@ impl ReadNorFlash for FlashStorage {
 }
 
 impl NorFlash for FlashStorage {
-    const WRITE_SIZE: usize = 1;
+    const WRITE_SIZE: usize = PAGE_SIZE;
     const ERASE_SIZE: usize = SECTOR_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
-        let flash_from = STORAGE_ORIGIN + from;
-        let count = (to - from) as usize;
+        let flash_addr = STORAGE_ORIGIN + from;
+        let len = to - from;
         cortex_m::interrupt::free(|_| unsafe {
-            rp2040_hal::rom_data::connect_internal_flash();
-            rp2040_hal::rom_data::flash_exit_xip();
-            rp2040_hal::rom_data::flash_range_erase(flash_from, count, SECTOR_SIZE as u32, 0xD8);
-            rp2040_hal::rom_data::flash_flush_cache();
-            rp2040_hal::rom_data::flash_enter_cmd_xip();
+            rp2040_flash::flash::flash_range_erase(flash_addr, len, true);
         });
         Ok(())
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        let flash_offset = STORAGE_ORIGIN + offset;
-        // RP2040 ROM requires 256-byte aligned writes; pad if needed
-        let mut page_buf = [0xFFu8; PAGE_SIZE];
-        let len = bytes.len().min(PAGE_SIZE);
-        page_buf[..len].copy_from_slice(&bytes[..len]);
+        let flash_addr = STORAGE_ORIGIN + offset;
         cortex_m::interrupt::free(|_| unsafe {
-            rp2040_hal::rom_data::connect_internal_flash();
-            rp2040_hal::rom_data::flash_exit_xip();
-            rp2040_hal::rom_data::flash_range_program(flash_offset, page_buf.as_ptr(), PAGE_SIZE);
-            rp2040_hal::rom_data::flash_flush_cache();
-            rp2040_hal::rom_data::flash_enter_cmd_xip();
+            rp2040_flash::flash::flash_range_program(flash_addr, bytes, true);
         });
         Ok(())
     }
@@ -111,14 +98,14 @@ pub fn encode_key(block: u8, section: u8, index: u8) -> u16 {
 /// Persistent config store wrapping sequential-storage map.
 pub struct ConfigStore {
     map: MapStorage<u16, FlashStorage, NoCache>,
-    buf: [u8; 256],
+    buf: [u8; 1024],
 }
 
 impl ConfigStore {
     pub fn new() -> Self {
         Self {
             map: MapStorage::new(FlashStorage, MapConfig::new(0..STORAGE_SIZE as u32), NoCache::new()),
-            buf: [0u8; 256],
+            buf: [0u8; 1024],
         }
     }
 
