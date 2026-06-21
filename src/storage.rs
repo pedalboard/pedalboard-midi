@@ -46,7 +46,7 @@ impl ReadNorFlash for FlashStorage {
 }
 
 impl NorFlash for FlashStorage {
-    const WRITE_SIZE: usize = PAGE_SIZE;
+    const WRITE_SIZE: usize = 4;
     const ERASE_SIZE: usize = SECTOR_SIZE;
 
     async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
@@ -60,8 +60,15 @@ impl NorFlash for FlashStorage {
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
         let flash_addr = STORAGE_ORIGIN + offset;
+        // rp2040 ROM requires 256-byte aligned writes of 256-byte multiples
+        // Pad the data to the next 256-byte boundary
+        let aligned_addr = flash_addr & !0xFF;
+        let start_offset = (flash_addr - aligned_addr) as usize;
+        let total_len = (start_offset + bytes.len() + 255) & !255;
+        let mut page_buf = [0xFFu8; 4096]; // max reasonable write
+        page_buf[start_offset..start_offset + bytes.len()].copy_from_slice(bytes);
         cortex_m::interrupt::free(|_| unsafe {
-            rp2040_flash::flash::flash_range_program(flash_addr, bytes, true);
+            rp2040_flash::flash::flash_range_program(aligned_addr, &page_buf[..total_len], true);
         });
         Ok(())
     }
