@@ -135,12 +135,14 @@ mod app {
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
+        persist_sender: Sender<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 1;
     const DIN_THRU_CAPACITY: usize = 8;
+    const PERSIST_CAPACITY: usize = 4;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -292,12 +294,14 @@ mod app {
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
         let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
+        let (persist_sender, persist_receiver) = make_channel!((u8, u8, u8, u16), PERSIST_CAPACITY);
 
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
         mon_off::spawn(mon_receiver, led_sender.clone()).unwrap();
         poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
         display_out::spawn(display_receiver).unwrap();
+        persist::spawn(persist_receiver).unwrap();
 
         let mut opendeck = OpenDeck::new(
             opendeck::config::FirmwareVersion {
@@ -336,6 +340,7 @@ mod app {
                 usb_sender_usb_thru: usb_sender.clone(),
                 din_thru_receiver,
                 din_thru_sender,
+                persist_sender,
             },
         )
     }
@@ -472,7 +477,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender],
+        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
         shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -541,6 +546,21 @@ mod app {
                     if packet.is_sysex_end() {
                         debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
+                        // Detect SET SINGLE commands and persist them
+                        // Format: F0 00 53 43 00 PP 01 00 BLOCK SECTION IDX_H IDX_L VAL_H VAL_L F7
+                        if sysex_receive_buffer.len() >= 15
+                            && sysex_receive_buffer[6] == 0x01  // WISH = SET
+                            && sysex_receive_buffer[7] == 0x00  // AMOUNT = SINGLE
+                        {
+                            let block = sysex_receive_buffer[8];
+                            let section = sysex_receive_buffer[9];
+                            let index = sysex_receive_buffer[11]; // LSB
+                            // Store raw two-byte value as-is (high << 8 | low)
+                            let value = ((sysex_receive_buffer[12] as u16) << 8)
+                                | sysex_receive_buffer[13] as u16;
+                            ctx.local.persist_sender.try_send((block, section, index, value)).ok();
+                        }
+
                         let mut responses = OpenDeckConfigResponses::None;
                         ctx.shared.opendeck.lock(|opendeck| {
                             responses = opendeck.process_sysex(sysex_receive_buffer.as_ref());
@@ -608,6 +628,19 @@ mod app {
                     }
                 }
             }
+        }
+    }
+
+    #[task]
+    async fn persist(
+        _ctx: persist::Context,
+        mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
+    ) {
+        let mut store = pedalboard_midi::storage::ConfigStore::new();
+        info!("config persistence ready");
+        while let Ok((block, section, index, value)) = receiver.recv().await {
+            store.save(block, section, index, value).await;
+            debug!("persisted: b={} s={} i={} v={}", block, section, index, value);
         }
     }
 

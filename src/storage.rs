@@ -3,13 +3,14 @@
 //! Uses the last 64KB of flash (16 pages of 4KB each) with `sequential-storage`
 //! for wear-leveled key-value storage.
 
-use embedded_storage::nor_flash::{
-    ErrorType, MultiwriteNorFlash, NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash,
+use embedded_storage_async::nor_flash::{
+    ErrorType, MultiwriteNorFlash, NorFlash, ReadNorFlash,
 };
+use embedded_storage::nor_flash::{NorFlashError, NorFlashErrorKind};
+use sequential_storage::cache::NoCache;
+use sequential_storage::map::{MapConfig, MapStorage, SerializationError, Value};
 
-/// Flash storage starting at STORAGE_ORIGIN (last 64KB of 2MB flash).
-/// The RP2040 XIP base is 0x10000000; flash offset = addr - 0x10000000.
-const STORAGE_ORIGIN: u32 = 0x001F_0000; // offset from flash start (2MB - 64KB)
+const STORAGE_ORIGIN: u32 = 0x001F_0000;
 const STORAGE_SIZE: usize = 64 * 1024;
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
@@ -23,16 +24,7 @@ impl NorFlashError for FlashError {
     }
 }
 
-/// Thin wrapper around RP2040 ROM flash functions implementing `NorFlash`.
-pub struct FlashStorage {
-    _private: (),
-}
-
-impl FlashStorage {
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
-}
+pub struct FlashStorage;
 
 impl ErrorType for FlashStorage {
     type Error = FlashError;
@@ -41,9 +33,8 @@ impl ErrorType for FlashStorage {
 impl ReadNorFlash for FlashStorage {
     const READ_SIZE: usize = 1;
 
-    fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+    async fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
         let addr = (0x1000_0000 + STORAGE_ORIGIN + offset) as *const u8;
-        // Safety: reading from XIP-mapped flash memory
         for (i, byte) in bytes.iter_mut().enumerate() {
             *byte = unsafe { core::ptr::read_volatile(addr.add(i)) };
         }
@@ -59,11 +50,9 @@ impl NorFlash for FlashStorage {
     const WRITE_SIZE: usize = PAGE_SIZE;
     const ERASE_SIZE: usize = SECTOR_SIZE;
 
-    fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+    async fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
         let flash_from = STORAGE_ORIGIN + from;
         let count = (to - from) as usize;
-        // Safety: erasing flash in the reserved storage region.
-        // Must run with interrupts disabled and from RAM (critical section).
         cortex_m::interrupt::free(|_| unsafe {
             rp2040_hal::rom_data::connect_internal_flash();
             rp2040_hal::rom_data::flash_exit_xip();
@@ -74,9 +63,8 @@ impl NorFlash for FlashStorage {
         Ok(())
     }
 
-    fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
         let flash_offset = STORAGE_ORIGIN + offset;
-        // Safety: writing flash in the reserved storage region.
         cortex_m::interrupt::free(|_| unsafe {
             rp2040_hal::rom_data::connect_internal_flash();
             rp2040_hal::rom_data::flash_exit_xip();
@@ -89,3 +77,67 @@ impl NorFlash for FlashStorage {
 }
 
 impl MultiwriteNorFlash for FlashStorage {}
+
+/// Config value stored in flash (u16).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigValue(pub u16);
+
+impl<'a> Value<'a> for ConfigValue {
+    fn serialize_into(&self, buffer: &mut [u8]) -> Result<usize, SerializationError> {
+        if buffer.len() < 2 {
+            return Err(SerializationError::BufferTooSmall);
+        }
+        buffer[0] = (self.0 >> 8) as u8;
+        buffer[1] = self.0 as u8;
+        Ok(2)
+    }
+    fn deserialize_from(buffer: &'a [u8]) -> Result<(Self, usize), SerializationError> {
+        if buffer.len() < 2 {
+            return Err(SerializationError::BufferTooSmall);
+        }
+        Ok((ConfigValue(((buffer[0] as u16) << 8) | buffer[1] as u16), 2))
+    }
+}
+
+/// Encode a config key: block(3 bits) | section(5 bits) | index(8 bits) = u16
+pub fn encode_key(block: u8, section: u8, index: u8) -> u16 {
+    ((block as u16) << 13) | ((section as u16) << 8) | index as u16
+}
+
+/// Persistent config store wrapping sequential-storage map.
+pub struct ConfigStore {
+    map: MapStorage<u16, FlashStorage, NoCache>,
+    buf: [u8; 512],
+}
+
+impl ConfigStore {
+    pub fn new() -> Self {
+        let config = MapConfig::new(0..STORAGE_SIZE as u32);
+        Self {
+            map: MapStorage::new(FlashStorage, config, NoCache::new()),
+            buf: [0u8; 512],
+        }
+    }
+
+    /// Store a config value.
+    pub async fn save(&mut self, block: u8, section: u8, index: u8, value: u16) {
+        let key = encode_key(block, section, index);
+        let _ = self.map.store_item(&mut self.buf, &key, &ConfigValue(value)).await;
+    }
+
+    /// Load a config value. Returns None if not found.
+    pub async fn load(&mut self, block: u8, section: u8, index: u8) -> Option<u16> {
+        let key = encode_key(block, section, index);
+        self.map
+            .fetch_item::<ConfigValue>(&mut self.buf, &key)
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v.0)
+    }
+
+    /// Erase all stored config (factory reset).
+    pub async fn erase_all(&mut self) {
+        let _ = self.map.erase_all().await;
+    }
+}
