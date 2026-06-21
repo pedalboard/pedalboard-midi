@@ -14,6 +14,8 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
+    prev_levels: [u8; 10],
+    prev_states: [bool; 10],
 }
 
 impl OpenDeck {
@@ -197,6 +199,8 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
+            prev_levels: [255; 10],
+            prev_states: [false; 10],
         }
     }
 
@@ -274,14 +278,20 @@ impl OpenDeck {
             );
             if is_multi {
                 let level = self.config.output_level(i);
-                let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
-                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
+                if level != self.prev_levels[i] {
+                    self.prev_levels[i] = level;
+                    let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
+                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
+                }
             } else {
                 let on = self.config.output_state(i);
-                self.leds.set_ledring(
-                    if on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                    RINGS[i],
-                );
+                if on != self.prev_states[i] {
+                    self.prev_states[i] = on;
+                    self.leds.set_ledring(
+                        if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                        RINGS[i],
+                    );
+                }
             }
         }
         // Outputs 8-9 → single LEDs (always on/off)
@@ -289,10 +299,13 @@ impl OpenDeck {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
-                self.leds.set(
-                    if on { Animation::On(GREEN) } else { Animation::Off },
-                    SINGLE_LEDS[i],
-                );
+                if on != self.prev_states[idx] {
+                    self.prev_states[idx] = on;
+                    self.leds.set(
+                        if on { Animation::On(GREEN) } else { Animation::Off },
+                        SINGLE_LEDS[i],
+                    );
+                }
             }
         }
     }
