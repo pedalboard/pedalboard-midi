@@ -1202,8 +1202,8 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 
 [[package]]
 name = "rotary-encoder-embedded"
-version = "0.5.0"
-source = "git+https://github.com/ost-ing/rotary-encoder-embedded.git#e042248ab6fd339ce5b7fd30d47e498754e4f5ef"
+version = "0.3.1"
+source = "git+https://github.com/ost-ing/rotary-encoder-embedded.git?rev=d1b8795#d1b8795f71d8c13546385a9ce9f80c072189d834"
 dependencies = [
  "embedded-hal 1.0.0",
 ]
