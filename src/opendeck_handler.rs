@@ -55,7 +55,7 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Encoder(i, EncoderSection::UpperLimit(127)),
+                Block::Encoder(i, EncoderSection::UpperLimit(12)),
             ));
         }
 
@@ -247,7 +247,8 @@ impl OpenDeck {
             );
             if is_multi {
                 let level = self.config.output_level(i);
-                let fill = ((level as u16 * 12) / 127).min(12) as u8;
+                // Scale: values >12 assumed to be 0-127 range
+                let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
                 self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
             } else {
                 let on = self.config.output_state(i);
