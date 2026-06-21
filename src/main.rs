@@ -108,8 +108,8 @@ mod app {
         DigInPin<Gpio16>,
         DigInPin<Gpio17>,
         DigInPin<Gpio18>,
-        DigInPin<Gpio20>,
         DigInPin<Gpio19>,
+        DigInPin<Gpio20>,
         DigInPin<Gpio21>,
     >;
 
@@ -217,8 +217,8 @@ mod app {
         );
 
         let gain = Rotary::new(
-            pins.gpio20.into_pull_up_input(),
             pins.gpio19.into_pull_up_input(),
+            pins.gpio20.into_pull_up_input(),
             pins.gpio21.into_pull_up_input(),
         );
 
