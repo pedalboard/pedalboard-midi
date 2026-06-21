@@ -14,6 +14,7 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
+    encoder_fill: [u8; 2],
 }
 
 impl OpenDeck {
@@ -113,6 +114,7 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
+            encoder_fill: [0; 2],
         }
     }
 
@@ -177,8 +179,14 @@ impl OpenDeck {
             let val = raw[2];
             let fill = val.min(12);
             match cc {
-                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol),
-                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain),
+                0 => {
+                    self.encoder_fill[0] = fill;
+                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol);
+                }
+                1 => {
+                    self.encoder_fill[1] = fill;
+                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain);
+                }
                 _ => {}
             }
         }
@@ -219,8 +227,12 @@ impl OpenDeck {
             } else if i >= 2 {
                 // Button rings: off when released
                 self.leds.set_ledring(RingAnim::Off, RING_MAP[i]);
+            } else {
+                // Vol/Gain: restore encoder fill on release
+                let ring = RING_MAP[i];
+                let fill = self.encoder_fill[i];
+                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
             }
-            // Vol/Gain (i<2): don't set Off — encoder fill will restore
         }
     }
 }
