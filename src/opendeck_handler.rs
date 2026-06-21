@@ -14,7 +14,6 @@ pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
     pub leds: Leds,
-    encoder_fill: [u8; 2],
 }
 
 impl OpenDeck {
@@ -74,12 +73,11 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 0-7 to react to buttons (LocalNoteSingleValue)
-        // Buttons: 0=VolBtn(note0), 1=GainBtn(note1), 2-7=ButtonA-F(note2-7)
+        // Configure LED outputs 0-5 to react to buttons A-F (notes 2-7)
         use opendeck::led::{ControlType, LedSection};
         use opendeck::ChannelOrAll;
-        for i in 0..8u16 {
-            let note = i as u8;
+        for i in 0..6u16 {
+            let note = (i + 2) as u8;
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
@@ -114,7 +112,6 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
-            encoder_fill: [0; 2],
         }
     }
 
@@ -176,17 +173,10 @@ impl OpenDeck {
         // Visualize encoder CC values on Vol/Gain rings
         if status == 0xB0 {
             let cc = raw[1];
-            let val = raw[2];
-            let fill = val.min(12);
+            let fill = raw[2].min(12);
             match cc {
-                0 => {
-                    self.encoder_fill[0] = fill;
-                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol);
-                }
-                1 => {
-                    self.encoder_fill[1] = fill;
-                    self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain);
-                }
+                0 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Vol),
+                1 => self.leds.set_ledring(RingAnim::Fill(CYAN, fill), LedRings::Gain),
                 _ => {}
             }
         }
@@ -209,10 +199,7 @@ impl OpenDeck {
 
     /// Sync opendeck output states to physical LED rings.
     fn sync_output_leds(&mut self) {
-        // Output 0=VolBtn, 1=GainBtn, 2=BtnA, 3=BtnB, 4=BtnC, 5=BtnD, 6=BtnE, 7=BtnF
-        const RING_MAP: [LedRings; 8] = [
-            LedRings::Vol,
-            LedRings::Gain,
+        const RING_MAP: [LedRings; 6] = [
             LedRings::A,
             LedRings::B,
             LedRings::C,
@@ -220,19 +207,12 @@ impl OpenDeck {
             LedRings::E,
             LedRings::F,
         ];
-        for i in 0..self.config.output_count().min(8) {
+        for i in 0..self.config.output_count().min(6) {
             let on = self.config.output_state(i);
-            if on {
-                self.leds.set_ledring(RingAnim::On(GREEN), RING_MAP[i]);
-            } else if i >= 2 {
-                // Button rings: off when released
-                self.leds.set_ledring(RingAnim::Off, RING_MAP[i]);
-            } else {
-                // Vol/Gain: restore encoder fill on release
-                let ring = RING_MAP[i];
-                let fill = self.encoder_fill[i];
-                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
-            }
+            self.leds.set_ledring(
+                if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                RING_MAP[i],
+            );
         }
     }
 }
@@ -377,12 +357,4 @@ mod tests {
         assert!(!od.config.output_state(0));
     }
 
-    #[test]
-    fn test_encoder_button_triggers_output() {
-        let mut od = test_config();
-        // Boot config sets LED output 0: note=0, value=1, ch=1, LocalNoteSingleValue
-        assert!(!od.config.output_state(0));
-        od.notify_local_midi(&[0x90, 0, 1]); // Note On, note 0, vel 1
-        assert!(od.config.output_state(0), "encoder button should turn on output 0");
-    }
 }
