@@ -3,39 +3,12 @@ use debouncr::{
     Edge::{Falling, Rising},
     Repeat5,
 };
-use defmt::Format;
 use embedded_hal::digital::InputPin;
 use movavg::MovAvg;
+use pedalboard_midi::events::{Edge, InputEvent, Pulse};
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use rp2040_hal::adc::AdcFifo;
 type Sma = MovAvg<u16, u32, 10>;
-
-#[derive(Format)]
-pub enum Edge {
-    Activate,
-    Deactivate,
-}
-#[derive(Format)]
-pub enum Pulse {
-    Clockwise,
-    CounterClockwise,
-}
-
-#[derive(Format)]
-pub enum InputEvent {
-    ButtonA(Edge),
-    ButtonB(Edge),
-    ButtonC(Edge),
-    ButtonD(Edge),
-    ButtonE(Edge),
-    ButtonF(Edge),
-    ExpressionPedalA(u16),
-    ExpressionPedalB(u16),
-    VolButton(Edge),
-    Vol(Pulse),
-    GainButton(Edge),
-    Gain(Pulse),
-}
 
 pub struct Rotary<DT, CLK, B> {
     encoder: RotaryEncoder<StandardMode, DT, CLK>,

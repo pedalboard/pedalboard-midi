@@ -27,8 +27,8 @@ const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 mod app {
     use super::*;
 
-    use crate::handler::opendeck_handler::OpenDeckConfigResponses;
     use crate::handler::Handler;
+    use pedalboard_midi::opendeck_handler::OpenDeckConfigResponses;
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
     use crate::Mono;
     use core::mem::MaybeUninit;

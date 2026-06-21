@@ -1,11 +1,8 @@
+use crate::events::{Edge, InputEvent, Pulse};
+use crate::leds::Leds;
 use midi2::BytesMessage;
-use opendeck::config::SysexResponseIterator;
-
-use crate::handler::Handler;
-use crate::hmi::inputs::{Edge, InputEvent, Pulse};
-use pedalboard_midi::leds::Leds;
-use defmt::*;
 use opendeck::button::handler::Action;
+use opendeck::config::SysexResponseIterator;
 use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 
@@ -13,12 +10,24 @@ pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 8>;
 pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 8>;
 
 pub struct OpenDeck {
-    config: OpenDeckConfig,
-    leds: Leds,
+    pub config: OpenDeckConfig,
+    pub leds: Leds,
 }
 
-impl Handler for OpenDeck {
-    fn handle_human_input<'a>(&mut self, event: InputEvent) -> Messages<'_> {
+impl OpenDeck {
+    pub fn new(
+        firmware_version: opendeck::config::FirmwareVersion,
+        hardware_uid: u32,
+        reboot: fn(),
+        bootloader: fn(),
+    ) -> Self {
+        OpenDeck {
+            leds: Leds::default(),
+            config: opendeck::config::Config::new(firmware_version, hardware_uid, reboot, bootloader),
+        }
+    }
+
+    pub fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
         match event {
             InputEvent::Vol(pulse) => self.config.handle_encoder(0, pulse.into()),
             InputEvent::Gain(pulse) => self.config.handle_encoder(1, pulse.into()),
@@ -34,14 +43,10 @@ impl Handler for OpenDeck {
             InputEvent::ExpressionPedalB(value) => self.config.handle_analog(1, value),
         }
     }
-    fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
-    fn leds(&mut self) -> &mut Leds {
-        &mut self.leds
-    }
-    fn config(&mut self) -> &mut OpenDeckConfig {
-        &mut self.config
-    }
-    fn process_sysex<'a>(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
+
+    pub fn handle_midi_input(&mut self, _: &BytesMessage<&[u8]>) {}
+
+    pub fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
         self.config.process_sysex(request)
     }
 }
@@ -64,35 +69,40 @@ impl From<Pulse> for EncoderPulse {
     }
 }
 
-impl OpenDeck {
-    pub fn new() -> Self {
-        let leds = Leds::default();
-        let config =
-            opendeck::config::Config::new(firmware_version(), 0x123456, reboot, bootloader);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        OpenDeck { leds, config }
+    fn noop() {}
+
+    fn test_config() -> OpenDeck {
+        OpenDeck::new(
+            opendeck::config::FirmwareVersion { major: 1, minor: 0, revision: 0 },
+            0x123456,
+            noop,
+            noop,
+        )
     }
-}
 
-impl Default for OpenDeck {
-    fn default() -> Self {
-        OpenDeck::new()
+    #[test]
+    fn test_button_press_produces_message() {
+        let mut od = test_config();
+        let mut buf = [0u8; 6];
+        let mut messages = od.handle_human_input(InputEvent::ButtonA(Edge::Activate));
+        let result = messages.next(&mut buf);
+        assert!(result.is_ok());
+        // Default button config sends Note On
+        assert!(result.unwrap().is_some());
     }
-}
 
-fn firmware_version() -> opendeck::config::FirmwareVersion {
-    opendeck::config::FirmwareVersion {
-        major: 1,
-        minor: 0,
-        revision: 0,
+    #[test]
+    fn test_expression_pedal_disabled_by_default() {
+        let mut od = test_config();
+        let mut buf = [0u8; 6];
+        let mut messages = od.handle_human_input(InputEvent::ExpressionPedalA(2048));
+        let result = messages.next(&mut buf);
+        assert!(result.is_ok());
+        // Analog is disabled by default, no message
+        assert!(result.unwrap().is_none());
     }
-}
-
-fn reboot() {
-    warn!("Rebooting...");
-    cortex_m::peripheral::SCB::sys_reset();
-}
-fn bootloader() {
-    warn!("Rebooting to bootloader...");
-    rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
 }
