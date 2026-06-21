@@ -8,9 +8,6 @@ pub type LedData = [RGB8; LEDS_PER_RING];
 pub enum Animation {
     On(RGB8),
     Off,
-    Toggle(RGB8, bool),
-    Flash(RGB8),
-    Loudness(f32),
     Fill(RGB8, u8), // color, count (0-12)
 }
 
@@ -27,27 +24,12 @@ impl LedRing {
             animation: Animation::Off,
         }
     }
-    pub fn animate(&mut self) -> LedData {
+
+    /// Render current state to pixel buffer (no side effects).
+    pub fn render(&self) -> LedData {
         match self.animation {
             Animation::On(c) => [c; LEDS_PER_RING],
             Animation::Off => [RGB8::default(); LEDS_PER_RING],
-            Animation::Toggle(c, true) => [c; LEDS_PER_RING],
-            Animation::Toggle(_, false) => [RGB8::default(); LEDS_PER_RING],
-            Animation::Flash(c) => {
-                self.animation = Animation::Off;
-                [c; LEDS_PER_RING]
-            }
-            Animation::Loudness(lufs) => {
-                let mut data = [RGB8::default(); LEDS_PER_RING];
-                for i in 0..LEDS_PER_RING {
-                    let reference = crate::loudness::loudness_step(i);
-                    if lufs >= reference {
-                        data[(self.rotation as usize + LEDS_PER_RING - i) % LEDS_PER_RING] =
-                            crate::loudness::loudness_color(reference);
-                    }
-                }
-                data
-            }
             Animation::Fill(c, count) => {
                 let mut data = [RGB8::default(); LEDS_PER_RING];
                 for i in 0..(count as usize).min(LEDS_PER_RING) {
@@ -59,17 +41,7 @@ impl LedRing {
     }
 
     pub fn set(&mut self, a: Animation) {
-        match a {
-            Animation::Toggle(c, _) => {
-                let current_animation = self.animation;
-                match current_animation {
-                    Animation::Toggle(_, true) => self.animation = Animation::Toggle(c, false),
-                    Animation::Toggle(_, false) => self.animation = Animation::Toggle(c, true),
-                    _ => self.animation = a,
-                };
-            }
-            _ => self.animation = a,
-        }
+        self.animation = a;
     }
 }
 
@@ -85,8 +57,8 @@ mod tests {
 
     #[test]
     fn test_ledring_default_off() {
-        let mut ring = LedRing::default();
-        let data = ring.animate();
+        let ring = LedRing::default();
+        let data = ring.render();
         for led in data.iter() {
             assert_eq!(*led, RGB8::default());
         }
@@ -97,36 +69,22 @@ mod tests {
         let mut ring = LedRing::default();
         let color = RGB8::new(255, 0, 0);
         ring.set(Animation::On(color));
-        let data = ring.animate();
+        let data = ring.render();
         for led in data.iter() {
             assert_eq!(*led, color);
         }
     }
 
     #[test]
-    fn test_ledring_flash_clears() {
+    fn test_ledring_fill() {
         let mut ring = LedRing::default();
         let color = RGB8::new(0, 255, 0);
-        ring.set(Animation::Flash(color));
-
-        let data = ring.animate();
-        assert_eq!(data[0], color);
-
-        let data = ring.animate();
-        assert_eq!(data[0], RGB8::default());
-    }
-
-    #[test]
-    fn test_ledring_toggle() {
-        let mut ring = LedRing::default();
-        let color = RGB8::new(0, 0, 255);
-
-        ring.set(Animation::Toggle(color, false));
-        let data = ring.animate();
-        assert_eq!(data[0], RGB8::default());
-
-        ring.set(Animation::Toggle(color, false));
-        let data = ring.animate();
-        assert_eq!(data[0], color);
+        ring.set(Animation::Fill(color, 3));
+        let data = ring.render();
+        // With rotation=8, filled LEDs are at indices 8, 7, 6
+        assert_eq!(data[8], color);
+        assert_eq!(data[7], color);
+        assert_eq!(data[6], color);
+        assert_eq!(data[5], RGB8::default());
     }
 }

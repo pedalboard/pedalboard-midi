@@ -1,20 +1,21 @@
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::Animation as RingAnim;
-use crate::leds::{Animation::Flash, Led, LedRings, Leds};
+use crate::leds::{Led, LedData, LedRings, Leds};
 use midi2::BytesMessage;
 use opendeck::button::handler::Action;
 use opendeck::config::SysexResponseIterator;
 use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
+use opendeck::led::ControlType;
 use smart_leds::colors::*;
+use smart_leds::RGB8;
 
 pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10>;
 pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
-    pub leds: Leds,
-    colors: [smart_leds::RGB8; 10],
+    leds: Leds,
 }
 
 impl OpenDeck {
@@ -60,7 +61,7 @@ impl OpenDeck {
             ));
         }
 
-        // Set encoder button velocity to 127 (avoid collision with CC values)
+        // Set encoder button velocity to 127
         use opendeck::button::{ButtonSection, ButtonType};
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
@@ -99,7 +100,7 @@ impl OpenDeck {
         }
 
         // Configure LED outputs for buttons A-C, E (notes 2-4, 6)
-        use opendeck::led::{ControlType, LedSection};
+        use opendeck::led::LedSection;
         use opendeck::ChannelOrAll;
         for (idx, note) in [(0u16, 2u8), (1, 3), (2, 4), (4, 6)] {
             config.process_req(OpenDeckRequest::Configuration(
@@ -143,7 +144,7 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 6-7: encoder CC → rings Vol/Gain (LocalCcMultiValue)
+        // Configure LED outputs 6-7: encoder CC → rings Vol/Gain
         for (idx, cc) in [(6u16, 0u8), (7, 1)] {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -162,7 +163,7 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 8-9: encoder buttons → single LEDs (LocalNoteSingleValue)
+        // Configure LED outputs 8-9: encoder buttons → single LEDs
         for (idx, note) in [(8u16, 0u8), (9, 1)] {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -186,28 +187,31 @@ impl OpenDeck {
             ));
         }
 
-        // Set LED colors: buttons=Green, encoders/expression=Cyan
+        // Set LED colors
         use opendeck::led::Color;
-        for i in [0u16, 1, 2, 4] { // buttons A,B,C,E
+        for i in [0u16, 1, 2, 4] {
             config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set, Amount::Single,
+                Wish::Set,
+                Amount::Single,
                 Block::Led(i, LedSection::ColorTesting(Color::Green)),
             ));
         }
-        for i in [3u16, 5, 6, 7] { // expression D,F + encoders Vol,Gain
+        for i in [3u16, 5, 6, 7] {
             config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set, Amount::Single,
+                Wish::Set,
+                Amount::Single,
                 Block::Led(i, LedSection::ColorTesting(Color::Cyan)),
             ));
         }
-        for i in [8u16, 9] { // encoder buttons
+        for i in [8u16, 9] {
             config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set, Amount::Single,
+                Wish::Set,
+                Amount::Single,
                 Block::Led(i, LedSection::ColorTesting(Color::Green)),
             ));
         }
 
-        // Reset encoder values to 0 (boot pin glitches may have incremented them)
+        // Reset encoder values to 0
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -219,36 +223,17 @@ impl OpenDeck {
         OpenDeck {
             leds: Leds::default(),
             config,
-            colors: [smart_leds::RGB8::default(); 10],
         }
     }
 
     /// Reset encoder rings to empty after boot glitches settle.
     pub fn reset_encoder_rings(&mut self) {
-        self.refresh_colors();
         self.leds
-            .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Vol);
+            .set_ledring(RingAnim::Fill(RGB8::default(), 0), LedRings::Vol);
         self.leds
-            .set_ledring(RingAnim::Fill(smart_leds::RGB8::default(), 0), LedRings::Gain);
+            .set_ledring(RingAnim::Fill(RGB8::default(), 0), LedRings::Gain);
     }
 
-    pub fn refresh_colors(&mut self) {
-        use opendeck::led::Color;
-        for i in 0..10 {
-            self.colors[i] = match self.config.output_color(i) {
-                Color::Red => smart_leds::RGB8::new(255, 0, 0),
-                Color::Green => smart_leds::RGB8::new(0, 255, 0),
-                Color::Yellow => smart_leds::RGB8::new(255, 255, 0),
-                Color::Blue => smart_leds::RGB8::new(0, 0, 255),
-                Color::Magenta => smart_leds::RGB8::new(255, 0, 255),
-                Color::Cyan => smart_leds::RGB8::new(0, 255, 255),
-                Color::White => smart_leds::RGB8::new(255, 255, 255),
-                _ => smart_leds::RGB8::new(0, 255, 0),
-            };
-        }
-    }
-
-    /// Cache colors from config (call after boot config).
     pub fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
         match event {
             InputEvent::Vol(pulse) => self.config.handle_encoder(0, pulse.into()),
@@ -266,51 +251,77 @@ impl OpenDeck {
         }
     }
 
-    /// Call after consuming a locally-generated MIDI message to update LED outputs.
-    pub fn notify_local_midi(&mut self, raw: &[u8]) {
-        if raw.len() < 3 {
-            return;
+    /// Process local MIDI and update LED state. Returns rendered LED data.
+    pub fn notify_local_midi(&mut self, raw: &[u8]) -> LedData {
+        if raw.len() >= 3 {
+            let is_cc = (raw[0] & 0xF0) == 0xB0;
+            if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
+                self.config
+                    .notify_local_midi(channel, id, value, is_note_on, is_cc);
+            }
         }
-        let is_cc = (raw[0] & 0xF0) == 0xB0;
-        if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
-            self.config.notify_local_midi(channel, id, value, is_note_on, is_cc);
-        }
+        self.update_leds();
+        self.leds.render()
     }
 
-    /// Process an incoming external MIDI message and update LED outputs.
-    pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) {
-        self.leds.set(Flash(DARK_BLUE), Led::Mon);
+    /// Process an incoming external MIDI message and update LED state. Returns rendered LED data.
+    pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) -> LedData {
+        // Flash Mon LED on external MIDI
+        self.leds.set_single(Led::Mon, Some(DARK_BLUE));
         if let Some((channel, id, value, is_note_on, is_cc)) = parse_bytes_message(m) {
-            self.config.notify_external_midi(channel, id, value, is_note_on, is_cc);
+            self.config
+                .notify_external_midi(channel, id, value, is_note_on, is_cc);
         }
+        self.update_leds();
+        self.leds.render()
     }
 
     pub fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
         self.config.process_sysex(request)
     }
 
-    /// Sync opendeck output states to physical LEDs. Call once per animation frame.
-    pub fn sync_output_leds(&mut self) {
-        use crate::leds::Animation;
-        use opendeck::led::ControlType;
+    /// Render current LED state (for use after sysex config changes).
+    pub fn render_leds(&self) -> LedData {
+        self.leds.render()
+    }
 
+    /// Turn off Mon LED (called by flash timeout).
+    pub fn clear_mon(&mut self) -> LedData {
+        self.leds.set_single(Led::Mon, None);
+        self.leds.render()
+    }
+
+    /// Update LED structs from config output state.
+    fn update_leds(&mut self) {
         const RINGS: [LedRings; 8] = [
-            LedRings::A, LedRings::B, LedRings::C, LedRings::D,
-            LedRings::E, LedRings::F, LedRings::Vol, LedRings::Gain,
+            LedRings::A,
+            LedRings::B,
+            LedRings::C,
+            LedRings::D,
+            LedRings::E,
+            LedRings::F,
+            LedRings::Vol,
+            LedRings::Gain,
         ];
         const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
 
-        // Outputs 0-7 → rings
         for i in 0..self.config.output_count().min(8) {
             let ct = self.config.output_control_type(i);
-            let rgb = self.colors[i];
-            let is_multi = matches!(ct,
-                ControlType::LocalCcMultiValue | ControlType::MidiInCcMultiValue |
-                ControlType::LocalNoteMultiValue | ControlType::MidiInNoteMultiValue
+            let rgb = color_to_rgb(self.config.output_color(i));
+            let is_multi = matches!(
+                ct,
+                ControlType::LocalCcMultiValue
+                    | ControlType::MidiInCcMultiValue
+                    | ControlType::LocalNoteMultiValue
+                    | ControlType::MidiInNoteMultiValue
             );
             if is_multi {
                 let level = self.config.output_level(i);
-                let fill = if level <= 12 { level } else { ((level as u16 * 12) / 127) as u8 };
+                let fill = if level <= 12 {
+                    level
+                } else {
+                    ((level as u16 * 12) / 127) as u8
+                };
                 self.leds.set_ledring(RingAnim::Fill(rgb, fill), RINGS[i]);
             } else {
                 let on = self.config.output_state(i);
@@ -320,17 +331,30 @@ impl OpenDeck {
                 );
             }
         }
-        // Outputs 8-9 → single LEDs (always on/off)
+        // Outputs 8-9 → single LEDs
         for i in 0..2 {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
-                self.leds.set(
-                    if on { Animation::On(self.colors[idx]) } else { Animation::Off },
-                    SINGLE_LEDS[i],
-                );
+                let rgb = color_to_rgb(self.config.output_color(idx));
+                self.leds
+                    .set_single(SINGLE_LEDS[i], if on { Some(rgb) } else { None });
             }
         }
+    }
+}
+
+fn color_to_rgb(c: opendeck::led::Color) -> RGB8 {
+    use opendeck::led::Color;
+    match c {
+        Color::Red => RGB8::new(255, 0, 0),
+        Color::Green => RGB8::new(0, 255, 0),
+        Color::Yellow => RGB8::new(255, 255, 0),
+        Color::Blue => RGB8::new(0, 0, 255),
+        Color::Magenta => RGB8::new(255, 0, 255),
+        Color::Cyan => RGB8::new(0, 255, 255),
+        Color::White => RGB8::new(255, 255, 255),
+        _ => RGB8::new(0, 255, 0),
     }
 }
 
@@ -344,7 +368,7 @@ fn parse_midi_raw(raw: &[u8]) -> Option<(u8, u8, u8, bool)> {
     let value = raw[2];
     match status {
         0x90 if value > 0 => Some((channel, id, value, true)),
-        0x90 => Some((channel, id, value, false)), // velocity 0 = note off
+        0x90 => Some((channel, id, value, false)),
         0x80 => Some((channel, id, value, false)),
         0xB0 => Some((channel, id, value, true)),
         _ => None,
@@ -435,13 +459,12 @@ mod tests {
 
     #[test]
     fn test_notify_local_midi_updates_output() {
-        use opendeck::led::{ControlType, LedSection};
+        use opendeck::led::LedSection;
         use opendeck::ChannelOrAll;
         use opendeck::{Amount, Block, OpenDeckRequest, Wish};
 
         let mut od = test_config();
 
-        // Configure LED output 0: LocalNoteSingleValue, note 60, value 127, channel 1
         od.config.process_req(OpenDeckRequest::Configuration(
             Wish::Set,
             Amount::Single,
@@ -465,13 +488,10 @@ mod tests {
 
         assert!(!od.config.output_state(0));
 
-        // Simulate local Note On: channel 1, note 60, velocity 127
         od.notify_local_midi(&[0x90, 60, 127]);
         assert!(od.config.output_state(0));
 
-        // Simulate local Note Off
         od.notify_local_midi(&[0x80, 60, 0]);
         assert!(!od.config.output_state(0));
     }
-
 }
