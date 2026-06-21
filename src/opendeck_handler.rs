@@ -206,20 +206,23 @@ impl OpenDeck {
 
     /// Sync opendeck output states to physical LED rings.
     fn sync_output_leds(&mut self) {
-        const RING_MAP: [LedRings; 6] = [
-            LedRings::A,
-            LedRings::B,
-            LedRings::C,
-            LedRings::D,
-            LedRings::E,
-            LedRings::F,
+        // Outputs 0-5 map to buttons A-F, but D(3) and F(5) are used for expression pedals
+        const RING_MAP: [Option<LedRings>; 6] = [
+            Some(LedRings::A),
+            Some(LedRings::B),
+            Some(LedRings::C),
+            None, // D - expression pedal
+            Some(LedRings::E),
+            None, // F - expression pedal
         ];
         for i in 0..self.config.output_count().min(6) {
-            let on = self.config.output_state(i);
-            self.leds.set_ledring(
-                if on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                RING_MAP[i],
-            );
+            if let Some(ring) = RING_MAP[i] {
+                let on = self.config.output_state(i);
+                self.leds.set_ledring(
+                    if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                    ring,
+                );
+            }
         }
     }
 }
