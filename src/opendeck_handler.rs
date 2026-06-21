@@ -8,8 +8,8 @@ use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 use smart_leds::colors::*;
 
-pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 12>;
-pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 12>;
+pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10>;
+pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
@@ -105,9 +105,27 @@ impl OpenDeck {
             ));
         }
 
-        // Configure LED outputs 6-7 for encoder buttons (LocalNoteSingleValue)
-        // 6=VolBtn(note0), 7=GainBtn(note1) → single LEDs
-        for (idx, note) in [(6u16, 0u8), (7, 1)] {
+        // Configure LED outputs 6-7: encoder CC → rings Vol/Gain (LocalCcMultiValue)
+        for (idx, cc) in [(6u16, 0u8), (7, 1)] {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ControlType(ControlType::LocalCcMultiValue)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::ActivationId(cc)),
+            ));
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Led(idx, LedSection::Channel(ChannelOrAll::Channel(1))),
+            ));
+        }
+
+        // Configure LED outputs 8-9: encoder buttons → single LEDs (LocalNoteSingleValue)
+        for (idx, note) in [(8u16, 0u8), (9, 1)] {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
@@ -122,26 +140,6 @@ impl OpenDeck {
                 Wish::Set,
                 Amount::Single,
                 Block::Led(idx, LedSection::ActivationValue(1)),
-            ));
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(idx, LedSection::Channel(ChannelOrAll::Channel(1))),
-            ));
-        }
-
-        // Configure LED outputs 8-11 for CC visualization (LocalCcMultiValue)
-        // 8=Vol(CC#0), 9=Gain(CC#1), 10=ExpA(CC#2), 11=ExpB(CC#3)
-        for (idx, cc) in [(8u16, 0u8), (9, 1), (10, 2), (11, 3)] {
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(idx, LedSection::ControlType(ControlType::LocalCcMultiValue)),
-            ));
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(idx, LedSection::ActivationId(cc)),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -218,47 +216,46 @@ impl OpenDeck {
         self.config.process_sysex(request)
     }
 
-    /// Sync opendeck output states to physical LED rings.
+    /// Sync opendeck output states to physical LEDs.
     fn sync_output_leds(&mut self) {
-        // Outputs 0-5: buttons A-F (on/off green)
-        const BTN_RINGS: [LedRings; 6] = [
-            LedRings::A, LedRings::B, LedRings::C,
-            LedRings::D, LedRings::E, LedRings::F,
-        ];
-        for i in 0..6 {
-            let on = self.config.output_state(i);
-            self.leds.set_ledring(
-                if on { RingAnim::On(GREEN) } else { RingAnim::Off },
-                BTN_RINGS[i],
-            );
-        }
-        // Outputs 6-7: Encoder buttons → single LEDs
         use crate::leds::Animation;
-        self.leds.set(
-            if self.config.output_state(6) { Animation::On(GREEN) } else { Animation::Off },
-            Led::Mode,
-        );
-        self.leds.set(
-            if self.config.output_state(7) { Animation::On(GREEN) } else { Animation::Off },
-            Led::Mon,
-        );
-        // Outputs 8-9: Encoder CC level → Vol/Gain rings
-        let vol_fill = ((self.config.output_level(8) as u16 * 12) / 24).min(12) as u8;
-        let gain_fill = ((self.config.output_level(9) as u16 * 12) / 24).min(12) as u8;
-        self.leds.set_ledring(RingAnim::Fill(CYAN, vol_fill), LedRings::Vol);
-        self.leds.set_ledring(RingAnim::Fill(CYAN, gain_fill), LedRings::Gain);
-        // Outputs 10-11: Expression pedal level → rings D, F
-        const EXP_RINGS: [(LedRings, usize); 2] = [
-            (LedRings::D, 3),
-            (LedRings::F, 5),
+        use opendeck::led::ControlType;
+
+        const RINGS: [LedRings; 8] = [
+            LedRings::A, LedRings::B, LedRings::C, LedRings::D,
+            LedRings::E, LedRings::F, LedRings::Vol, LedRings::Gain,
         ];
-        for (i, &(ring, btn)) in EXP_RINGS.iter().enumerate() {
-            if self.config.output_state(btn) {
-                continue;
+        const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
+
+        // Outputs 0-7 → rings
+        for i in 0..self.config.output_count().min(8) {
+            let ct = self.config.output_control_type(i);
+            let is_multi = matches!(ct,
+                ControlType::LocalCcMultiValue | ControlType::MidiInCcMultiValue |
+                ControlType::LocalNoteMultiValue | ControlType::MidiInNoteMultiValue
+            );
+            if is_multi {
+                let level = self.config.output_level(i);
+                let fill = ((level as u16 * 12) / 127).min(12) as u8;
+                self.leds.set_ledring(RingAnim::Fill(CYAN, fill), RINGS[i]);
+            } else {
+                let on = self.config.output_state(i);
+                self.leds.set_ledring(
+                    if on { RingAnim::On(GREEN) } else { RingAnim::Off },
+                    RINGS[i],
+                );
             }
-            let level = self.config.output_level(10 + i);
-            let fill = ((level as u16 * 12) / 127).min(12) as u8;
-            self.leds.set_ledring(RingAnim::Fill(CYAN, fill), ring);
+        }
+        // Outputs 8-9 → single LEDs (always on/off)
+        for i in 0..2 {
+            let idx = 8 + i;
+            if idx < self.config.output_count() {
+                let on = self.config.output_state(idx);
+                self.leds.set(
+                    if on { Animation::On(GREEN) } else { Animation::Off },
+                    SINGLE_LEDS[i],
+                );
+            }
         }
     }
 }
