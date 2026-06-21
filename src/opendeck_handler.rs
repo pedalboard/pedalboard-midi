@@ -203,8 +203,9 @@ impl OpenDeck {
         if raw.len() < 3 {
             return;
         }
+        let is_cc = (raw[0] & 0xF0) == 0xB0;
         if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
-            let changed = self.config.notify_local_midi(channel, id, value, is_note_on);
+            let changed = self.config.notify_local_midi(channel, id, value, is_note_on, is_cc);
             if changed > 0 {
                 self.sync_output_leds();
             }
@@ -214,8 +215,8 @@ impl OpenDeck {
     /// Process an incoming external MIDI message and update LED outputs.
     pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) {
         self.leds.set(Flash(DARK_BLUE), Led::Mon);
-        if let Some((channel, id, value, is_note_on)) = parse_bytes_message(m) {
-            let changed = self.config.notify_external_midi(channel, id, value, is_note_on);
+        if let Some((channel, id, value, is_note_on, is_cc)) = parse_bytes_message(m) {
+            let changed = self.config.notify_external_midi(channel, id, value, is_note_on, is_cc);
             if changed > 0 {
                 self.sync_output_leds();
             }
@@ -287,7 +288,7 @@ fn parse_midi_raw(raw: &[u8]) -> Option<(u8, u8, u8, bool)> {
     }
 }
 
-fn parse_bytes_message(m: &BytesMessage<&[u8]>) -> Option<(u8, u8, u8, bool)> {
+fn parse_bytes_message(m: &BytesMessage<&[u8]>) -> Option<(u8, u8, u8, bool, bool)> {
     use midi2::prelude::*;
     match m {
         BytesMessage::ChannelVoice1(cv) => {
@@ -295,15 +296,15 @@ fn parse_bytes_message(m: &BytesMessage<&[u8]>) -> Option<(u8, u8, u8, bool)> {
             match cv {
                 ChannelVoice1::NoteOn(n) => {
                     let ch: u8 = u4::from(n.channel()).into();
-                    Some((ch + 1, n.note_number().into(), n.velocity().into(), true))
+                    Some((ch + 1, n.note_number().into(), n.velocity().into(), true, false))
                 }
                 ChannelVoice1::NoteOff(n) => {
                     let ch: u8 = u4::from(n.channel()).into();
-                    Some((ch + 1, n.note_number().into(), n.velocity().into(), false))
+                    Some((ch + 1, n.note_number().into(), n.velocity().into(), false, false))
                 }
                 ChannelVoice1::ControlChange(cc) => {
                     let ch: u8 = u4::from(cc.channel()).into();
-                    Some((ch + 1, cc.control().into(), cc.control_data().into(), true))
+                    Some((ch + 1, cc.control().into(), cc.control_data().into(), true, true))
                 }
                 _ => None,
             }
