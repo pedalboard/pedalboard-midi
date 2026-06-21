@@ -60,12 +60,21 @@ impl OpenDeck {
         }
 
         // Set encoder button velocity to 127 (avoid collision with CC values)
-        use opendeck::button::ButtonSection;
+        use opendeck::button::{ButtonSection, ButtonType};
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
                 Block::Button(i, ButtonSection::Value(127)),
+            ));
+        }
+
+        // Set buttons D-F (indices 5-7) to latching mode
+        for i in 5..8u16 {
+            config.process_req(OpenDeckRequest::Configuration(
+                Wish::Set,
+                Amount::Single,
+                Block::Button(i, ButtonSection::Type(ButtonType::Latching)),
             ));
         }
 
