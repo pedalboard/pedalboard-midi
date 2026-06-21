@@ -258,7 +258,7 @@ mod app {
         // Configure I²C for OLED display
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
         let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
-        let i2c = I2C::i2c0(
+        let mut i2c = I2C::i2c0(
             ctx.device.I2C0,
             sda_pin,
             scl_pin,
@@ -266,6 +266,17 @@ mod app {
             &mut resets,
             &clocks.system_clock,
         );
+
+        // Read AT24CS01 serial number (128-bit unique ID at security register address 0x58, offset 0x80)
+        let mut serial_number = [0u8; 16];
+        let eeprom_serial_ok = {
+            use embedded_hal::i2c::I2c;
+            i2c.write_read(0x58u8, &[0x80u8], &mut serial_number).is_ok()
+        };
+        if !eeprom_serial_ok {
+            defmt::warn!("Failed to read EEPROM serial number");
+        }
+
         let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
         let mut displays = crate::hmi::display::Displays::new(
             AtomicDevice::new(i2c_bus),
@@ -290,7 +301,7 @@ mod app {
         poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
         display_out::spawn(display_receiver).unwrap();
 
-        let opendeck = OpenDeck::new(
+        let mut opendeck = OpenDeck::new(
             opendeck::config::FirmwareVersion {
                 major: 1,
                 minor: 0,
@@ -300,6 +311,9 @@ mod app {
             reboot,
             bootloader,
         );
+        if eeprom_serial_ok {
+            opendeck.config.set_serial_number(&serial_number);
+        }
 
         info!("pedalboard-midi initialized");
         (
