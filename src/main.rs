@@ -429,10 +429,22 @@ mod app {
             let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
+            let mut component_info_packets: heapless::Vec<UsbMidiEventPacket, 4> = heapless::Vec::new();
             if !events.is_empty() {
                 ctx.shared.opendeck.lock(|opendeck| {
                     din_enabled = opendeck.din_midi_enabled();
                     for event in events {
+                        // Send component info if SysEx session active
+                        let mut ci_buf = [0u8; 16];
+                        if let Some(len) = opendeck.component_info(&event, &mut ci_buf) {
+                            // Component info is a short SysEx — fits in one packet
+                            if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
+                                CableNumber::Cable0,
+                                &ci_buf[..len],
+                            ) {
+                                component_info_packets.push(p).ok();
+                            }
+                        }
                         let mut messages = opendeck.handle_human_input(event);
                         let mut buf = [0x00u8; 6];
                         while let Ok(Some(m)) = messages.next(&mut buf) {
@@ -471,6 +483,10 @@ mod app {
                 if let Ok(packet) = packet {
                     sender.try_send(packet).ok();
                 }
+            }
+            // Send component info SysEx packets (only when SysEx session active)
+            for packet in component_info_packets {
+                sender.try_send(packet).ok();
             }
             Mono::delay(1.millis()).await;
         }

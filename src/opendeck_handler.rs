@@ -251,6 +251,38 @@ impl OpenDeck {
         }
     }
 
+    /// Render a component info SysEx message for the given input event.
+    /// Returns None if SysEx session is not active.
+    pub fn component_info(&self, event: &InputEvent, buf: &mut [u8]) -> Option<usize> {
+        use opendeck::{BlockId, ValueSize};
+        use opendeck::renderer::OpenDeckRenderer;
+        use midi2::prelude::*;
+
+        if !self.config.sysex_enabled() {
+            return None;
+        }
+        let (block, index) = match event {
+            InputEvent::Vol(_) => (BlockId::Encoder, 0u16),
+            InputEvent::Gain(_) => (BlockId::Encoder, 1),
+            InputEvent::VolButton(_) => (BlockId::Button, 0),
+            InputEvent::GainButton(_) => (BlockId::Button, 1),
+            InputEvent::ButtonA(_) => (BlockId::Button, 2),
+            InputEvent::ButtonB(_) => (BlockId::Button, 3),
+            InputEvent::ButtonC(_) => (BlockId::Button, 4),
+            InputEvent::ButtonD(_) => (BlockId::Button, 5),
+            InputEvent::ButtonE(_) => (BlockId::Button, 6),
+            InputEvent::ButtonF(_) => (BlockId::Button, 7),
+            InputEvent::ExpressionPedalA(_) => (BlockId::Analog, 0),
+            InputEvent::ExpressionPedalB(_) => (BlockId::Analog, 1),
+        };
+        let renderer = OpenDeckRenderer::new(ValueSize::TwoBytes, buf);
+        if let Ok(Some(sysex)) = renderer.render_component_info(block, index) {
+            Some(sysex.data().len())
+        } else {
+            None
+        }
+    }
+
     /// Process local MIDI and update LED state. Returns rendered LED data.
     pub fn notify_local_midi(&mut self, raw: &[u8]) -> LedData {
         if raw.len() >= 3 {
