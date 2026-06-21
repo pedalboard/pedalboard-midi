@@ -45,6 +45,21 @@ impl Default for Handlers {
 
 impl Handler for Handlers {
     fn handle_human_input(&mut self, event: InputEvent) -> Messages<'_> {
+        use pedalboard_midi::events::Edge;
+        use pedalboard_midi::ledring::Animation as RingAnim;
+        use smart_leds::colors::*;
+
+        // Toggle LED ring when a button is pressed
+        match event {
+            InputEvent::ButtonA(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::A),
+            InputEvent::ButtonB(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::B),
+            InputEvent::ButtonC(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::C),
+            InputEvent::ButtonD(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::D),
+            InputEvent::ButtonE(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::E),
+            InputEvent::ButtonF(Edge::Activate) => self.leds().set_ledring(RingAnim::Toggle(GREEN, false), LedRings::F),
+            _ => {}
+        }
+
         info!("handle input event");
         self.opendeck.handle_human_input(event)
     }
