@@ -9,8 +9,40 @@ use opendeck::handler::Messages;
 use opendeck::led::ControlType;
 use smart_leds::colors::*;
 use smart_leds::RGB8;
+use core::cell::RefCell;
+use rtic_sync::channel::Sender;
 
-pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10>;
+pub const PERSIST_CAPACITY: usize = 4;
+
+#[derive(Clone, Debug)]
+pub enum PersistCommand {
+    Save(u8, u8, u8, u16),
+    EraseAll,
+}
+
+pub struct PedalboardHandler {
+    persist_sender: RefCell<Sender<'static, PersistCommand, PERSIST_CAPACITY>>,
+}
+
+impl PedalboardHandler {
+    pub fn new(persist_sender: Sender<'static, PersistCommand, PERSIST_CAPACITY>) -> Self {
+        Self { persist_sender: RefCell::new(persist_sender) }
+    }
+}
+
+impl opendeck::SystemHandler for PedalboardHandler {
+    fn reboot(&self) {
+        cortex_m::peripheral::SCB::sys_reset();
+    }
+    fn bootloader(&self) {
+        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+    }
+    fn factory_reset(&self) {
+        self.persist_sender.borrow_mut().try_send(PersistCommand::EraseAll).ok();
+    }
+}
+
+pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10, PedalboardHandler>;
 pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
 
 pub struct OpenDeck {
@@ -22,15 +54,14 @@ impl OpenDeck {
     pub fn new(
         firmware_version: opendeck::config::FirmwareVersion,
         hardware_uid: u32,
-        reboot: fn(),
-        bootloader: fn(),
+        persist_sender: Sender<'static, PersistCommand, PERSIST_CAPACITY>,
     ) -> Self {
         use opendeck::analog::AnalogSection;
         use opendeck::encoder::EncoderSection;
         use opendeck::{Amount, Block, OpenDeckRequest, Wish};
 
         let mut config =
-            opendeck::config::Config::new_with_adc_max(firmware_version, hardware_uid, reboot, bootloader, 4095);
+            opendeck::config::Config::new_with_adc_max(firmware_version, hardware_uid, PedalboardHandler::new(persist_sender), 4095);
 
         // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
         for i in 0..2u16 {
@@ -474,7 +505,6 @@ impl From<Pulse> for EncoderPulse {
 mod tests {
     use super::*;
 
-    fn noop() {}
 
     fn test_config() -> OpenDeck {
         OpenDeck::new(
@@ -484,8 +514,6 @@ mod tests {
                 revision: 0,
             },
             0x123456,
-            noop,
-            noop,
         )
     }
 

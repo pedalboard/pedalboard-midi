@@ -135,14 +135,14 @@ mod app {
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
-        persist_sender: Sender<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
+        persist_sender: Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 1;
     const DIN_THRU_CAPACITY: usize = 8;
-    const PERSIST_CAPACITY: usize = 4;
+    const PERSIST_CAPACITY: usize = pedalboard_midi::opendeck_handler::PERSIST_CAPACITY;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -294,7 +294,7 @@ mod app {
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
         let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
-        let (persist_sender, persist_receiver) = make_channel!((u8, u8, u8, u16), PERSIST_CAPACITY);
+        let (persist_sender, persist_receiver) = make_channel!(pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY);
 
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
@@ -310,8 +310,7 @@ mod app {
                 revision: 0,
             },
             0x123456,
-            reboot,
-            bootloader,
+            persist_sender.clone(),
         );
         if eeprom_serial_ok {
             opendeck.config.set_serial_number(&serial_number);
@@ -575,7 +574,7 @@ mod app {
                             // Store raw two-byte value as-is (high << 8 | low)
                             let value = ((sysex_receive_buffer[12] as u16) << 8)
                                 | sysex_receive_buffer[13] as u16;
-                            ctx.local.persist_sender.try_send((block, section, index, value)).ok();
+                            ctx.local.persist_sender.try_send(pedalboard_midi::opendeck_handler::PersistCommand::Save(block, section, index, value)).ok();
                         }
 
                         let mut responses = OpenDeckConfigResponses::None;
@@ -651,7 +650,7 @@ mod app {
     #[task(shared = [opendeck])]
     async fn persist(
         mut ctx: persist::Context,
-        mut receiver: Receiver<'static, (u8, u8, u8, u16), PERSIST_CAPACITY>,
+        mut receiver: Receiver<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
     ) {
         info!("config persistence: loading from flash");
         if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
@@ -678,12 +677,22 @@ mod app {
             }
             info!("config persistence ready");
             // Enter persist loop
-            while let Ok((block, section, index, value)) = receiver.recv().await {
-                store.save(block, section, index, value).await;
+            while let Ok(cmd) = receiver.recv().await {
+                use pedalboard_midi::opendeck_handler::PersistCommand;
+                match cmd {
+                    PersistCommand::Save(block, section, index, value) => {
+                        store.save(block, section, index, value).await;
+                    }
+                    PersistCommand::EraseAll => {
+                        store.erase_all().await;
+                        info!("factory reset: storage erased, rebooting");
+                        cortex_m::peripheral::SCB::sys_reset();
+                    }
+                }
             }
         } else {
             warn!("flash config store init failed, persistence disabled");
-            while let Ok(_) = receiver.recv().await {}
+            while receiver.recv().await.is_ok() {}
         }
     }
 
@@ -789,13 +798,4 @@ mod app {
         }
     }
 
-    fn reboot() {
-        warn!("Rebooting...");
-        cortex_m::peripheral::SCB::sys_reset();
-    }
-
-    fn bootloader() {
-        warn!("Rebooting to bootloader...");
-        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-    }
 }
