@@ -74,11 +74,25 @@ Keep MIDI log code as-is, just switch which renderer the display task uses.
 ```
 
 **Preset/bank change** — flash on both displays (~2s), then revert to default view:
+
+Left display — large preset number:
 ```
 ┌────────────────────┐
 │                    │
-│    PRESET 2        │
-│   "Crunch Lead"    │
+│                    │
+│        2           │
+│                    │
+│                    │
+└────────────────────┘
+```
+
+Right display — preset description:
+```
+┌────────────────────┐
+│                    │
+│                    │
+│   Crunch Lead      │
+│                    │
 │                    │
 └────────────────────┘
 ```
