@@ -762,25 +762,71 @@ mod app {
         ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
     ) {
+        use crate::hmi::display::DisplayLocation;
+
         let displays = ctx.local.displays;
         displays.splash_screen();
         Mono::delay(2000.millis()).await;
 
+        // Placeholder preset metadata — will come from flash config later
+        let preset = {
+            use heapless::String;
+            let mut p = pedalboard_midi::views::performance::PresetMeta::default();
+            p.name = String::try_from("Preset 1").unwrap_or_default();
+            p.button_labels[0] = String::try_from("Drive").unwrap_or_default();
+            p.button_labels[1] = String::try_from("Delay").unwrap_or_default();
+            p.button_labels[2] = String::try_from("Reverb").unwrap_or_default();
+            p.button_labels[3] = String::try_from("Looper").unwrap_or_default();
+            p.button_labels[4] = String::try_from("Tap").unwrap_or_default();
+            p.button_labels[5] = String::try_from("Bank+").unwrap_or_default();
+            p
+        };
+
+        displays.draw_performance(&preset);
+
+        // Overlay timeout: counts down each loop iteration (200ms each)
+        let mut overlay_ticks: u8 = 0;
+        const OVERLAY_DURATION: u8 = 5; // ~1s
+
         let mut midi_log = pedalboard_midi::display::MidiLog::new();
         loop {
-            // Drain all pending messages
+            let mut show_overlay = false;
+
             while let Ok(raw) = receiver.try_recv() {
                 let status = raw[0] & 0xF0;
                 let ch = (raw[0] & 0x0F) + 1;
                 match status {
                     0x90 => midi_log.push_note_on(ch, raw[1], raw[2]),
                     0x80 => midi_log.push_note_off(ch, raw[1]),
-                    0xB0 => midi_log.push_cc(ch, raw[1], raw[2]),
+                    0xB0 => {
+                        midi_log.push_cc(ch, raw[1], raw[2]);
+                        // Encoder overlay: CC#0 = Vol (left), CC#1 = Gain (right)
+                        match raw[1] {
+                            0 => {
+                                displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
+                                overlay_ticks = OVERLAY_DURATION;
+                                show_overlay = true;
+                            }
+                            1 => {
+                                displays.draw_overlay(DisplayLocation::R, "Gain", raw[2]);
+                                overlay_ticks = OVERLAY_DURATION;
+                                show_overlay = true;
+                            }
+                            _ => {}
+                        }
+                    }
                     0xC0 => midi_log.push_program_change(ch, raw[1]),
                     _ => midi_log.push_raw("..."),
                 }
             }
-            displays.draw_midi_log(&midi_log);
+
+            if !show_overlay && overlay_ticks > 0 {
+                overlay_ticks -= 1;
+                if overlay_ticks == 0 {
+                    displays.draw_performance(&preset);
+                }
+            }
+
             Mono::delay(200.millis()).await;
         }
     }
