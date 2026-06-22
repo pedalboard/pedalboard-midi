@@ -858,9 +858,7 @@ mod app {
             if new_preset != current_preset {
                 current_preset = new_preset;
                 let idx = (current_preset as usize) % presets.len();
-                // Show preset name overlay on both displays
-                displays.draw_overlay(DisplayLocation::L, presets[idx].name.as_str(), current_preset + 1);
-                displays.draw_overlay(DisplayLocation::R, presets[idx].name.as_str(), current_preset + 1);
+                displays.draw_preset_overlay(current_preset + 1, presets[idx].name.as_str());
                 overlay_ticks = PRESET_OVERLAY_DURATION;
                 show_overlay = true;
             }

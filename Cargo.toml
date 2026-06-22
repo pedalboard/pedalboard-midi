@@ -63,6 +63,7 @@ movavg = { version = "2.3.0", default-features = false }
 debouncr = "0.2.2"
 colorous = { version = "1.0.15", default-features = false }
 embedded-graphics = "0.8.2"
+eg-seven-segment = "0.2.0"
 embedded-text = "0.7.3"
 tinybmp = "0.7.0"
 
