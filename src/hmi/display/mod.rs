@@ -74,6 +74,40 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             display.flush().ok();
         }
     }
+
+    pub fn draw_performance(&mut self, preset: &pedalboard_midi::views::performance::PresetMeta) {
+        use pedalboard_midi::views::performance;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            performance::draw(display, preset, performance::Side::Left).ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            performance::draw(display, preset, performance::Side::Right).ok();
+            display.flush().ok();
+        }
+    }
+
+    pub fn draw_overlay(&mut self, loc: DisplayLocation, label: &str, value: u8) {
+        use pedalboard_midi::views::overlay;
+        match loc {
+            DisplayLocation::L => {
+                if let Some(display) = &mut self.display_l.driver {
+                    display.clear(Gray4::BLACK).ok();
+                    overlay::draw(display, label, value).ok();
+                    display.flush().ok();
+                }
+            }
+            DisplayLocation::R => {
+                if let Some(display) = &mut self.display_r.driver {
+                    display.clear(Gray4::BLACK).ok();
+                    overlay::draw(display, label, value).ok();
+                    display.flush().ok();
+                }
+            }
+        }
+    }
 }
 
 struct Display<I2C> {

@@ -7,3 +7,4 @@ pub mod ledring;
 pub mod loudness;
 pub mod opendeck_handler;
 pub mod storage;
+pub mod views;
