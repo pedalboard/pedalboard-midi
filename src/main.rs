@@ -818,29 +818,17 @@ mod app {
 
         // Placeholder preset metadata — will come from flash config later
         let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
-        presets[0].name = String::try_from("Preset 1").unwrap_or_default();
-        presets[0].button_labels[0] = String::try_from("Drive").unwrap_or_default();
-        presets[0].button_labels[1] = String::try_from("Delay").unwrap_or_default();
-        presets[0].button_labels[2] = String::try_from("Reverb").unwrap_or_default();
-        presets[0].button_labels[3] = String::try_from("Looper").unwrap_or_default();
-        presets[0].button_labels[4] = String::try_from("Tap").unwrap_or_default();
-        presets[0].button_labels[5] = String::try_from("Bank+").unwrap_or_default();
-
-        presets[1].name = String::try_from("Preset 2").unwrap_or_default();
-        presets[1].button_labels[0] = String::try_from("Fuzz").unwrap_or_default();
-        presets[1].button_labels[1] = String::try_from("Chorus").unwrap_or_default();
-        presets[1].button_labels[2] = String::try_from("Trem").unwrap_or_default();
-        presets[1].button_labels[3] = String::try_from("Phaser").unwrap_or_default();
-        presets[1].button_labels[4] = String::try_from("Wah").unwrap_or_default();
-        presets[1].button_labels[5] = String::try_from("Bank-").unwrap_or_default();
-
-        presets[2].name = String::try_from("Preset 3").unwrap_or_default();
-        presets[2].button_labels[0] = String::try_from("Clean").unwrap_or_default();
-        presets[2].button_labels[1] = String::try_from("Boost").unwrap_or_default();
-        presets[2].button_labels[2] = String::try_from("Hall").unwrap_or_default();
-        presets[2].button_labels[3] = String::try_from("Loop").unwrap_or_default();
-        presets[2].button_labels[4] = String::try_from("Tune").unwrap_or_default();
-        presets[2].button_labels[5] = String::try_from("Bank-").unwrap_or_default();
+        for i in 0..3 {
+            let mut name: String<16> = String::new();
+            core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", i + 1)).ok();
+            presets[i].name = name;
+            presets[i].button_labels[0] = String::try_from("A").unwrap_or_default();
+            presets[i].button_labels[1] = String::try_from("B").unwrap_or_default();
+            presets[i].button_labels[2] = String::try_from("C").unwrap_or_default();
+            presets[i].button_labels[3] = String::try_from("D").unwrap_or_default();
+            presets[i].button_labels[4] = String::try_from("E").unwrap_or_default();
+            presets[i].button_labels[5] = String::try_from("F").unwrap_or_default();
+        }
 
         let mut current_preset: u8 = 0;
         displays.draw_performance(&presets[0]);
