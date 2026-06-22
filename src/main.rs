@@ -113,6 +113,7 @@ mod app {
         usb_midi: UsbMidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
+        active_preset: u8,
     }
 
     #[local]
@@ -322,6 +323,7 @@ mod app {
                 usb_midi,
                 usb_dev,
                 opendeck,
+                active_preset: 0,
             },
             Local {
                 uart_midi_out,
@@ -380,7 +382,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -411,6 +413,9 @@ mod app {
             opendeck.reset_encoder_rings();
         });
 
+        let mut lp_d = pedalboard_midi::long_press::LongPressDetector::new();
+        let mut lp_f = pedalboard_midi::long_press::LongPressDetector::new();
+
         loop {
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -425,11 +430,52 @@ mod app {
             for e in slow_events.iter() {
                 events.push(*e).ok();
             }
+
+            // Long-press detection for D (prev preset) and F (next preset)
+            use pedalboard_midi::events::InputEvent;
+            use pedalboard_midi::long_press::Gesture;
+            let edge_d = events.iter().find_map(|e| match e {
+                InputEvent::ButtonD(edge) => Some(*edge),
+                _ => None,
+            });
+            let edge_f = events.iter().find_map(|e| match e {
+                InputEvent::ButtonF(edge) => Some(*edge),
+                _ => None,
+            });
+            let gesture_d = lp_d.update(edge_d);
+            let gesture_f = lp_f.update(edge_f);
+
+            // Handle preset switching on long press
+            let mut preset_changed = false;
+            if gesture_d == Some(Gesture::LongPress) || gesture_f == Some(Gesture::LongPress) {
+                preset_changed = true;
+            }
+
+            // Filter out D/F events if long-press is active (suppress normal MIDI)
+            let suppress_d = lp_d.is_active();
+            let suppress_f = lp_f.is_active();
+            events.retain(|e| match e {
+                InputEvent::ButtonD(_) if suppress_d => false,
+                InputEvent::ButtonF(_) if suppress_f => false,
+                _ => true,
+            });
+
             let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
-            if !events.is_empty() {
+            if !events.is_empty() || preset_changed {
+                if preset_changed {
+                    ctx.shared.active_preset.lock(|active_preset| {
+                        let current = *active_preset;
+                        let next = if gesture_f == Some(Gesture::LongPress) {
+                            (current + 1) % 32
+                        } else {
+                            if current == 0 { 31 } else { current - 1 }
+                        };
+                        *active_preset = next;
+                    });
+                }
                 ctx.shared.opendeck.lock(|opendeck| {
                     din_enabled = opendeck.din_midi_enabled();
                     for event in events {
@@ -757,49 +803,61 @@ mod app {
         }
     }
 
-    #[task(local = [displays])]
+    #[task(local = [displays], shared = [active_preset])]
     async fn display_out(
-        ctx: display_out::Context,
+        mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
     ) {
         use crate::hmi::display::DisplayLocation;
+        use heapless::String;
+        use pedalboard_midi::views::performance::PresetMeta;
 
         let displays = ctx.local.displays;
         displays.splash_screen();
         Mono::delay(2000.millis()).await;
 
         // Placeholder preset metadata — will come from flash config later
-        let preset = {
-            use heapless::String;
-            let mut p = pedalboard_midi::views::performance::PresetMeta::default();
-            p.name = String::try_from("Preset 1").unwrap_or_default();
-            p.button_labels[0] = String::try_from("Drive").unwrap_or_default();
-            p.button_labels[1] = String::try_from("Delay").unwrap_or_default();
-            p.button_labels[2] = String::try_from("Reverb").unwrap_or_default();
-            p.button_labels[3] = String::try_from("Looper").unwrap_or_default();
-            p.button_labels[4] = String::try_from("Tap").unwrap_or_default();
-            p.button_labels[5] = String::try_from("Bank+").unwrap_or_default();
-            p
-        };
+        let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
+        for i in 0..3 {
+            let mut name: String<16> = String::new();
+            core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", i + 1)).ok();
+            presets[i].name = name;
+            presets[i].button_labels[0] = String::try_from("A").unwrap_or_default();
+            presets[i].button_labels[1] = String::try_from("B").unwrap_or_default();
+            presets[i].button_labels[2] = String::try_from("C").unwrap_or_default();
+            presets[i].button_labels[3] = String::try_from("D").unwrap_or_default();
+            presets[i].button_labels[4] = String::try_from("E").unwrap_or_default();
+            presets[i].button_labels[5] = String::try_from("F").unwrap_or_default();
+        }
 
-        displays.draw_performance(&preset);
+        let mut current_preset: u8 = 0;
+        displays.draw_performance(&presets[0]);
 
         // Overlay timeout: counts down each loop iteration (200ms each)
         let mut overlay_ticks: u8 = 0;
         const OVERLAY_DURATION: u8 = 5; // ~1s
+        const PRESET_OVERLAY_DURATION: u8 = 10; // ~2s
 
-        let mut midi_log = pedalboard_midi::display::MidiLog::new();
         loop {
             let mut show_overlay = false;
+
+            // Check for preset change
+            let new_preset = ctx.shared.active_preset.lock(|p| *p);
+            if new_preset != current_preset {
+                current_preset = new_preset;
+                let idx = (current_preset as usize) % presets.len();
+                displays.draw_preset_overlay(current_preset + 1, presets[idx].name.as_str());
+                overlay_ticks = PRESET_OVERLAY_DURATION;
+                show_overlay = true;
+            }
 
             while let Ok(raw) = receiver.try_recv() {
                 let status = raw[0] & 0xF0;
                 let ch = (raw[0] & 0x0F) + 1;
                 match status {
-                    0x90 => midi_log.push_note_on(ch, raw[1], raw[2]),
-                    0x80 => midi_log.push_note_off(ch, raw[1]),
+                    0x90 => {},
+                    0x80 => {},
                     0xB0 => {
-                        midi_log.push_cc(ch, raw[1], raw[2]);
                         // Encoder overlay: CC#0 = Vol (left), CC#1 = Gain (right)
                         match raw[1] {
                             0 => {
@@ -815,15 +873,15 @@ mod app {
                             _ => {}
                         }
                     }
-                    0xC0 => midi_log.push_program_change(ch, raw[1]),
-                    _ => midi_log.push_raw("..."),
+                    _ => {},
                 }
             }
 
             if !show_overlay && overlay_ticks > 0 {
                 overlay_ticks -= 1;
                 if overlay_ticks == 0 {
-                    displays.draw_performance(&preset);
+                    let idx = (current_preset as usize) % presets.len();
+                    displays.draw_performance(&presets[idx]);
                 }
             }
 

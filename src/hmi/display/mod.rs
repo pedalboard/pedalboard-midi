@@ -108,6 +108,20 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             }
         }
     }
+
+    pub fn draw_preset_overlay(&mut self, number: u8, name: &str) {
+        use pedalboard_midi::views::preset_overlay;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            preset_overlay::draw(display, number, name).ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            preset_overlay::draw(display, number, name).ok();
+            display.flush().ok();
+        }
+    }
 }
 
 struct Display<I2C> {

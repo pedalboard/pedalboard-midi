@@ -42,8 +42,8 @@ impl opendeck::SystemHandler for PedalboardHandler {
     }
 }
 
-pub type OpenDeckConfig = opendeck::config::Config<2, 10, 2, 2, 10, PedalboardHandler>;
-pub type OpenDeckConfigResponses = SysexResponseIterator<2, 10, 2, 2, 10>;
+pub type OpenDeckConfig = opendeck::config::Config<32, 10, 2, 2, 10, PedalboardHandler>;
+pub type OpenDeckConfigResponses = SysexResponseIterator<32, 10, 2, 2, 10>;
 
 pub struct OpenDeck {
     pub config: OpenDeckConfig,
