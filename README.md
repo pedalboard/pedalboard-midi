@@ -7,6 +7,10 @@ and can therefore be configured using the [OpenDeck configurator](https://config
 
 More details about the OpenDeck configuration can be found [in the OpenDeck Wiki](https://github.com/shanteacontrols/OpenDeck/wiki/)
 
+## Acknowledgments
+
+This firmware builds upon the [OpenDeck](https://github.com/shanteacontrols/OpenDeck) platform by [Igor Petrović / Shantea Controls](https://shanteacontrols.com). OpenDeck provides a brilliantly designed, open SysEx configuration protocol that enables any MIDI controller to be configurable without custom software. Igor's dedication to open hardware and thorough documentation has been invaluable to this project. If you're building a MIDI controller and want a proven, professional platform, check out [shanteacontrols.com](https://shanteacontrols.com).
+
 ## Open Hardware
 
 See [Pedalboard HW](https://github.com/pedalboard/pedalboard-hw) for more details.
