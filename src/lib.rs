@@ -2,8 +2,8 @@
 
 pub mod display;
 pub mod events;
-pub mod leds;
 pub mod ledring;
+pub mod leds;
 pub mod long_press;
 pub mod loudness;
 pub mod opendeck_handler;

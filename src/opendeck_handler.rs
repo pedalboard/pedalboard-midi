@@ -1,16 +1,16 @@
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::Animation as RingAnim;
 use crate::leds::{Led, LedData, LedRings, Leds};
+use core::cell::RefCell;
 use midi2::BytesMessage;
 use opendeck::button::handler::Action;
 use opendeck::config::SysexResponseIterator;
 use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 use opendeck::led::ControlType;
+use rtic_sync::channel::Sender;
 use smart_leds::colors::*;
 use smart_leds::RGB8;
-use core::cell::RefCell;
-use rtic_sync::channel::Sender;
 
 pub const PERSIST_CAPACITY: usize = 4;
 
@@ -26,7 +26,9 @@ pub struct PedalboardHandler {
 
 impl PedalboardHandler {
     pub fn new(persist_sender: Sender<'static, PersistCommand, PERSIST_CAPACITY>) -> Self {
-        Self { persist_sender: RefCell::new(persist_sender) }
+        Self {
+            persist_sender: RefCell::new(persist_sender),
+        }
     }
 }
 
@@ -38,7 +40,10 @@ impl opendeck::SystemHandler for PedalboardHandler {
         rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
     }
     fn factory_reset(&self) {
-        self.persist_sender.borrow_mut().try_send(PersistCommand::EraseAll).ok();
+        self.persist_sender
+            .borrow_mut()
+            .try_send(PersistCommand::EraseAll)
+            .ok();
     }
 }
 
@@ -60,8 +65,12 @@ impl OpenDeck {
         use opendeck::encoder::EncoderSection;
         use opendeck::{Amount, Block, OpenDeckRequest, Wish};
 
-        let mut config =
-            opendeck::config::Config::new_with_adc_max(firmware_version, hardware_uid, PedalboardHandler::new(persist_sender), 4095);
+        let mut config = opendeck::config::Config::new_with_adc_max(
+            firmware_version,
+            hardware_uid,
+            PedalboardHandler::new(persist_sender),
+            4095,
+        );
 
         // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
         for i in 0..2u16 {
@@ -93,7 +102,10 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Encoder(i, EncoderSection::Accelleration(opendeck::encoder::Accelleration::Medium)),
+                Block::Encoder(
+                    i,
+                    EncoderSection::Accelleration(opendeck::encoder::Accelleration::Medium),
+                ),
             ));
         }
 
@@ -142,7 +154,10 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(idx, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+                Block::Led(
+                    idx,
+                    LedSection::ControlType(ControlType::LocalNoteSingleValue),
+                ),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -204,7 +219,10 @@ impl OpenDeck {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
                 Amount::Single,
-                Block::Led(idx, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+                Block::Led(
+                    idx,
+                    LedSection::ControlType(ControlType::LocalNoteSingleValue),
+                ),
             ));
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -223,29 +241,23 @@ impl OpenDeck {
             ));
         }
 
-        // Set LED colors
+        // Set LED colors - each ring a different color
         use opendeck::led::Color;
-        for i in [0u16, 1, 2, 4] {
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(i, LedSection::ColorTesting(Color::Green)),
-            ));
+        let colors = [
+            Color::Red,     // 0 - A
+            Color::Green,   // 1 - B
+            Color::Blue,    // 2 - C
+            Color::Yellow,  // 3 - D
+            Color::Magenta, // 4 - E
+            Color::Cyan,    // 5 - F
+            Color::White,   // 6 - Vol
+            Color::Red,     // 7 - Gain
+        ];
+        for (i, &c) in colors.iter().enumerate() {
+            config.set_output_color(i, c);
         }
-        for i in [3u16, 5, 6, 7] {
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(i, LedSection::ColorTesting(Color::Cyan)),
-            ));
-        }
-        for i in [8u16, 9] {
-            config.process_req(OpenDeckRequest::Configuration(
-                Wish::Set,
-                Amount::Single,
-                Block::Led(i, LedSection::ColorTesting(Color::Green)),
-            ));
-        }
+        config.set_output_color(8, Color::Green);
+        config.set_output_color(9, Color::Blue);
 
         // Reset encoder values to 0
         for i in 0..2u16 {
@@ -290,9 +302,9 @@ impl OpenDeck {
     /// Render a component info SysEx message for the given input event.
     /// Returns None if SysEx session is not active.
     pub fn component_info(&self, event: &InputEvent, buf: &mut [u8]) -> Option<usize> {
-        use opendeck::{BlockId, ValueSize};
-        use opendeck::renderer::OpenDeckRenderer;
         use midi2::prelude::*;
+        use opendeck::renderer::OpenDeckRenderer;
+        use opendeck::{BlockId, ValueSize};
 
         if !self.config.sysex_enabled() {
             return None;
@@ -393,7 +405,11 @@ impl OpenDeck {
         ];
         const SINGLE_LEDS: [Led; 2] = [Led::Mode, Led::Mon];
 
-        for i in 0..self.config.output_count().min(8) {
+        for (i, ring) in RINGS
+            .iter()
+            .enumerate()
+            .take(self.config.output_count().min(8))
+        {
             let ct = self.config.output_control_type(i);
             let rgb = color_to_rgb(self.config.output_color(i));
             let is_multi = matches!(
@@ -406,23 +422,21 @@ impl OpenDeck {
             if is_multi {
                 let level = self.config.output_level(i);
                 let fill = ((level as u16 * 12) / 127).min(12) as u8;
-                self.leds.set_ledring(RingAnim::Fill(rgb, fill), RINGS[i]);
+                self.leds.set_ledring(RingAnim::Fill(rgb, fill), *ring);
             } else {
                 let on = self.config.output_state(i);
-                self.leds.set_ledring(
-                    if on { RingAnim::On(rgb) } else { RingAnim::Off },
-                    RINGS[i],
-                );
+                self.leds
+                    .set_ledring(if on { RingAnim::On(rgb) } else { RingAnim::Off }, *ring);
             }
         }
         // Outputs 8-9 → single LEDs
-        for i in 0..2 {
+        for (i, single_led) in SINGLE_LEDS.iter().enumerate() {
             let idx = 8 + i;
             if idx < self.config.output_count() {
                 let on = self.config.output_state(idx);
                 let rgb = color_to_rgb(self.config.output_color(idx));
                 self.leds
-                    .set_single(SINGLE_LEDS[i], if on { Some(rgb) } else { None });
+                    .set_single(*single_led, if on { Some(rgb) } else { None });
             }
         }
     }
@@ -431,6 +445,7 @@ impl OpenDeck {
 fn color_to_rgb(c: opendeck::led::Color) -> RGB8 {
     use opendeck::led::Color;
     match c {
+        Color::Off => RGB8::new(0, 0, 0),
         Color::Red => RGB8::new(255, 0, 0),
         Color::Green => RGB8::new(0, 255, 0),
         Color::Yellow => RGB8::new(255, 255, 0),
@@ -438,7 +453,6 @@ fn color_to_rgb(c: opendeck::led::Color) -> RGB8 {
         Color::Magenta => RGB8::new(255, 0, 255),
         Color::Cyan => RGB8::new(0, 255, 255),
         Color::White => RGB8::new(255, 255, 255),
-        _ => RGB8::new(0, 255, 0),
     }
 }
 
@@ -466,16 +480,34 @@ fn parse_bytes_message(m: &BytesMessage<&[u8]>) -> Option<(u8, u8, u8, bool, boo
             use midi2::channel_voice1::ChannelVoice1;
             match cv {
                 ChannelVoice1::NoteOn(n) => {
-                    let ch: u8 = u4::from(n.channel()).into();
-                    Some((ch + 1, n.note_number().into(), n.velocity().into(), true, false))
+                    let ch: u8 = n.channel().into();
+                    Some((
+                        ch + 1,
+                        n.note_number().into(),
+                        n.velocity().into(),
+                        true,
+                        false,
+                    ))
                 }
                 ChannelVoice1::NoteOff(n) => {
-                    let ch: u8 = u4::from(n.channel()).into();
-                    Some((ch + 1, n.note_number().into(), n.velocity().into(), false, false))
+                    let ch: u8 = n.channel().into();
+                    Some((
+                        ch + 1,
+                        n.note_number().into(),
+                        n.velocity().into(),
+                        false,
+                        false,
+                    ))
                 }
                 ChannelVoice1::ControlChange(cc) => {
-                    let ch: u8 = u4::from(cc.channel()).into();
-                    Some((ch + 1, cc.control().into(), cc.control_data().into(), true, true))
+                    let ch: u8 = cc.channel().into();
+                    Some((
+                        ch + 1,
+                        cc.control().into(),
+                        cc.control_data().into(),
+                        true,
+                        true,
+                    ))
                 }
                 _ => None,
             }
@@ -505,7 +537,6 @@ impl From<Pulse> for EncoderPulse {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     fn test_config() -> OpenDeck {
         OpenDeck::new(
@@ -549,7 +580,10 @@ mod tests {
         od.config.process_req(OpenDeckRequest::Configuration(
             Wish::Set,
             Amount::Single,
-            Block::Led(0, LedSection::ControlType(ControlType::LocalNoteSingleValue)),
+            Block::Led(
+                0,
+                LedSection::ControlType(ControlType::LocalNoteSingleValue),
+            ),
         ));
         od.config.process_req(OpenDeckRequest::Configuration(
             Wish::Set,

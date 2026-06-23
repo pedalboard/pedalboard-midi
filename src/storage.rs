@@ -120,7 +120,10 @@ impl ConfigStore {
     /// Store a config value.
     pub async fn save(&mut self, block: u8, section: u8, index: u8, value: u16) {
         let key = encode_key(block, section, index);
-        let _ = self.map.store_item(&mut self.buf, &key, &ConfigValue(value)).await;
+        let _ = self
+            .map
+            .store_item(&mut self.buf, &key, &ConfigValue(value))
+            .await;
     }
 
     /// Load a config value. Returns None if not found.
@@ -146,7 +149,9 @@ impl ConfigStore {
             return entries;
         };
         let mut item_buf = [0u8; 64];
-        while let Ok(Some((key, ConfigValue(value)))) = iter.next::<ConfigValue>(&mut item_buf).await {
+        while let Ok(Some((key, ConfigValue(value)))) =
+            iter.next::<ConfigValue>(&mut item_buf).await
+        {
             let block = ((key >> 13) & 0x07) as u8;
             let section = ((key >> 8) & 0x1F) as u8;
             let index = (key & 0xFF) as u8;

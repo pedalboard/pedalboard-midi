@@ -67,11 +67,6 @@ eg-seven-segment = "0.2.0"
 embedded-text = "0.7.3"
 tinybmp = "0.7.0"
 
-[patch.crates-io]
-
-[patch."https://github.com/pedalboard/opendeck"]
-opendeck = { path = "../opendeck" }
-
 [dev-dependencies]
 
 [features]

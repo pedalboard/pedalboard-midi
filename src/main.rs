@@ -27,14 +27,14 @@ mod app {
     use super::*;
 
     use crate::hmi::inputs::{Buttons, ExpressionPedals, Inputs, Rotary};
-    use pedalboard_midi::leds::LedData;
-    use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use crate::Mono;
     use core::mem::MaybeUninit;
     use defmt::{debug, error, info, warn};
     use embedded_hal::digital::OutputPin;
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
+    use pedalboard_midi::leds::LedData;
+    use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
     use rtic_sync::make_channel;
 
@@ -48,11 +48,11 @@ mod app {
         fugit::{HertzU32, RateExtU32},
         gpio::{
             bank0::{
-                Gpio0, Gpio1, Gpio10, Gpio11, Gpio16, Gpio17, Gpio18, Gpio19,
-                Gpio2, Gpio20, Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
+                Gpio0, Gpio1, Gpio10, Gpio11, Gpio16, Gpio17, Gpio18, Gpio19, Gpio2, Gpio20,
+                Gpio21, Gpio24, Gpio25, Gpio3, Gpio4, Gpio5, Gpio6, Gpio7,
             },
-            FunctionI2C, FunctionSio, FunctionUart, Pin, Pins, PullDown, PullUp,
-            SioInput, SioOutput,
+            FunctionI2C, FunctionSio, FunctionUart, Pin, Pins, PullDown, PullUp, SioInput,
+            SioOutput,
         },
         i2c::I2C,
         pac::{I2C0, UART0},
@@ -136,7 +136,8 @@ mod app {
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
-        persist_sender: Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
+        persist_sender:
+            Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
     }
     const USB_OUT_CAPACITY: usize = 32;
     const SYSEX_CAPACITY: usize = 1;
@@ -251,12 +252,7 @@ mod app {
         let led_pin: Pin<Gpio11, rp2040_hal::gpio::FunctionPio0, PullDown> =
             pins.gpio11.into_function();
         let (mut pio0, sm0, _, _, _) = ctx.device.PIO0.split(&mut resets);
-        let led_spi = Ws2812Direct::new(
-            led_pin,
-            &mut pio0,
-            sm0,
-            clocks.peripheral_clock.freq(),
-        );
+        let led_spi = Ws2812Direct::new(led_pin, &mut pio0, sm0, clocks.peripheral_clock.freq());
 
         // Configure I²C for OLED display
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
@@ -275,7 +271,8 @@ mod app {
         let mut serial_number = [0u8; 16];
         let eeprom_serial_ok = {
             use embedded_hal::i2c::I2c;
-            i2c.write_read(0x58u8, &[0x80u8], &mut serial_number).is_ok()
+            i2c.write_read(0x58u8, &[0x80u8], &mut serial_number)
+                .is_ok()
         };
 
         let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
@@ -295,7 +292,10 @@ mod app {
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
         let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
-        let (persist_sender, persist_receiver) = make_channel!(pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY);
+        let (persist_sender, persist_receiver) = make_channel!(
+            pedalboard_midi::opendeck_handler::PersistCommand,
+            PERSIST_CAPACITY
+        );
 
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
@@ -368,10 +368,8 @@ mod app {
                     ctx.local.mon_sender_midi.try_send(()).ok();
                 }
                 if let Some(raw) = din_to_usb {
-                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                        CableNumber::Cable0,
-                        &raw,
-                    );
+                    let packet =
+                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw);
                     if let Ok(packet) = packet {
                         ctx.local.usb_sender_din_thru.try_send(packet).ok();
                     }
@@ -402,11 +400,12 @@ mod app {
         }
         // Reset encoder values and rings after glitches
         ctx.shared.opendeck.lock(|opendeck| {
-            use opendeck::{Amount, Block, OpenDeckRequest, Wish};
             use opendeck::encoder::EncoderSection;
+            use opendeck::{Amount, Block, OpenDeckRequest, Wish};
             for i in 0..2u16 {
                 opendeck.config.process_req(OpenDeckRequest::Configuration(
-                    Wish::Set, Amount::Single,
+                    Wish::Set,
+                    Amount::Single,
                     Block::Encoder(i, EncoderSection::RepeatedValue(0)),
                 ));
             }
@@ -471,7 +470,11 @@ mod app {
                         let next = if gesture_f == Some(Gesture::LongPress) {
                             (current + 1) % 32
                         } else {
-                            if current == 0 { 31 } else { current - 1 }
+                            if current == 0 {
+                                31
+                            } else {
+                                current - 1
+                            }
                         };
                         *active_preset = next;
                     });
@@ -515,10 +518,7 @@ mod app {
                 // Display log (always for locally-generated messages)
                 display_sender.try_send(*raw).ok();
                 // USB MIDI out (always for locally-generated messages)
-                let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                    CableNumber::Cable0,
-                    raw,
-                );
+                let packet = UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, raw);
                 if let Ok(packet) = packet {
                     sender.try_send(packet).ok();
                 }
@@ -526,10 +526,9 @@ mod app {
             // Send component info SysEx (chunked into 3-byte USB MIDI packets)
             if let Some((ci_buf, ci_len)) = component_info_buf {
                 for chunk in ci_buf[..ci_len].chunks(3) {
-                    if let Ok(packet) = UsbMidiEventPacket::try_from_payload_bytes(
-                        CableNumber::Cable0,
-                        chunk,
-                    ) {
+                    if let Ok(packet) =
+                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk)
+                    {
                         sender.try_send(packet).ok();
                     }
                 }
@@ -612,15 +611,21 @@ mod app {
                         // Format: F0 00 53 43 00 PP 01 00 BLOCK SECTION IDX_H IDX_L VAL_H VAL_L F7
                         if sysex_receive_buffer.len() >= 15
                             && sysex_receive_buffer[6] == 0x01  // WISH = SET
-                            && sysex_receive_buffer[7] == 0x00  // AMOUNT = SINGLE
+                            && sysex_receive_buffer[7] == 0x00
+                        // AMOUNT = SINGLE
                         {
                             let block = sysex_receive_buffer[8];
                             let section = sysex_receive_buffer[9];
                             let index = sysex_receive_buffer[11]; // LSB
-                            // Store raw two-byte value as-is (high << 8 | low)
+                                                                  // Store raw two-byte value as-is (high << 8 | low)
                             let value = ((sysex_receive_buffer[12] as u16) << 8)
                                 | sysex_receive_buffer[13] as u16;
-                            ctx.local.persist_sender.try_send(pedalboard_midi::opendeck_handler::PersistCommand::Save(block, section, index, value)).ok();
+                            ctx.local
+                                .persist_sender
+                                .try_send(pedalboard_midi::opendeck_handler::PersistCommand::Save(
+                                    block, section, index, value,
+                                ))
+                                .ok();
                         }
 
                         let mut responses = OpenDeckConfigResponses::None;
@@ -696,7 +701,11 @@ mod app {
     #[task(shared = [opendeck])]
     async fn persist(
         mut ctx: persist::Context,
-        mut receiver: Receiver<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
+        mut receiver: Receiver<
+            'static,
+            pedalboard_midi::opendeck_handler::PersistCommand,
+            PERSIST_CAPACITY,
+        >,
     ) {
         info!("config persistence: loading from flash");
         if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
@@ -705,14 +714,23 @@ mod app {
             if !entries.is_empty() {
                 info!("restoring {} config entries from flash", entries.len());
                 ctx.shared.opendeck.lock(|opendeck| {
-                    use opendeck::{Amount, OpenDeckRequest, Wish};
                     let mut buf = [0u8; 78];
                     for &(block, section, index, value) in &entries {
                         let raw = [
-                            0xF0, 0x00, 0x53, 0x43, 0x00, 0x00, 0x01, 0x00,
-                            block, section,
-                            (index >> 7) & 0x7F, index & 0x7F,
-                            ((value >> 8) as u8) & 0x7F, (value as u8) & 0x7F,
+                            0xF0,
+                            0x00,
+                            0x53,
+                            0x43,
+                            0x00,
+                            0x00,
+                            0x01,
+                            0x00,
+                            block,
+                            section,
+                            (index >> 7) & 0x7F,
+                            index & 0x7F,
+                            ((value >> 8) as u8) & 0x7F,
+                            (value as u8) & 0x7F,
                             0xF7,
                         ];
                         let mut responses = opendeck.config.process_sysex(&raw);
@@ -803,7 +821,7 @@ mod app {
         }
     }
 
-    #[task(local = [displays], shared = [active_preset])]
+    #[task(local = [displays], shared = [active_preset, opendeck])]
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
@@ -818,16 +836,16 @@ mod app {
 
         // Placeholder preset metadata — will come from flash config later
         let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
-        for i in 0..3 {
+        for (i, preset) in presets.iter_mut().enumerate() {
             let mut name: String<16> = String::new();
             core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", i + 1)).ok();
-            presets[i].name = name;
-            presets[i].button_labels[0] = String::try_from("A").unwrap_or_default();
-            presets[i].button_labels[1] = String::try_from("B").unwrap_or_default();
-            presets[i].button_labels[2] = String::try_from("C").unwrap_or_default();
-            presets[i].button_labels[3] = String::try_from("D").unwrap_or_default();
-            presets[i].button_labels[4] = String::try_from("E").unwrap_or_default();
-            presets[i].button_labels[5] = String::try_from("F").unwrap_or_default();
+            preset.name = name;
+            preset.button_labels[0] = String::try_from("A").unwrap_or_default();
+            preset.button_labels[1] = String::try_from("B").unwrap_or_default();
+            preset.button_labels[2] = String::try_from("C").unwrap_or_default();
+            preset.button_labels[3] = String::try_from("D").unwrap_or_default();
+            preset.button_labels[4] = String::try_from("E").unwrap_or_default();
+            preset.button_labels[5] = String::try_from("F").unwrap_or_default();
         }
 
         let mut current_preset: u8 = 0;
@@ -838,46 +856,68 @@ mod app {
         const OVERLAY_DURATION: u8 = 5; // ~1s
         const PRESET_OVERLAY_DURATION: u8 = 10; // ~2s
 
+        let mut midi_log = pedalboard_midi::display::MidiLog::new();
+        let mut debug_mode = false;
+
         loop {
             let mut show_overlay = false;
+
+            // Check if SysEx session switched mode
+            let sysex_active = ctx.shared.opendeck.lock(|od| od.config.sysex_enabled());
+            if sysex_active != debug_mode {
+                debug_mode = sysex_active;
+                if debug_mode {
+                    displays.draw_midi_log(&midi_log);
+                } else {
+                    let idx = (current_preset as usize) % presets.len();
+                    displays.draw_performance(&presets[idx]);
+                }
+            }
 
             // Check for preset change
             let new_preset = ctx.shared.active_preset.lock(|p| *p);
             if new_preset != current_preset {
                 current_preset = new_preset;
                 let idx = (current_preset as usize) % presets.len();
-                displays.draw_preset_overlay(current_preset + 1, presets[idx].name.as_str());
-                overlay_ticks = PRESET_OVERLAY_DURATION;
-                show_overlay = true;
+                if !debug_mode {
+                    displays.draw_preset_overlay(current_preset + 1, presets[idx].name.as_str());
+                    overlay_ticks = PRESET_OVERLAY_DURATION;
+                    show_overlay = true;
+                }
             }
 
             while let Ok(raw) = receiver.try_recv() {
                 let status = raw[0] & 0xF0;
                 let ch = (raw[0] & 0x0F) + 1;
                 match status {
-                    0x90 => {},
-                    0x80 => {},
+                    0x90 => midi_log.push_note_on(ch, raw[1], raw[2]),
+                    0x80 => midi_log.push_note_off(ch, raw[1]),
                     0xB0 => {
-                        // Encoder overlay: CC#0 = Vol (left), CC#1 = Gain (right)
-                        match raw[1] {
-                            0 => {
-                                displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
-                                overlay_ticks = OVERLAY_DURATION;
-                                show_overlay = true;
+                        midi_log.push_cc(ch, raw[1], raw[2]);
+                        if !debug_mode {
+                            // Encoder overlay: CC#0 = Vol (left), CC#1 = Gain (right)
+                            match raw[1] {
+                                0 => {
+                                    displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
+                                    overlay_ticks = OVERLAY_DURATION;
+                                    show_overlay = true;
+                                }
+                                1 => {
+                                    displays.draw_overlay(DisplayLocation::R, "Gain", raw[2]);
+                                    overlay_ticks = OVERLAY_DURATION;
+                                    show_overlay = true;
+                                }
+                                _ => {}
                             }
-                            1 => {
-                                displays.draw_overlay(DisplayLocation::R, "Gain", raw[2]);
-                                overlay_ticks = OVERLAY_DURATION;
-                                show_overlay = true;
-                            }
-                            _ => {}
                         }
                     }
-                    _ => {},
+                    _ => {}
                 }
             }
 
-            if !show_overlay && overlay_ticks > 0 {
+            if debug_mode {
+                displays.draw_midi_log(&midi_log);
+            } else if !show_overlay && overlay_ticks > 0 {
                 overlay_ticks -= 1;
                 if overlay_ticks == 0 {
                     let idx = (current_preset as usize) % presets.len();
@@ -901,5 +941,4 @@ mod app {
             Mono::delay(500.millis()).await;
         }
     }
-
 }

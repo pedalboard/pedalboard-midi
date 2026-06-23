@@ -17,16 +17,18 @@ mount: ## mount the RP2040 in bootsel mode
 	sudo mount -o uid=1000,gid=1000 /dev/disk/by-label/RPI-RP2 $(MOUNT_POINT)
 
 run: ## build and run by using pico_probe
-	cargo run --release
+	cargo run --release $(OPENDECK_PATCH)
 
 clean: ## clean build results
 	cargo clean
 
+OPENDECK_PATCH := --config 'patch."https://github.com/pedalboard/opendeck".opendeck.path="../opendeck"'
+
 build: ## build
-	cargo build --release
+	cargo build --release $(OPENDECK_PATCH)
 
 lint: ## lint source code
-	cargo clippy --all-features
+	cargo clippy --all-features $(OPENDECK_PATCH)
 
 attach: ## attach to the running program
 	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
@@ -35,12 +37,12 @@ device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
 
 bootsel: device ## restart the RP2040 in bootsel mode
-	-aconnect -d 128:1 16:0 
+	-aconnect -d 128:1 16:0
 	amidi -S 'F0 00 53 43 00 00 55 F7' -p "$(DEVICE)"
 	-aconnect 128:1 16:0
 
 reboot: device ## reboot the RP2040
-	-aconnect -d 128:1 16:0 
+	-aconnect -d 128:1 16:0
 	amidi -S 'F0 00 53 43 00 00 7F F7' -p "$(DEVICE)"
 	-aconnect 128:1 16:0
 
@@ -55,7 +57,7 @@ log-midi: device ## log the midi traffic coming from USB
 	@amidi -p "$(DEVICE)" -d
 
 uf2: ## build uf2
-	cargo build --release
+	cargo build --release $(OPENDECK_PATCH)
 	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
 release: ## create a new release (RELEASE_LEVEL=minor make release)
@@ -75,4 +77,3 @@ usbip-attach: ## attach the device to the host
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
-
