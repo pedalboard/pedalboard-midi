@@ -422,7 +422,7 @@ impl OpenDeck {
             if is_multi {
                 let level = self.config.output_level(i);
                 let fill = ((level as u16 * 12) / 127).min(12) as u8;
-                self.leds.set_ledring(RingAnim::Fill(rgb, fill), *ring);
+                self.leds.set_ledring(RingAnim::Heatmap(fill), *ring);
             } else {
                 let on = self.config.output_state(i);
                 self.leds
