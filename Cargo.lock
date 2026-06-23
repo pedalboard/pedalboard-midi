@@ -938,7 +938,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#b39d46a2deb2464946c13304a9f3315a7b3f3e6a"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#52d5727bf09506a646897a6e90c7bf96652d1589"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
@@ -1172,9 +1172,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.45"
+version = "1.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
+checksum = "dfbc457d0c7a0759a614551b11a6409e5951f6c7537be1f1b7682b9ae9230368"
 dependencies = [
  "proc-macro2",
 ]

@@ -1,5 +1,5 @@
 
-.PHONY: help install install-latest-release device mount clean run build lint debug device log-midi uf2
+.PHONY: help install install-latest-release device mount clean run build lint debug device log-midi uf2 deploy
 
 .DEFAULT_GOAL := help
 
@@ -74,6 +74,9 @@ usbip-host: ## run usbip host on the device
 usbip-attach: ## attach the device to the host
 	sudo modprobe vhci-hcd
 	sudo usbip attach -r pi-dev -b 1-1.1
+
+deploy: ## build, copy, and flash to cm5-dev (stops/restarts bridge)
+	./deploy.sh
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

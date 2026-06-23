@@ -303,6 +303,7 @@ mod app {
         poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
         display_out::spawn(display_receiver).unwrap();
         persist::spawn(persist_receiver).unwrap();
+        midi_clock::spawn(usb_sender.clone(), din_thru_sender.clone()).unwrap();
 
         let mut opendeck = OpenDeck::new(
             opendeck::config::FirmwareVersion {
@@ -926,6 +927,41 @@ mod app {
             }
 
             Mono::delay(200.millis()).await;
+        }
+    }
+
+    #[task(shared = [opendeck])]
+    async fn midi_clock(
+        mut ctx: midi_clock::Context,
+        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        mut din_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
+    ) {
+        loop {
+            let interval_us = ctx.shared.opendeck.lock(|opendeck| {
+                let send_clock = opendeck.config.global_midi().send_midi_clock_enabled();
+                if send_clock {
+                    Some(opendeck.config.bpm().tick_interval_us())
+                } else {
+                    None
+                }
+            });
+            match interval_us {
+                Some(us) => {
+                    // Send MIDI Clock (0xF8)
+                    let raw: [u8; 3] = [0xF8, 0x00, 0x00];
+                    din_sender.try_send(raw).ok();
+                    if let Ok(packet) =
+                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &[0xF8])
+                    {
+                        sender.try_send(packet).ok();
+                    }
+                    Mono::delay((us as u64).micros()).await;
+                }
+                None => {
+                    // Clock disabled, check again in 100ms
+                    Mono::delay(100.millis()).await;
+                }
+            }
         }
     }
 
