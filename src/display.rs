@@ -5,11 +5,7 @@ use embedded_graphics::{
     prelude::*,
     primitives::Rectangle,
 };
-use embedded_text::{
-    alignment::HorizontalAlignment,
-    style::TextBoxStyleBuilder,
-    TextBox,
-};
+use embedded_text::{alignment::HorizontalAlignment, style::TextBoxStyleBuilder, TextBox};
 use heapless::String;
 
 const DISPLAY_SIZE: u32 = 128;
@@ -78,22 +74,20 @@ impl MidiLog {
             .build();
 
         let mut buf: String<256> = String::new();
-        let start = if self.next >= MAX_LINES {
-            self.next
-        } else {
-            0
-        };
+        let start = if self.next >= MAX_LINES { self.next } else { 0 };
 
         for i in 0..MAX_LINES {
             let idx = (start + i) % MAX_LINES;
             if !self.lines[idx].is_empty() {
-                write!(buf, "{}\n", self.lines[idx]).ok();
+                writeln!(buf, "{}", self.lines[idx]).ok();
             }
         }
 
-        let bounds = Rectangle::new(Point::new(2, 2), Size::new(DISPLAY_SIZE - 4, DISPLAY_SIZE - 4));
-        TextBox::with_textbox_style(buf.as_str(), bounds, style, textbox_style)
-            .draw(display)?;
+        let bounds = Rectangle::new(
+            Point::new(2, 2),
+            Size::new(DISPLAY_SIZE - 4, DISPLAY_SIZE - 4),
+        );
+        TextBox::with_textbox_style(buf.as_str(), bounds, style, textbox_style).draw(display)?;
 
         Ok(())
     }

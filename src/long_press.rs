@@ -16,6 +16,12 @@ pub enum Gesture {
     LongPress,
 }
 
+impl Default for LongPressDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LongPressDetector {
     pub fn new() -> Self {
         Self {

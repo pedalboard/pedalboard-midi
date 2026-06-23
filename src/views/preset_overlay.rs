@@ -4,7 +4,6 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Gray4,
     prelude::*,
-    primitives::Rectangle,
     text::Text,
 };
 use heapless::String;
@@ -32,15 +31,13 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     let total_width = digit_count * 50; // ~50px per digit with spacing
     let x = ((DISPLAY_SIZE - total_width) / 2) as i32;
 
-    Text::new(buf.as_str(), Point::new(x, 75), seg_style)
-        .draw(display)?;
+    Text::new(buf.as_str(), Point::new(x, 75), seg_style).draw(display)?;
 
     // Preset name below in normal font
     let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
     let name_width = (name.len() as u32) * 10;
     let name_x = ((DISPLAY_SIZE - name_width) / 2) as i32;
-    Text::new(name, Point::new(name_x.max(0), 110), text_style)
-        .draw(display)?;
+    Text::new(name, Point::new(name_x.max(0), 110), text_style).draw(display)?;
 
     Ok(())
 }

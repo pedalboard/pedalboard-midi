@@ -7,7 +7,7 @@ use embedded_hal::digital::InputPin;
 use movavg::MovAvg;
 use pedalboard_midi::events::{Edge, InputEvent, Pulse};
 use rotary_encoder_embedded::{quadrature::QuadratureTableMode, Direction, RotaryEncoder};
-use rp2040_hal::adc::{Adc, AdcPin};
+use rp2040_hal::adc::AdcPin;
 type Sma = MovAvg<u16, u32, 10>;
 
 pub struct Rotary<DT, CLK, B> {
@@ -77,15 +77,39 @@ pub struct ExpressionPedals {
     exp_a: ExpressionPedal,
     exp_b: ExpressionPedal,
     adc: &'static mut rp2040_hal::adc::Adc,
-    pin_a: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio27, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
-    pin_b: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio28, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
+    pin_a: AdcPin<
+        rp2040_hal::gpio::Pin<
+            rp2040_hal::gpio::bank0::Gpio27,
+            rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>,
+            rp2040_hal::gpio::PullNone,
+        >,
+    >,
+    pin_b: AdcPin<
+        rp2040_hal::gpio::Pin<
+            rp2040_hal::gpio::bank0::Gpio28,
+            rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>,
+            rp2040_hal::gpio::PullNone,
+        >,
+    >,
 }
 
 impl ExpressionPedals {
     pub fn new_direct(
         adc: &'static mut rp2040_hal::adc::Adc,
-        pin_a: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio27, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
-        pin_b: AdcPin<rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio28, rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>, rp2040_hal::gpio::PullNone>>,
+        pin_a: AdcPin<
+            rp2040_hal::gpio::Pin<
+                rp2040_hal::gpio::bank0::Gpio27,
+                rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>,
+                rp2040_hal::gpio::PullNone,
+            >,
+        >,
+        pin_b: AdcPin<
+            rp2040_hal::gpio::Pin<
+                rp2040_hal::gpio::bank0::Gpio28,
+                rp2040_hal::gpio::FunctionSio<rp2040_hal::gpio::SioInput>,
+                rp2040_hal::gpio::PullNone,
+            >,
+        >,
     ) -> Self {
         ExpressionPedals {
             sample_rate_reduction: 0,

@@ -60,8 +60,8 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 ) -> Result<(), D::Error> {
     // Button indices: A=0, B=1, C=2, D=3, E=4, F=5
     let indices = match side {
-        Side::Left => [3, 4, 0],   // D, E, A
-        Side::Right => [5, 1, 2],  // F, B, C
+        Side::Left => [3, 4, 0],  // D, E, A
+        Side::Right => [5, 1, 2], // F, B, C
     };
 
     let stroke = PrimitiveStyle::with_stroke(Gray4::WHITE, 2);
@@ -88,12 +88,30 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         // B is below-left of R  → bottom-left
         // C is below-right of R → bottom-right
         let radii = match (side, i) {
-            (Side::Left, 0) => CornerRadiiBuilder::new().all(radius).top_left(Size::zero()).build(),
-            (Side::Left, 1) => CornerRadiiBuilder::new().all(radius).top_right(Size::zero()).build(),
-            (Side::Left, _) => CornerRadiiBuilder::new().all(radius).bottom_left(Size::zero()).build(),
-            (Side::Right, 0) => CornerRadiiBuilder::new().all(radius).top_right(Size::zero()).build(),
-            (Side::Right, 1) => CornerRadiiBuilder::new().all(radius).bottom_left(Size::zero()).build(),
-            (Side::Right, _) => CornerRadiiBuilder::new().all(radius).bottom_right(Size::zero()).build(),
+            (Side::Left, 0) => CornerRadiiBuilder::new()
+                .all(radius)
+                .top_left(Size::zero())
+                .build(),
+            (Side::Left, 1) => CornerRadiiBuilder::new()
+                .all(radius)
+                .top_right(Size::zero())
+                .build(),
+            (Side::Left, _) => CornerRadiiBuilder::new()
+                .all(radius)
+                .bottom_left(Size::zero())
+                .build(),
+            (Side::Right, 0) => CornerRadiiBuilder::new()
+                .all(radius)
+                .top_right(Size::zero())
+                .build(),
+            (Side::Right, 1) => CornerRadiiBuilder::new()
+                .all(radius)
+                .bottom_left(Size::zero())
+                .build(),
+            (Side::Right, _) => CornerRadiiBuilder::new()
+                .all(radius)
+                .bottom_right(Size::zero())
+                .build(),
         };
 
         RoundedRectangle::new(rect, radii)
@@ -103,10 +121,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         // Label text with shadow for depth, then white on top
         let label = &preset.button_labels[indices[i as usize]];
         let shadow_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x7));
-        let shadow_rect = Rectangle::new(
-            rect.top_left + Point::new(1, 1),
-            rect.size,
-        );
+        let shadow_rect = Rectangle::new(rect.top_left + Point::new(1, 1), rect.size);
         TextBox::with_textbox_style(label.as_str(), shadow_rect, shadow_style, textbox_style)
             .draw(display)?;
         TextBox::with_textbox_style(label.as_str(), rect, text_style, textbox_style)
