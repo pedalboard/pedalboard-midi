@@ -114,6 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
+        labels: pedalboard_midi::labels::LabelStore<10, 2>,
     }
 
     #[local]
@@ -325,6 +326,7 @@ mod app {
                 usb_dev,
                 opendeck,
                 active_preset: 0,
+                labels: pedalboard_midi::labels::LabelStore::new(),
             },
             Local {
                 uart_midi_out,
@@ -540,7 +542,7 @@ mod app {
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck]
+        shared =[usb_midi,usb_dev,opendeck,labels]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -607,6 +609,77 @@ mod app {
                 Ok(_) => {
                     if packet.is_sysex_end() {
                         debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
+
+                        // Handle pedalboard label messages (M_ID_2 = 0x44)
+                        if pedalboard_midi::labels::is_label_message(sysex_receive_buffer.as_ref())
+                        {
+                            if let Some(req) =
+                                pedalboard_midi::labels::parse(sysex_receive_buffer.as_ref())
+                            {
+                                use pedalboard_midi::labels::LabelRequest;
+                                let mut resp_buf = [0u8; 15];
+                                let resp_len = match req {
+                                    LabelRequest::Set {
+                                        component,
+                                        index,
+                                        char_pos,
+                                        value,
+                                    } => {
+                                        ctx.shared.labels.lock(|labels| {
+                                            labels.set_char(component, index, char_pos, value);
+                                        });
+                                        // Persist: block=7, section=label_section, index=comp*16+pos
+                                        let (block, section, idx) =
+                                            pedalboard_midi::labels::storage_key(
+                                                component, index, char_pos,
+                                            );
+                                        let val = value as u16;
+                                        ctx.local
+                                            .persist_sender
+                                            .try_send(
+                                                pedalboard_midi::opendeck_handler::PersistCommand::Save(
+                                                    block, section, idx, val,
+                                                ),
+                                            )
+                                            .ok();
+                                        pedalboard_midi::labels::render_response(
+                                            component,
+                                            index,
+                                            char_pos,
+                                            value,
+                                            &mut resp_buf,
+                                        )
+                                    }
+                                    LabelRequest::Get {
+                                        component,
+                                        index,
+                                        char_pos,
+                                    } => {
+                                        let value = ctx.shared.labels.lock(|labels| {
+                                            labels.get_char(component, index, char_pos)
+                                        });
+                                        pedalboard_midi::labels::render_response(
+                                            component,
+                                            index,
+                                            char_pos,
+                                            value,
+                                            &mut resp_buf,
+                                        )
+                                    }
+                                };
+                                // Send response as USB MIDI SysEx
+                                for chunk in resp_buf[..resp_len].chunks(3) {
+                                    if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        chunk,
+                                    ) {
+                                        ctx.local.usb_sender_usb_thru.try_send(p).ok();
+                                    }
+                                }
+                            }
+                            sysex_receive_buffer.clear();
+                            continue;
+                        }
 
                         // Detect SET SINGLE commands and persist them
                         // Format: F0 00 53 43 00 PP 01 00 BLOCK SECTION IDX_H IDX_L VAL_H VAL_L F7
@@ -699,7 +772,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck])]
+    #[task(shared = [opendeck, labels])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -717,6 +790,9 @@ mod app {
                 ctx.shared.opendeck.lock(|opendeck| {
                     let mut buf = [0u8; 78];
                     for &(block, section, index, value) in &entries {
+                        if block == 7 {
+                            continue; // label entries handled separately
+                        }
                         let raw = [
                             0xF0,
                             0x00,
@@ -735,9 +811,28 @@ mod app {
                             0xF7,
                         ];
                         let mut responses = opendeck.config.process_sysex(&raw);
-                        // Must consume iterator to trigger process_req
                         while let Ok(Some(_)) = responses.next(&mut buf, &mut opendeck.config) {}
                     }
+                });
+                // Restore label entries (block=7)
+                ctx.shared.labels.lock(|labels| {
+                    use pedalboard_midi::labels::{ComponentType, LABEL_CHARS_PER_COMPONENT};
+                    for &(block, section, index, value) in &entries {
+                        if block != 7 {
+                            continue;
+                        }
+                        let comp = if section == 0x05 {
+                            ComponentType::Switch
+                        } else if section == 0x0D {
+                            ComponentType::Encoder
+                        } else {
+                            continue;
+                        };
+                        let comp_idx = index / LABEL_CHARS_PER_COMPONENT as u8;
+                        let char_pos = index % LABEL_CHARS_PER_COMPONENT as u8;
+                        labels.set_char(comp, comp_idx, char_pos, value as u8);
+                    }
+                    labels.dirty = true;
                 });
             }
             info!("config persistence ready");
@@ -822,7 +917,7 @@ mod app {
         }
     }
 
-    #[task(local = [displays], shared = [active_preset, opendeck])]
+    #[task(local = [displays], shared = [active_preset, opendeck, labels])]
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
@@ -835,19 +930,26 @@ mod app {
         displays.splash_screen();
         Mono::delay(2000.millis()).await;
 
-        // Placeholder preset metadata — will come from flash config later
+        // Load labels from shared store (defaults if empty)
         let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
         for (i, preset) in presets.iter_mut().enumerate() {
             let mut name: String<16> = String::new();
             core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", i + 1)).ok();
             preset.name = name;
-            preset.button_labels[0] = String::try_from("A").unwrap_or_default();
-            preset.button_labels[1] = String::try_from("B").unwrap_or_default();
-            preset.button_labels[2] = String::try_from("C").unwrap_or_default();
-            preset.button_labels[3] = String::try_from("D").unwrap_or_default();
-            preset.button_labels[4] = String::try_from("E").unwrap_or_default();
-            preset.button_labels[5] = String::try_from("F").unwrap_or_default();
         }
+        ctx.shared.labels.lock(|labels| {
+            let defaults = ["A", "B", "C", "D", "E", "F"];
+            for preset in presets.iter_mut() {
+                for (i, default) in defaults.iter().enumerate() {
+                    let label = labels.button_label(i);
+                    preset.button_labels[i] = if label.is_empty() {
+                        String::try_from(*default).unwrap_or_default()
+                    } else {
+                        label
+                    };
+                }
+            }
+        });
 
         let mut current_preset: u8 = 0;
         displays.draw_performance(&presets[0]);
@@ -877,6 +979,32 @@ mod app {
 
             // Check for preset change
             let new_preset = ctx.shared.active_preset.lock(|p| *p);
+
+            // Refresh labels if changed via SysEx
+            let labels_dirty = ctx.shared.labels.lock(|labels| {
+                if labels.dirty {
+                    labels.dirty = false;
+                    let defaults = ["A", "B", "C", "D", "E", "F"];
+                    for preset in presets.iter_mut() {
+                        for (i, default) in defaults.iter().enumerate() {
+                            let label = labels.button_label(i);
+                            preset.button_labels[i] = if label.is_empty() {
+                                String::try_from(*default).unwrap_or_default()
+                            } else {
+                                label
+                            };
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
+            });
+            if labels_dirty && !debug_mode {
+                let idx = (current_preset as usize) % presets.len();
+                displays.draw_performance(&presets[idx]);
+            }
+
             if new_preset != current_preset {
                 current_preset = new_preset;
                 let idx = (current_preset as usize) % presets.len();

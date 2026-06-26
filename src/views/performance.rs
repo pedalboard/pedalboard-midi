@@ -23,7 +23,7 @@ pub const BUTTON_COUNT: usize = 6;
 #[derive(Debug, Clone)]
 pub struct PresetMeta {
     pub name: String<16>,
-    pub button_labels: [String<8>; BUTTON_COUNT],
+    pub button_labels: [String<16>; BUTTON_COUNT],
 }
 
 impl Default for PresetMeta {
