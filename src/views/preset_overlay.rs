@@ -41,3 +41,27 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 
     Ok(())
 }
+
+/// Draw just the preset name centered on the display
+pub fn draw_name<D: DrawTarget<Color = Gray4>>(
+    display: &mut D,
+    name: &str,
+) -> Result<(), D::Error> {
+    use embedded_graphics::primitives::Rectangle;
+    use embedded_text::{
+        alignment::{HorizontalAlignment, VerticalAlignment},
+        style::TextBoxStyleBuilder,
+        TextBox,
+    };
+
+    let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+    let centered = TextBoxStyleBuilder::new()
+        .alignment(HorizontalAlignment::Center)
+        .vertical_alignment(VerticalAlignment::Middle)
+        .build();
+
+    let rect = Rectangle::new(Point::zero(), Size::new(DISPLAY_SIZE, DISPLAY_SIZE));
+    TextBox::with_textbox_style(name, rect, text_style, centered).draw(display)?;
+
+    Ok(())
+}

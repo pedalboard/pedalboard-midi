@@ -1046,10 +1046,12 @@ mod app {
             }
 
             if new_preset != current_preset {
+                let forward =
+                    new_preset > current_preset || (current_preset > 0 && new_preset == 0);
                 current_preset = new_preset;
                 let idx = (current_preset as usize) % presets.len();
                 if !debug_mode {
-                    displays.draw_preset_overlay(current_preset + 1, presets[idx].name.as_str());
+                    displays.draw_preset_overlay(presets[idx].name.as_str(), forward);
                     overlay_ticks = PRESET_OVERLAY_DURATION;
                     show_overlay = true;
                 }
