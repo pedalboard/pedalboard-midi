@@ -625,6 +625,64 @@ mod app {
                     if packet.is_sysex_end() {
                         debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
+                        // Handle MIDI-CI Property Exchange messages
+                        if pedalboard_protocol::property_exchange::is_set_property(
+                            sysex_receive_buffer.as_ref(),
+                        ) {
+                            if let Some(body) = pedalboard_protocol::property_exchange::extract_body(
+                                sysex_receive_buffer.as_ref(),
+                            ) {
+                                debug!("PE Set Property body len={}", body.len());
+                                // PoC: update button A label from body
+                                let label_len = body.len().min(16);
+                                ctx.shared.labels.lock(|labels| {
+                                    let preset = 0u8;
+                                    let comp_index = 0u8;
+                                    for (i, &ch) in body[..label_len].iter().enumerate() {
+                                        labels.set_char(
+                                            pedalboard_midi::labels::ComponentType::Switch,
+                                            preset,
+                                            comp_index,
+                                            i as u8,
+                                            ch,
+                                        );
+                                    }
+                                    // zero-terminate
+                                    if label_len < 16 {
+                                        labels.set_char(
+                                            pedalboard_midi::labels::ComponentType::Switch,
+                                            preset,
+                                            comp_index,
+                                            label_len as u8,
+                                            0,
+                                        );
+                                    }
+                                });
+                                // Send ACK reply
+                                let req_id = pedalboard_protocol::property_exchange::request_id(
+                                    sysex_receive_buffer.as_ref(),
+                                );
+                                let src_muid = pedalboard_protocol::property_exchange::source_muid(
+                                    sysex_receive_buffer.as_ref(),
+                                );
+                                let reply = pedalboard_protocol::property_exchange::build_set_reply(
+                                    [0x01, 0x02, 0x03, 0x04],
+                                    src_muid,
+                                    req_id,
+                                );
+                                for chunk in reply.chunks(3) {
+                                    if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        chunk,
+                                    ) {
+                                        ctx.local.usb_sender_usb_thru.try_send(p).ok();
+                                    }
+                                }
+                            }
+                            sysex_receive_buffer.clear();
+                            continue;
+                        }
+
                         // Handle pedalboard label messages (M_ID_2 = 0x44)
                         if pedalboard_midi::labels::is_label_message(sysex_receive_buffer.as_ref())
                         {

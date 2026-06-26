@@ -188,9 +188,9 @@ dependencies = [
 
 [[package]]
 name = "crc-any"
-version = "2.5.0"
+version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a62ec9ff5f7965e4d7280bd5482acd20aadb50d632cf6c1d74493856b011fa73"
+checksum = "46db9f663dfb869b80fcf59e32d7a80fc6c464a4f6328f3f06a00f5e36d05f8c"
 dependencies = [
  "debug-helper",
 ]
@@ -228,9 +228,9 @@ dependencies = [
 
 [[package]]
 name = "debug-helper"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f578e8e2c440e7297e008bb5486a3a8a194775224bbc23729b0dbdfaeebf162e"
+checksum = "80a4af69c60438a1a82af89d362f4729fd38db7b73f305a237636fad31ceb2bf"
 
 [[package]]
 name = "defmt"
@@ -938,7 +938,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#52d5727bf09506a646897a6e90c7bf96652d1589"
+source = "git+https://github.com/pedalboard/opendeck?branch=main#3fd3a805598f8e8b32606381e0b3b6c878a97ed2"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
@@ -1010,6 +1010,7 @@ dependencies = [
  "nb 1.1.0",
  "opendeck",
  "panic-probe",
+ "pedalboard-protocol",
  "portable-atomic",
  "rotary-encoder-embedded",
  "rp2040-boot2",
@@ -1025,6 +1026,14 @@ dependencies = [
  "usb-device",
  "usbd-midi",
  "ws2812-pio",
+]
+
+[[package]]
+name = "pedalboard-protocol"
+version = "0.1.0"
+source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#c5b188aaefb9d0488d7ede32d86178529f349472"
+dependencies = [
+ "heapless 0.9.3",
 ]
 
 [[package]]

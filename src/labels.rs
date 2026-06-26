@@ -323,6 +323,14 @@ pub struct LabelStore<const B: usize, const E: usize, const A: usize, const P: u
     pub dirty: bool,
 }
 
+impl<const B: usize, const E: usize, const A: usize, const P: usize> Default
+    for LabelStore<B, E, A, P>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const B: usize, const E: usize, const A: usize, const P: usize> LabelStore<B, E, A, P> {
     pub const fn new() -> Self {
         Self {
