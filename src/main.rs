@@ -383,7 +383,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, labels])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -469,12 +469,22 @@ mod app {
             if !events.is_empty() || preset_changed {
                 if preset_changed {
                     ctx.shared.active_preset.lock(|active_preset| {
+                        // Count active presets (those with non-empty labels), minimum 1
+                        let active_count = ctx.shared.labels.lock(|labels| {
+                            let mut count = 0u8;
+                            for i in 0..32 {
+                                if !labels.preset_label(i).is_empty() {
+                                    count += 1;
+                                }
+                            }
+                            count.max(1)
+                        });
                         let current = *active_preset;
                         let next = if gesture_f == Some(Gesture::LongPress) {
-                            (current + 1) % 32
+                            (current + 1) % active_count
                         } else {
                             if current == 0 {
-                                31
+                                active_count - 1
                             } else {
                                 current - 1
                             }
