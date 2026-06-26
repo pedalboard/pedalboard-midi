@@ -275,23 +275,38 @@ pub fn label_to_bytes(label: &str) -> [u8; MAX_LABEL_LEN] {
 
 /// Storage key for persistence: encodes component type, index, and char position.
 /// Storage key for persistence.
-/// Uses block=7, section encodes component_type + preset, index encodes comp*16+char_pos.
+/// Uses block=7. Section encodes component_type(2 bits) + preset(3 bits):
+///   section = (comp_type << 3) | preset
+///   comp_type: 0=Switch, 1=Encoder, 2=Analog, 3=Preset
+/// Index encodes component_index * 16 + char_pos.
 pub fn storage_key(
     component: ComponentType,
     preset: u8,
     component_index: u8,
     char_pos: u8,
 ) -> (u8, u8, u8) {
-    let base_section = match component {
-        ComponentType::Switch => SECTION_SWITCH_LABEL,
-        ComponentType::Encoder => SECTION_ENCODER_LABEL,
-        ComponentType::Analog => SECTION_ANALOG_LABEL,
-        ComponentType::Preset => SECTION_PRESET_LABEL,
+    let comp_type: u8 = match component {
+        ComponentType::Switch => 0,
+        ComponentType::Encoder => 1,
+        ComponentType::Analog => 2,
+        ComponentType::Preset => 3,
     };
-    // Encode preset into section: base + preset * 4 (fits in 5-bit section field for 3 presets)
-    let section = base_section + preset * 4;
+    let section = (comp_type << 3) | (preset & 0x07);
     let idx = component_index * LABEL_CHARS_PER_COMPONENT as u8 + char_pos;
     (7, section, idx)
+}
+
+/// Decode a storage key back to component type and preset.
+pub fn decode_storage_key(section: u8) -> (ComponentType, u8) {
+    let comp_type = section >> 3;
+    let preset = section & 0x07;
+    let component = match comp_type {
+        0 => ComponentType::Switch,
+        1 => ComponentType::Encoder,
+        2 => ComponentType::Analog,
+        _ => ComponentType::Preset,
+    };
+    (component, preset)
 }
 
 /// Runtime label storage for buttons and encoders.

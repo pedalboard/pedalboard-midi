@@ -831,24 +831,14 @@ mod app {
                 });
                 // Restore label entries (block=7)
                 ctx.shared.labels.lock(|labels| {
-                    use pedalboard_midi::labels::{ComponentType, LABEL_CHARS_PER_COMPONENT};
+                    use pedalboard_midi::labels::{
+                        decode_storage_key, ComponentType, LABEL_CHARS_PER_COMPONENT,
+                    };
                     for &(block, section, index, value) in &entries {
                         if block != 7 {
                             continue;
                         }
-                        // Decode: section = base_section + preset * 4
-                        // Base sections: Switch=5, Preset=6, Analog=12, Encoder=13
-                        let (comp, preset) = if section >= 0x0D {
-                            (ComponentType::Encoder, (section - 0x0D) / 4)
-                        } else if section >= 0x0C && section < 0x0D {
-                            (ComponentType::Analog, (section - 0x0C) / 4)
-                        } else if section >= 0x06 && section < 0x0C {
-                            (ComponentType::Preset, (section - 0x06) / 4)
-                        } else if section >= 0x05 {
-                            (ComponentType::Switch, (section - 0x05) / 4)
-                        } else {
-                            continue;
-                        };
+                        let (comp, preset) = decode_storage_key(section);
                         let comp_idx = index / LABEL_CHARS_PER_COMPONENT as u8;
                         let char_pos = index % LABEL_CHARS_PER_COMPONENT as u8;
                         labels.set_char(comp, preset, comp_idx, char_pos, value as u8);
