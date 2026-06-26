@@ -1083,6 +1083,32 @@ mod app {
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
+                                2 => {
+                                    let lbl = ctx.shared.labels.lock(|labels| {
+                                        let l = labels.analog_label(idx, 0);
+                                        if l.is_empty() {
+                                            String::try_from("Exp 1").unwrap_or_default()
+                                        } else {
+                                            l
+                                        }
+                                    });
+                                    displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
+                                    overlay_ticks = OVERLAY_DURATION;
+                                    show_overlay = true;
+                                }
+                                3 => {
+                                    let lbl = ctx.shared.labels.lock(|labels| {
+                                        let l = labels.analog_label(idx, 1);
+                                        if l.is_empty() {
+                                            String::try_from("Exp 2").unwrap_or_default()
+                                        } else {
+                                            l
+                                        }
+                                    });
+                                    displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
+                                    overlay_ticks = OVERLAY_DURATION;
+                                    show_overlay = true;
+                                }
                                 _ => {}
                             }
                         }
