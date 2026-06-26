@@ -114,7 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        labels: pedalboard_midi::labels::LabelStore<10, 2, 2, 32>,
+        labels: pedalboard_midi::labels::LabelStore<10, 2, 2, 3>,
     }
 
     #[local]
@@ -621,17 +621,19 @@ mod app {
                                 let resp_len = match req {
                                     LabelRequest::Set {
                                         component,
+                                        preset,
                                         index,
                                         char_pos,
                                         value,
                                     } => {
                                         ctx.shared.labels.lock(|labels| {
-                                            labels.set_char(component, index, char_pos, value);
+                                            labels.set_char(
+                                                component, preset, index, char_pos, value,
+                                            );
                                         });
-                                        // Persist: block=7, section=label_section, index=comp*16+pos
                                         let (block, section, idx) =
                                             pedalboard_midi::labels::storage_key(
-                                                component, index, char_pos,
+                                                component, preset, index, char_pos,
                                             );
                                         let val = value as u16;
                                         ctx.local
@@ -644,6 +646,7 @@ mod app {
                                             .ok();
                                         pedalboard_midi::labels::render_response(
                                             component,
+                                            preset,
                                             index,
                                             char_pos,
                                             value,
@@ -652,14 +655,16 @@ mod app {
                                     }
                                     LabelRequest::Get {
                                         component,
+                                        preset,
                                         index,
                                         char_pos,
                                     } => {
                                         let value = ctx.shared.labels.lock(|labels| {
-                                            labels.get_char(component, index, char_pos)
+                                            labels.get_char(component, preset, index, char_pos)
                                         });
                                         pedalboard_midi::labels::render_response(
                                             component,
+                                            preset,
                                             index,
                                             char_pos,
                                             value,
@@ -821,20 +826,22 @@ mod app {
                         if block != 7 {
                             continue;
                         }
-                        let comp = if section == 0x05 {
-                            ComponentType::Switch
-                        } else if section == 0x0D {
-                            ComponentType::Encoder
-                        } else if section == 0x0C {
-                            ComponentType::Analog
-                        } else if section == 0x06 {
-                            ComponentType::Preset
+                        // Decode: section = base_section + preset * 4
+                        // Base sections: Switch=5, Preset=6, Analog=12, Encoder=13
+                        let (comp, preset) = if section >= 0x0D {
+                            (ComponentType::Encoder, (section - 0x0D) / 4)
+                        } else if section >= 0x0C && section < 0x0D {
+                            (ComponentType::Analog, (section - 0x0C) / 4)
+                        } else if section >= 0x06 && section < 0x0C {
+                            (ComponentType::Preset, (section - 0x06) / 4)
+                        } else if section >= 0x05 {
+                            (ComponentType::Switch, (section - 0x05) / 4)
                         } else {
                             continue;
                         };
                         let comp_idx = index / LABEL_CHARS_PER_COMPONENT as u8;
                         let char_pos = index % LABEL_CHARS_PER_COMPONENT as u8;
-                        labels.set_char(comp, comp_idx, char_pos, value as u8);
+                        labels.set_char(comp, preset, comp_idx, char_pos, value as u8);
                     }
                     labels.dirty = true;
                 });
@@ -952,7 +959,7 @@ mod app {
                 }
                 let defaults = ["A", "B", "C", "D", "E", "F"];
                 for (j, default) in defaults.iter().enumerate() {
-                    let label = labels.button_label(j);
+                    let label = labels.button_label(i, j);
                     preset.button_labels[j] = if label.is_empty() {
                         String::try_from(*default).unwrap_or_default()
                     } else {
@@ -1010,7 +1017,7 @@ mod app {
                         }
                         let defaults = ["A", "B", "C", "D", "E", "F"];
                         for (j, default) in defaults.iter().enumerate() {
-                            let label = labels.button_label(j);
+                            let label = labels.button_label(i, j);
                             preset.button_labels[j] = if label.is_empty() {
                                 String::try_from(*default).unwrap_or_default()
                             } else {

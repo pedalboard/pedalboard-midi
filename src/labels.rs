@@ -41,6 +41,13 @@ const SECTION_PRESET_LABEL: u8 = 0x06;
 pub const MAX_LABEL_LEN: usize = 16;
 pub const LABEL_CHARS_PER_COMPONENT: usize = 16;
 
+/// Max components per type — used for INDEX encoding.
+/// INDEX = preset * MAX_COMPONENTS * 16 + component_index * 16 + char_pos
+pub const MAX_SWITCH_COMPONENTS: u16 = 10;
+pub const MAX_ENCODER_COMPONENTS: u16 = 2;
+pub const MAX_ANALOG_COMPONENTS: u16 = 2;
+pub const MAX_PRESETS: u16 = 32;
+
 /// Check if a SysEx message is a pedalboard label message (M_ID_2 = 0x44).
 pub fn is_label_message(data: &[u8]) -> bool {
     data.len() >= 9
@@ -62,11 +69,13 @@ pub enum ComponentType {
 pub enum LabelRequest {
     Get {
         component: ComponentType,
+        preset: u8,
         index: u8,
         char_pos: u8,
     },
     Set {
         component: ComponentType,
+        preset: u8,
         index: u8,
         char_pos: u8,
         value: u8,
@@ -127,12 +136,46 @@ pub fn parse(data: &[u8]) -> Option<LabelRequest> {
     };
 
     let raw_index = merge14bit(data[10], data[11]);
-    let component_index = (raw_index / LABEL_CHARS_PER_COMPONENT as u16) as u8;
-    let char_pos = (raw_index % LABEL_CHARS_PER_COMPONENT as u16) as u8;
+
+    // Decode INDEX based on component type
+    // For Switch/Encoder/Analog: INDEX = preset * max_components * 16 + component * 16 + char_pos
+    // For Preset: INDEX = preset_index * 16 + char_pos
+    let (preset, component_index, char_pos) = match component {
+        ComponentType::Preset => {
+            let preset_idx = (raw_index / LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            let cpos = (raw_index % LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            (0, preset_idx, cpos)
+        }
+        ComponentType::Switch => {
+            let stride = MAX_SWITCH_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16;
+            let preset_idx = (raw_index / stride) as u8;
+            let remainder = raw_index % stride;
+            let comp_idx = (remainder / LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            let cpos = (remainder % LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            (preset_idx, comp_idx, cpos)
+        }
+        ComponentType::Encoder => {
+            let stride = MAX_ENCODER_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16;
+            let preset_idx = (raw_index / stride) as u8;
+            let remainder = raw_index % stride;
+            let comp_idx = (remainder / LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            let cpos = (remainder % LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            (preset_idx, comp_idx, cpos)
+        }
+        ComponentType::Analog => {
+            let stride = MAX_ANALOG_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16;
+            let preset_idx = (raw_index / stride) as u8;
+            let remainder = raw_index % stride;
+            let comp_idx = (remainder / LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            let cpos = (remainder % LABEL_CHARS_PER_COMPONENT as u16) as u8;
+            (preset_idx, comp_idx, cpos)
+        }
+    };
 
     match wish {
         WISH_GET => Some(LabelRequest::Get {
             component,
+            preset,
             index: component_index,
             char_pos,
         }),
@@ -140,6 +183,7 @@ pub fn parse(data: &[u8]) -> Option<LabelRequest> {
             let value = merge14bit(data[12], data[13]) as u8;
             Some(LabelRequest::Set {
                 component,
+                preset,
                 index: component_index,
                 char_pos,
                 value,
@@ -152,6 +196,7 @@ pub fn parse(data: &[u8]) -> Option<LabelRequest> {
 /// Render a label response (ACK with value).
 pub fn render_response(
     component: ComponentType,
+    preset: u8,
     component_index: u8,
     char_pos: u8,
     value: u8,
@@ -166,7 +211,26 @@ pub fn render_response(
         ComponentType::Analog => (BLOCK_ANALOG, SECTION_ANALOG_LABEL),
         ComponentType::Preset => (BLOCK_GLOBAL, SECTION_PRESET_LABEL),
     };
-    let raw_index = component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16 + char_pos as u16;
+    let raw_index = match component {
+        ComponentType::Preset => {
+            component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16 + char_pos as u16
+        }
+        ComponentType::Switch => {
+            preset as u16 * MAX_SWITCH_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16
+                + component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16
+                + char_pos as u16
+        }
+        ComponentType::Encoder => {
+            preset as u16 * MAX_ENCODER_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16
+                + component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16
+                + char_pos as u16
+        }
+        ComponentType::Analog => {
+            preset as u16 * MAX_ANALOG_COMPONENTS * LABEL_CHARS_PER_COMPONENT as u16
+                + component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16
+                + char_pos as u16
+        }
+    };
     let (idx_h, idx_l) = split14bit(raw_index);
     let (val_h, val_l) = split14bit(value as u16);
 
@@ -210,27 +274,31 @@ pub fn label_to_bytes(label: &str) -> [u8; MAX_LABEL_LEN] {
 }
 
 /// Storage key for persistence: encodes component type, index, and char position.
-/// Uses block=7 (unused in OpenDeck) in the existing firmware key scheme.
-pub fn storage_key(component: ComponentType, component_index: u8, char_pos: u8) -> (u8, u8, u8) {
-    let section = match component {
+/// Storage key for persistence.
+/// Uses block=7, section encodes component_type + preset, index encodes comp*16+char_pos.
+pub fn storage_key(
+    component: ComponentType,
+    preset: u8,
+    component_index: u8,
+    char_pos: u8,
+) -> (u8, u8, u8) {
+    let base_section = match component {
         ComponentType::Switch => SECTION_SWITCH_LABEL,
         ComponentType::Encoder => SECTION_ENCODER_LABEL,
         ComponentType::Analog => SECTION_ANALOG_LABEL,
         ComponentType::Preset => SECTION_PRESET_LABEL,
     };
-    // block=7 to avoid collision with OpenDeck blocks 0-6
-    (
-        7,
-        section,
-        component_index * LABEL_CHARS_PER_COMPONENT as u8 + char_pos,
-    )
+    // Encode preset into section: base + preset * 4 (fits in 5-bit section field for 3 presets)
+    let section = base_section + preset * 4;
+    let idx = component_index * LABEL_CHARS_PER_COMPONENT as u8 + char_pos;
+    (7, section, idx)
 }
 
 /// Runtime label storage for buttons and encoders.
 pub struct LabelStore<const B: usize, const E: usize, const A: usize, const P: usize> {
-    pub buttons: [[u8; MAX_LABEL_LEN]; B],
-    pub encoders: [[u8; MAX_LABEL_LEN]; E],
-    pub analogs: [[u8; MAX_LABEL_LEN]; A],
+    pub buttons: [[[u8; MAX_LABEL_LEN]; B]; P],
+    pub encoders: [[[u8; MAX_LABEL_LEN]; E]; P],
+    pub analogs: [[[u8; MAX_LABEL_LEN]; A]; P],
     pub presets: [[u8; MAX_LABEL_LEN]; P],
     pub dirty: bool,
 }
@@ -238,36 +306,50 @@ pub struct LabelStore<const B: usize, const E: usize, const A: usize, const P: u
 impl<const B: usize, const E: usize, const A: usize, const P: usize> LabelStore<B, E, A, P> {
     pub const fn new() -> Self {
         Self {
-            buttons: [[0u8; MAX_LABEL_LEN]; B],
-            encoders: [[0u8; MAX_LABEL_LEN]; E],
-            analogs: [[0u8; MAX_LABEL_LEN]; A],
+            buttons: [[[0u8; MAX_LABEL_LEN]; B]; P],
+            encoders: [[[0u8; MAX_LABEL_LEN]; E]; P],
+            analogs: [[[0u8; MAX_LABEL_LEN]; A]; P],
             presets: [[0u8; MAX_LABEL_LEN]; P],
             dirty: false,
         }
     }
 
-    pub fn set_char(&mut self, component: ComponentType, index: u8, char_pos: u8, value: u8) {
+    pub fn set_char(
+        &mut self,
+        component: ComponentType,
+        preset: u8,
+        index: u8,
+        char_pos: u8,
+        value: u8,
+    ) {
         let pos = char_pos as usize;
         if pos >= MAX_LABEL_LEN {
             return;
         }
+        let p = preset as usize;
         match component {
             ComponentType::Switch => {
-                if let Some(label) = self.buttons.get_mut(index as usize) {
-                    label[pos] = value;
-                    self.dirty = true;
+                if let Some(preset_labels) = self.buttons.get_mut(p) {
+                    if let Some(label) = preset_labels.get_mut(index as usize) {
+                        label[pos] = value;
+                        self.dirty = true;
+                    }
                 }
             }
             ComponentType::Encoder => {
-                if let Some(label) = self.encoders.get_mut(index as usize) {
-                    label[pos] = value;
-                    self.dirty = true;
+                if let Some(preset_labels) = self.encoders.get_mut(p) {
+                    if let Some(label) = preset_labels.get_mut(index as usize) {
+                        label[pos] = value;
+                        self.dirty = true;
+                    }
                 }
             }
             ComponentType::Analog => {
-                if let Some(label) = self.analogs.get_mut(index as usize) {
-                    label[pos] = value;
-                    self.dirty = true;
+                if let Some(preset_labels) = self.analogs.get_mut(p) {
+                    if let Some(label) = preset_labels.get_mut(index as usize) {
+                        label[pos] = value;
+                        self.dirty = true;
+                    }
                 }
             }
             ComponentType::Preset => {
@@ -279,25 +361,29 @@ impl<const B: usize, const E: usize, const A: usize, const P: usize> LabelStore<
         }
     }
 
-    pub fn get_char(&self, component: ComponentType, index: u8, char_pos: u8) -> u8 {
+    pub fn get_char(&self, component: ComponentType, preset: u8, index: u8, char_pos: u8) -> u8 {
         let pos = char_pos as usize;
         if pos >= MAX_LABEL_LEN {
             return 0;
         }
+        let p = preset as usize;
         match component {
             ComponentType::Switch => self
                 .buttons
-                .get(index as usize)
+                .get(p)
+                .and_then(|pl| pl.get(index as usize))
                 .map(|l| l[pos])
                 .unwrap_or(0),
             ComponentType::Encoder => self
                 .encoders
-                .get(index as usize)
+                .get(p)
+                .and_then(|pl| pl.get(index as usize))
                 .map(|l| l[pos])
                 .unwrap_or(0),
             ComponentType::Analog => self
                 .analogs
-                .get(index as usize)
+                .get(p)
+                .and_then(|pl| pl.get(index as usize))
                 .map(|l| l[pos])
                 .unwrap_or(0),
             ComponentType::Preset => self
@@ -308,23 +394,26 @@ impl<const B: usize, const E: usize, const A: usize, const P: usize> LabelStore<
         }
     }
 
-    pub fn button_label(&self, index: usize) -> String<MAX_LABEL_LEN> {
+    pub fn button_label(&self, preset: usize, index: usize) -> String<MAX_LABEL_LEN> {
         self.buttons
-            .get(index)
+            .get(preset)
+            .and_then(|pl| pl.get(index))
             .map(|b| bytes_to_label(b))
             .unwrap_or_default()
     }
 
-    pub fn encoder_label(&self, index: usize) -> String<MAX_LABEL_LEN> {
+    pub fn encoder_label(&self, preset: usize, index: usize) -> String<MAX_LABEL_LEN> {
         self.encoders
-            .get(index)
+            .get(preset)
+            .and_then(|pl| pl.get(index))
             .map(|b| bytes_to_label(b))
             .unwrap_or_default()
     }
 
-    pub fn analog_label(&self, index: usize) -> String<MAX_LABEL_LEN> {
+    pub fn analog_label(&self, preset: usize, index: usize) -> String<MAX_LABEL_LEN> {
         self.analogs
-            .get(index)
+            .get(preset)
+            .and_then(|pl| pl.get(index))
             .map(|b| bytes_to_label(b))
             .unwrap_or_default()
     }
