@@ -114,7 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        labels: pedalboard_midi::labels::LabelStore<10, 2>,
+        labels: pedalboard_midi::labels::LabelStore<10, 2, 2>,
     }
 
     #[local]
@@ -825,6 +825,8 @@ mod app {
                             ComponentType::Switch
                         } else if section == 0x0D {
                             ComponentType::Encoder
+                        } else if section == 0x0C {
+                            ComponentType::Analog
                         } else {
                             continue;
                         };
