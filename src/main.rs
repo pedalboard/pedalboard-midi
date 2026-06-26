@@ -1054,15 +1054,32 @@ mod app {
                     0xB0 => {
                         midi_log.push_cc(ch, raw[1], raw[2]);
                         if !debug_mode {
-                            // Encoder overlay: CC#0 = Vol (left), CC#1 = Gain (right)
+                            // Encoder overlay: CC#0 = left, CC#1 = right
+                            let idx = (current_preset as usize) % presets.len();
                             match raw[1] {
                                 0 => {
-                                    displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
+                                    let lbl = ctx.shared.labels.lock(|labels| {
+                                        let l = labels.encoder_label(idx, 0);
+                                        if l.is_empty() {
+                                            String::try_from("Vol").unwrap_or_default()
+                                        } else {
+                                            l
+                                        }
+                                    });
+                                    displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
                                 1 => {
-                                    displays.draw_overlay(DisplayLocation::R, "Gain", raw[2]);
+                                    let lbl = ctx.shared.labels.lock(|labels| {
+                                        let l = labels.encoder_label(idx, 1);
+                                        if l.is_empty() {
+                                            String::try_from("Gain").unwrap_or_default()
+                                        } else {
+                                            l
+                                        }
+                                    });
+                                    displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
