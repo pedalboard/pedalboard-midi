@@ -114,7 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        labels: pedalboard_midi::labels::LabelStore<10, 2, 2, 3>,
+        labels: pedalboard_midi::labels::LabelStore<6, 2, 2, 32>,
     }
 
     #[local]
@@ -831,16 +831,13 @@ mod app {
                 });
                 // Restore label entries (block=7)
                 ctx.shared.labels.lock(|labels| {
-                    use pedalboard_midi::labels::{
-                        decode_storage_key, ComponentType, LABEL_CHARS_PER_COMPONENT,
-                    };
+                    use pedalboard_midi::labels::decode_storage_key;
                     for &(block, section, index, value) in &entries {
                         if block != 7 {
                             continue;
                         }
-                        let (comp, preset) = decode_storage_key(section);
-                        let comp_idx = index / LABEL_CHARS_PER_COMPONENT as u8;
-                        let char_pos = index % LABEL_CHARS_PER_COMPONENT as u8;
+                        let preset = section;
+                        let (comp, comp_idx, char_pos) = decode_storage_key(index);
                         labels.set_char(comp, preset, comp_idx, char_pos, value as u8);
                     }
                     labels.dirty = true;
@@ -942,7 +939,7 @@ mod app {
         Mono::delay(2000.millis()).await;
 
         // Load labels from shared store (defaults if empty)
-        let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
+        let mut presets: [PresetMeta; 32] = core::array::from_fn(|_| PresetMeta::default());
         ctx.shared.labels.lock(|labels| {
             for (i, preset) in presets.iter_mut().enumerate() {
                 let name = labels.preset_label(i);

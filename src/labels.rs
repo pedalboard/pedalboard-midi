@@ -275,38 +275,43 @@ pub fn label_to_bytes(label: &str) -> [u8; MAX_LABEL_LEN] {
 
 /// Storage key for persistence: encodes component type, index, and char position.
 /// Storage key for persistence.
-/// Uses block=7. Section encodes component_type(2 bits) + preset(3 bits):
-///   section = (comp_type << 3) | preset
-///   comp_type: 0=Switch, 1=Encoder, 2=Analog, 3=Preset
-/// Index encodes component_index * 16 + char_pos.
+/// block=7, section=preset (0–31), index=component offset + comp_index*16 + char_pos.
+/// Offsets: Switch=0, Encoder=96, Analog=128, Preset_name=160.
+const OFFSET_SWITCH: u8 = 0;
+const OFFSET_ENCODER: u8 = 96;
+const OFFSET_ANALOG: u8 = 128;
+const OFFSET_PRESET_NAME: u8 = 160;
+
 pub fn storage_key(
     component: ComponentType,
     preset: u8,
     component_index: u8,
     char_pos: u8,
 ) -> (u8, u8, u8) {
-    let comp_type: u8 = match component {
-        ComponentType::Switch => 0,
-        ComponentType::Encoder => 1,
-        ComponentType::Analog => 2,
-        ComponentType::Preset => 3,
+    let offset = match component {
+        ComponentType::Switch => OFFSET_SWITCH,
+        ComponentType::Encoder => OFFSET_ENCODER,
+        ComponentType::Analog => OFFSET_ANALOG,
+        ComponentType::Preset => OFFSET_PRESET_NAME,
     };
-    let section = (comp_type << 3) | (preset & 0x07);
-    let idx = component_index * LABEL_CHARS_PER_COMPONENT as u8 + char_pos;
-    (7, section, idx)
+    let idx = offset + component_index * LABEL_CHARS_PER_COMPONENT as u8 + char_pos;
+    (7, preset, idx)
 }
 
-/// Decode a storage key back to component type and preset.
-pub fn decode_storage_key(section: u8) -> (ComponentType, u8) {
-    let comp_type = section >> 3;
-    let preset = section & 0x07;
-    let component = match comp_type {
-        0 => ComponentType::Switch,
-        1 => ComponentType::Encoder,
-        2 => ComponentType::Analog,
-        _ => ComponentType::Preset,
+/// Decode a storage key back to component type, component index, and char position.
+pub fn decode_storage_key(index: u8) -> (ComponentType, u8, u8) {
+    let (comp, base) = if index >= OFFSET_PRESET_NAME {
+        (ComponentType::Preset, index - OFFSET_PRESET_NAME)
+    } else if index >= OFFSET_ANALOG {
+        (ComponentType::Analog, index - OFFSET_ANALOG)
+    } else if index >= OFFSET_ENCODER {
+        (ComponentType::Encoder, index - OFFSET_ENCODER)
+    } else {
+        (ComponentType::Switch, index - OFFSET_SWITCH)
     };
-    (component, preset)
+    let comp_idx = base / LABEL_CHARS_PER_COMPONENT as u8;
+    let char_pos = base % LABEL_CHARS_PER_COMPONENT as u8;
+    (comp, comp_idx, char_pos)
 }
 
 /// Runtime label storage for buttons and encoders.
