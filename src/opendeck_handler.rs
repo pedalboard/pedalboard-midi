@@ -424,7 +424,8 @@ impl OpenDeck {
                 let fill = ((level as u16 * 12) / 127).min(12) as u8;
                 self.leds.set_ledring(RingAnim::Heatmap(fill), *ring);
             } else {
-                let on = self.config.output_state(i);
+                let is_static = ct == ControlType::Static;
+                let on = is_static || self.config.output_state(i);
                 self.leds
                     .set_ledring(if on { RingAnim::On(rgb) } else { RingAnim::Off }, *ring);
             }

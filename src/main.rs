@@ -462,7 +462,7 @@ mod app {
                 _ => true,
             });
 
-            let mut all_sent: heapless::Vec<[u8; 3], 8> = heapless::Vec::new();
+            let mut all_sent: heapless::Vec<([u8; 6], usize), 8> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
@@ -504,15 +504,16 @@ mod app {
                         let mut buf = [0x00u8; 6];
                         while let Ok(Some(m)) = messages.next(&mut buf) {
                             let data = m.data();
-                            if data.len() >= 3 {
-                                let mut raw = [0u8; 3];
-                                raw.copy_from_slice(&data[..3]);
-                                all_sent.push(raw).ok();
+                            let len = data.len();
+                            if len > 0 && len <= 6 {
+                                let mut raw = [0u8; 6];
+                                raw[..len].copy_from_slice(data);
+                                all_sent.push((raw, len)).ok();
                             }
                         }
                     }
-                    for raw in &all_sent {
-                        led_data = Some(opendeck.notify_local_midi(raw));
+                    for (raw, len) in &all_sent {
+                        led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
                     }
                 });
             }
@@ -521,17 +522,21 @@ mod app {
                 led_sender.try_send(data).ok();
             }
             // Send MIDI outside the lock
-            for raw in &all_sent {
+            for (raw, len) in &all_sent {
                 // DIN MIDI out (only if enabled)
                 if din_enabled {
-                    if let Ok(mm) = MidiMessage::try_parse_slice(raw) {
+                    if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                         uart_midi_out.write(&mm).ok();
                     }
                 }
                 // Display log (always for locally-generated messages)
-                display_sender.try_send(*raw).ok();
+                let mut display_raw = [0u8; 3];
+                let copy_len = (*len).min(3);
+                display_raw[..copy_len].copy_from_slice(&raw[..copy_len]);
+                display_sender.try_send(display_raw).ok();
                 // USB MIDI out (always for locally-generated messages)
-                let packet = UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, raw);
+                let packet =
+                    UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw[..*len]);
                 if let Ok(packet) = packet {
                     sender.try_send(packet).ok();
                 }
