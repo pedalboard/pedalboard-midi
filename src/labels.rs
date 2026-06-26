@@ -31,10 +31,12 @@ const AMOUNT_SINGLE: u8 = 0x00;
 const BLOCK_SWITCH: u8 = 0x01;
 const BLOCK_ENCODER: u8 = 0x02;
 const BLOCK_ANALOG: u8 = 0x03;
+const BLOCK_GLOBAL: u8 = 0x00;
 
 const SECTION_SWITCH_LABEL: u8 = 0x05;
 const SECTION_ENCODER_LABEL: u8 = 0x0D;
 const SECTION_ANALOG_LABEL: u8 = 0x0C;
+const SECTION_PRESET_LABEL: u8 = 0x06;
 
 pub const MAX_LABEL_LEN: usize = 16;
 pub const LABEL_CHARS_PER_COMPONENT: usize = 16;
@@ -53,6 +55,7 @@ pub enum ComponentType {
     Switch,
     Encoder,
     Analog,
+    Preset,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,6 +122,7 @@ pub fn parse(data: &[u8]) -> Option<LabelRequest> {
         (BLOCK_SWITCH, SECTION_SWITCH_LABEL) => ComponentType::Switch,
         (BLOCK_ENCODER, SECTION_ENCODER_LABEL) => ComponentType::Encoder,
         (BLOCK_ANALOG, SECTION_ANALOG_LABEL) => ComponentType::Analog,
+        (BLOCK_GLOBAL, SECTION_PRESET_LABEL) => ComponentType::Preset,
         _ => return None,
     };
 
@@ -160,6 +164,7 @@ pub fn render_response(
         ComponentType::Switch => (BLOCK_SWITCH, SECTION_SWITCH_LABEL),
         ComponentType::Encoder => (BLOCK_ENCODER, SECTION_ENCODER_LABEL),
         ComponentType::Analog => (BLOCK_ANALOG, SECTION_ANALOG_LABEL),
+        ComponentType::Preset => (BLOCK_GLOBAL, SECTION_PRESET_LABEL),
     };
     let raw_index = component_index as u16 * LABEL_CHARS_PER_COMPONENT as u16 + char_pos as u16;
     let (idx_h, idx_l) = split14bit(raw_index);
@@ -211,6 +216,7 @@ pub fn storage_key(component: ComponentType, component_index: u8, char_pos: u8) 
         ComponentType::Switch => SECTION_SWITCH_LABEL,
         ComponentType::Encoder => SECTION_ENCODER_LABEL,
         ComponentType::Analog => SECTION_ANALOG_LABEL,
+        ComponentType::Preset => SECTION_PRESET_LABEL,
     };
     // block=7 to avoid collision with OpenDeck blocks 0-6
     (
@@ -221,19 +227,21 @@ pub fn storage_key(component: ComponentType, component_index: u8, char_pos: u8) 
 }
 
 /// Runtime label storage for buttons and encoders.
-pub struct LabelStore<const B: usize, const E: usize, const A: usize> {
+pub struct LabelStore<const B: usize, const E: usize, const A: usize, const P: usize> {
     pub buttons: [[u8; MAX_LABEL_LEN]; B],
     pub encoders: [[u8; MAX_LABEL_LEN]; E],
     pub analogs: [[u8; MAX_LABEL_LEN]; A],
+    pub presets: [[u8; MAX_LABEL_LEN]; P],
     pub dirty: bool,
 }
 
-impl<const B: usize, const E: usize, const A: usize> LabelStore<B, E, A> {
+impl<const B: usize, const E: usize, const A: usize, const P: usize> LabelStore<B, E, A, P> {
     pub const fn new() -> Self {
         Self {
             buttons: [[0u8; MAX_LABEL_LEN]; B],
             encoders: [[0u8; MAX_LABEL_LEN]; E],
             analogs: [[0u8; MAX_LABEL_LEN]; A],
+            presets: [[0u8; MAX_LABEL_LEN]; P],
             dirty: false,
         }
     }
@@ -262,6 +270,12 @@ impl<const B: usize, const E: usize, const A: usize> LabelStore<B, E, A> {
                     self.dirty = true;
                 }
             }
+            ComponentType::Preset => {
+                if let Some(label) = self.presets.get_mut(index as usize) {
+                    label[pos] = value;
+                    self.dirty = true;
+                }
+            }
         }
     }
 
@@ -286,6 +300,11 @@ impl<const B: usize, const E: usize, const A: usize> LabelStore<B, E, A> {
                 .get(index as usize)
                 .map(|l| l[pos])
                 .unwrap_or(0),
+            ComponentType::Preset => self
+                .presets
+                .get(index as usize)
+                .map(|l| l[pos])
+                .unwrap_or(0),
         }
     }
 
@@ -305,6 +324,13 @@ impl<const B: usize, const E: usize, const A: usize> LabelStore<B, E, A> {
 
     pub fn analog_label(&self, index: usize) -> String<MAX_LABEL_LEN> {
         self.analogs
+            .get(index)
+            .map(|b| bytes_to_label(b))
+            .unwrap_or_default()
+    }
+
+    pub fn preset_label(&self, index: usize) -> String<MAX_LABEL_LEN> {
+        self.presets
             .get(index)
             .map(|b| bytes_to_label(b))
             .unwrap_or_default()

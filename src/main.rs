@@ -114,7 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        labels: pedalboard_midi::labels::LabelStore<10, 2, 2>,
+        labels: pedalboard_midi::labels::LabelStore<10, 2, 2, 32>,
     }
 
     #[local]
@@ -827,6 +827,8 @@ mod app {
                             ComponentType::Encoder
                         } else if section == 0x0C {
                             ComponentType::Analog
+                        } else if section == 0x06 {
+                            ComponentType::Preset
                         } else {
                             continue;
                         };
@@ -934,17 +936,24 @@ mod app {
 
         // Load labels from shared store (defaults if empty)
         let mut presets: [PresetMeta; 3] = core::array::from_fn(|_| PresetMeta::default());
-        for (i, preset) in presets.iter_mut().enumerate() {
-            let mut name: String<16> = String::new();
-            core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", i + 1)).ok();
-            preset.name = name;
-        }
         ctx.shared.labels.lock(|labels| {
-            let defaults = ["A", "B", "C", "D", "E", "F"];
-            for preset in presets.iter_mut() {
-                for (i, default) in defaults.iter().enumerate() {
-                    let label = labels.button_label(i);
-                    preset.button_labels[i] = if label.is_empty() {
+            for (i, preset) in presets.iter_mut().enumerate() {
+                let name = labels.preset_label(i);
+                if name.is_empty() {
+                    let mut default_name: String<16> = String::new();
+                    core::fmt::Write::write_fmt(
+                        &mut default_name,
+                        format_args!("Preset {}", i + 1),
+                    )
+                    .ok();
+                    preset.name = default_name;
+                } else {
+                    preset.name = name;
+                }
+                let defaults = ["A", "B", "C", "D", "E", "F"];
+                for (j, default) in defaults.iter().enumerate() {
+                    let label = labels.button_label(j);
+                    preset.button_labels[j] = if label.is_empty() {
                         String::try_from(*default).unwrap_or_default()
                     } else {
                         label
@@ -986,11 +995,23 @@ mod app {
             let labels_dirty = ctx.shared.labels.lock(|labels| {
                 if labels.dirty {
                     labels.dirty = false;
-                    let defaults = ["A", "B", "C", "D", "E", "F"];
-                    for preset in presets.iter_mut() {
-                        for (i, default) in defaults.iter().enumerate() {
-                            let label = labels.button_label(i);
-                            preset.button_labels[i] = if label.is_empty() {
+                    for (i, preset) in presets.iter_mut().enumerate() {
+                        let name = labels.preset_label(i);
+                        if name.is_empty() {
+                            let mut default_name: String<16> = String::new();
+                            core::fmt::Write::write_fmt(
+                                &mut default_name,
+                                format_args!("Preset {}", i + 1),
+                            )
+                            .ok();
+                            preset.name = default_name;
+                        } else {
+                            preset.name = name;
+                        }
+                        let defaults = ["A", "B", "C", "D", "E", "F"];
+                        for (j, default) in defaults.iter().enumerate() {
+                            let label = labels.button_label(j);
+                            preset.button_labels[j] = if label.is_empty() {
                                 String::try_from(*default).unwrap_or_default()
                             } else {
                                 label
