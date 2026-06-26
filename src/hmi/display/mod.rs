@@ -109,14 +109,14 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
-    pub fn draw_preset_overlay(&mut self, name: &str, forward: bool) {
+    pub fn draw_preset_overlay(&mut self, number: u8, name: &str, forward: bool) {
         use pedalboard_midi::views::preset_overlay;
-        // Arrow on the side of the button pressed, name on the other
+        // Arrow on the side of the button pressed, number+name on the other
         if forward {
-            // F is right → arrow on right, name on left
+            // F is right → arrow on right, preset on left
             if let Some(display) = &mut self.display_l.driver {
                 display.clear(Gray4::BLACK).ok();
-                preset_overlay::draw_name(display, name).ok();
+                preset_overlay::draw(display, number, name).ok();
                 display.flush().ok();
             }
             if let Some(display) = &mut self.display_r.driver {
@@ -125,7 +125,7 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
                 display.flush().ok();
             }
         } else {
-            // D is left → arrow on left, name on right
+            // D is left → arrow on left, preset on right
             if let Some(display) = &mut self.display_l.driver {
                 display.clear(Gray4::BLACK).ok();
                 preset_overlay::draw_name(display, "<<").ok();
@@ -133,7 +133,7 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             }
             if let Some(display) = &mut self.display_r.driver {
                 display.clear(Gray4::BLACK).ok();
-                preset_overlay::draw_name(display, name).ok();
+                preset_overlay::draw(display, number, name).ok();
                 display.flush().ok();
             }
         }
