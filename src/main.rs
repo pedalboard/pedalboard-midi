@@ -320,13 +320,29 @@ mod app {
         }
 
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
+
+        // Load PE presets from flash (sync, runs on init stack)
+        let mut pe_config = pedalboard_protocol::config::Config::default();
+        pedalboard_midi::preset_flash::load_all(|idx, data| {
+            if let Ok(preset) = postcard::from_bytes::<pedalboard_protocol::config::Preset>(data) {
+                let i = idx as usize;
+                while pe_config.presets.len() <= i {
+                    pe_config
+                        .presets
+                        .push(pedalboard_protocol::config::Preset::default())
+                        .ok();
+                }
+                pe_config.presets[i] = preset;
+            }
+        });
+
         (
             Shared {
                 usb_midi,
                 usb_dev,
                 opendeck,
                 active_preset: 0,
-                pe_config: pedalboard_protocol::config::Config::default(),
+                pe_config,
             },
             Local {
                 uart_midi_out,
@@ -898,6 +914,7 @@ mod app {
                                 }
                                 cfg.presets[idx] = preset;
                             });
+                            pedalboard_midi::preset_flash::save_one(preset_index, &data);
                         } else {
                             warn!("preset {} deserialize failed", preset_index);
                         }

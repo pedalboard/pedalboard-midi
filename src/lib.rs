@@ -10,5 +10,7 @@ pub mod loudness;
 #[cfg(target_arch = "arm")]
 pub mod opendeck_handler;
 #[cfg(target_arch = "arm")]
+pub mod preset_flash;
+#[cfg(target_arch = "arm")]
 pub mod storage;
 pub mod views;
