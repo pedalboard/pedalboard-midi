@@ -15,6 +15,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 
 [[package]]
+name = "bitflags"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -27,6 +33,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "eg-seven-segment"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e7d2f54ed234b333c71865c641906175a0d58bf366534ba5b8ded74b524b87b"
+dependencies = [
+ "bitflags",
+ "embedded-graphics",
 ]
 
 [[package]]
@@ -116,6 +132,7 @@ checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 [[package]]
 name = "pedalboard-protocol"
 version = "0.1.0"
+source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#e839502e002cf306d3595c7f2d5d6441ddf4de04"
 dependencies = [
  "heapless",
  "postcard",
@@ -126,6 +143,7 @@ dependencies = [
 name = "pedalboard-views-test"
 version = "0.0.0"
 dependencies = [
+ "eg-seven-segment",
  "embedded-graphics",
  "embedded-text",
  "heapless",
