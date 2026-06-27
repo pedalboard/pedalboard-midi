@@ -673,81 +673,7 @@ mod app {
                             continue;
                         }
 
-                        // Handle pedalboard label messages (M_ID_2 = 0x44)
-                        if pedalboard_midi::labels::is_label_message(sysex_receive_buffer.as_ref())
-                        {
-                            if let Some(req) =
-                                pedalboard_midi::labels::parse(sysex_receive_buffer.as_ref())
-                            {
-                                use pedalboard_midi::labels::LabelRequest;
-                                let mut resp_buf = [0u8; 15];
-                                let resp_len = match req {
-                                    LabelRequest::Set {
-                                        component,
-                                        preset,
-                                        index,
-                                        char_pos,
-                                        value,
-                                    } => {
-                                        ctx.shared.labels.lock(|labels| {
-                                            labels.set_char(
-                                                component, preset, index, char_pos, value,
-                                            );
-                                        });
-                                        let (block, section, idx) =
-                                            pedalboard_midi::labels::storage_key(
-                                                component, preset, index, char_pos,
-                                            );
-                                        let val = value as u16;
-                                        ctx.local
-                                            .persist_sender
-                                            .try_send(
-                                                pedalboard_midi::opendeck_handler::PersistCommand::Save(
-                                                    block, section, idx, val,
-                                                ),
-                                            )
-                                            .ok();
-                                        pedalboard_midi::labels::render_response(
-                                            component,
-                                            preset,
-                                            index,
-                                            char_pos,
-                                            value,
-                                            &mut resp_buf,
-                                        )
-                                    }
-                                    LabelRequest::Get {
-                                        component,
-                                        preset,
-                                        index,
-                                        char_pos,
-                                    } => {
-                                        let value = ctx.shared.labels.lock(|labels| {
-                                            labels.get_char(component, preset, index, char_pos)
-                                        });
-                                        pedalboard_midi::labels::render_response(
-                                            component,
-                                            preset,
-                                            index,
-                                            char_pos,
-                                            value,
-                                            &mut resp_buf,
-                                        )
-                                    }
-                                };
-                                // Send response as USB MIDI SysEx
-                                for chunk in resp_buf[..resp_len].chunks(3) {
-                                    if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
-                                        CableNumber::Cable0,
-                                        chunk,
-                                    ) {
-                                        ctx.local.usb_sender_usb_thru.try_send(p).ok();
-                                    }
-                                }
-                            }
-                            sysex_receive_buffer.clear();
-                            continue;
-                        }
+                        // OpenDeck SysEx handling continues below
 
                         // Detect SET SINGLE commands and persist them
                         // Format: F0 00 53 43 00 PP 01 00 BLOCK SECTION IDX_H IDX_L VAL_H VAL_L F7
@@ -881,19 +807,6 @@ mod app {
                         let mut responses = opendeck.config.process_sysex(&raw);
                         while let Ok(Some(_)) = responses.next(&mut buf, &mut opendeck.config) {}
                     }
-                });
-                // Restore label entries (block=7)
-                ctx.shared.labels.lock(|labels| {
-                    use pedalboard_midi::labels::decode_storage_key;
-                    for &(block, section, index, value) in &entries {
-                        if block != 7 {
-                            continue;
-                        }
-                        let preset = section;
-                        let (comp, comp_idx, char_pos) = decode_storage_key(index);
-                        labels.set_char(comp, preset, comp_idx, char_pos, value as u8);
-                    }
-                    labels.dirty = true;
                 });
             }
             info!("config persistence ready");
