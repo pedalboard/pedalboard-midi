@@ -30,6 +30,7 @@ pub type LedAnimations = [Animation; 8];
 pub struct PeHandler {
     pub encoder_values: [u8; 2],
     button_active: [bool; NUM_BUTTONS],
+    cycle_index: [u8; NUM_BUTTONS],
     long_press: [LongPressDetector; NUM_BUTTONS],
 }
 
@@ -44,6 +45,7 @@ impl PeHandler {
         Self {
             encoder_values: [0; 2],
             button_active: [false; NUM_BUTTONS],
+            cycle_index: [0; NUM_BUTTONS],
             long_press: core::array::from_fn(|_| LongPressDetector::new()),
         }
     }
@@ -106,13 +108,31 @@ impl PeHandler {
                                 self.button_active[i] = !self.button_active[i];
                                 led_dirty = true;
                             }
-                            execute_actions(&btn.on_press, &mut midi, &mut system);
-                            execute_actions(&btn.on_release, &mut midi, &mut system);
+                            execute_actions(
+                                &btn.on_press,
+                                &btn.cycle_values,
+                                &mut midi,
+                                &mut system,
+                                &mut self.cycle_index[i],
+                            );
+                            execute_actions(
+                                &btn.on_release,
+                                &btn.cycle_values,
+                                &mut midi,
+                                &mut system,
+                                &mut self.cycle_index[i],
+                            );
                         }
                     }
                     Some(Gesture::LongPress) => {
                         if let Some(btn) = preset.buttons.get(i) {
-                            execute_actions(&btn.on_long_press, &mut midi, &mut system);
+                            execute_actions(
+                                &btn.on_long_press,
+                                &btn.cycle_values,
+                                &mut midi,
+                                &mut system,
+                                &mut self.cycle_index[i],
+                            );
                         }
                     }
                     None => {}
@@ -135,7 +155,13 @@ impl PeHandler {
                                     led_dirty = true;
                                 }
                             }
-                            execute_actions(&btn.on_press, &mut midi, &mut system);
+                            execute_actions(
+                                &btn.on_press,
+                                &btn.cycle_values,
+                                &mut midi,
+                                &mut system,
+                                &mut self.cycle_index[i],
+                            );
                         }
                     }
                     Some(Edge::Deactivate) => {
@@ -144,7 +170,13 @@ impl PeHandler {
                                 self.button_active[i] = false;
                                 led_dirty = true;
                             }
-                            execute_actions(&btn.on_release, &mut midi, &mut system);
+                            execute_actions(
+                                &btn.on_release,
+                                &btn.cycle_values,
+                                &mut midi,
+                                &mut system,
+                                &mut self.cycle_index[i],
+                            );
                         }
                     }
                     None => {}
@@ -222,8 +254,10 @@ impl PeHandler {
 
 fn execute_actions(
     actions: &heapless::Vec<Action, { pedalboard_protocol::config::MAX_ACTIONS }>,
+    cycle_values: &heapless::Vec<u8, { pedalboard_protocol::config::MAX_CYCLE_VALUES }>,
     midi: &mut heapless::Vec<([u8; 3], usize), 8>,
     system: &mut heapless::Vec<SystemAction, 2>,
+    cycle_index: &mut u8,
 ) {
     for action in actions {
         match action {
@@ -232,6 +266,32 @@ fn execute_actions(
             }
             Action::PresetPrev => {
                 system.push(SystemAction::PresetPrev).ok();
+            }
+            Action::CcCycle {
+                cc,
+                channel,
+                reverse,
+            } => {
+                if !cycle_values.is_empty() {
+                    let idx = (*cycle_index as usize) % cycle_values.len();
+                    let value = cycle_values[idx];
+                    push_midi(
+                        midi,
+                        &MidiMessage {
+                            data: [0xB0 | (channel - 1), *cc, value],
+                            len: 3,
+                        },
+                    );
+                    if *reverse {
+                        *cycle_index = if *cycle_index == 0 {
+                            (cycle_values.len() - 1) as u8
+                        } else {
+                            *cycle_index - 1
+                        };
+                    } else {
+                        *cycle_index = ((*cycle_index as usize + 1) % cycle_values.len()) as u8;
+                    }
+                }
             }
             _ => {
                 if let Some(msg) = action_to_midi(action) {
@@ -303,6 +363,7 @@ mod tests {
                 on_press,
                 on_release,
                 on_long_press: Vec::new(),
+                cycle_values: Vec::new(),
             })
             .ok();
 
@@ -330,6 +391,7 @@ mod tests {
                 on_press: on_press_b,
                 on_release: Vec::new(),
                 on_long_press: on_long_press_b,
+                cycle_values: Vec::new(),
             })
             .ok();
 
@@ -461,6 +523,7 @@ mod tests {
                 on_press: heapless::Vec::new(),
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
             })
             .ok();
         // Button B: toggle, blue on, red off
@@ -475,6 +538,7 @@ mod tests {
                 on_press: heapless::Vec::new(),
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
             })
             .ok();
         Preset {
@@ -560,5 +624,108 @@ mod tests {
         let mut handler = PeHandler::new();
         let r = handler.handle_events(&preset, &[]);
         assert!(!r.led_dirty);
+    }
+
+    // --- CcCycle tests ---
+
+    fn make_cycle_preset() -> Preset {
+        use pedalboard_protocol::config::*;
+        let mut buttons: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        let mut on_press: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        let mut values: heapless::Vec<u8, MAX_CYCLE_VALUES> = heapless::Vec::new();
+        for &v in &[0u8, 8, 17, 26, 35] {
+            values.push(v).ok();
+        }
+        on_press
+            .push(Action::CcCycle {
+                cc: 8,
+                channel: 1,
+                reverse: false,
+            })
+            .ok();
+        buttons
+            .push(ButtonConfig {
+                label: Label::try_from("Kit+").unwrap(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press,
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: values.clone(),
+            })
+            .ok();
+        // Button B: reverse cycle
+        let mut on_press_b: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_press_b
+            .push(Action::CcCycle {
+                cc: 8,
+                channel: 1,
+                reverse: true,
+            })
+            .ok();
+        buttons
+            .push(ButtonConfig {
+                label: Label::try_from("Kit-").unwrap(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press: on_press_b,
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: values,
+            })
+            .ok();
+        Preset {
+            name: Label::try_from("Cycle").unwrap(),
+            buttons,
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+        }
+    }
+
+    #[test]
+    fn cc_cycle_forward() {
+        let preset = make_cycle_preset();
+        let mut handler = PeHandler::new();
+        // First press → value 0
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 0]);
+        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        // Second press → value 8
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 8]);
+        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        // Third → 17
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 17]);
+    }
+
+    #[test]
+    fn cc_cycle_wraps() {
+        let preset = make_cycle_preset();
+        let mut handler = PeHandler::new();
+        // Press 5 times (list has 5 values), then 6th wraps to 0
+        for _ in 0..5 {
+            handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+            handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        }
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 0]); // wrapped
+    }
+
+    #[test]
+    fn cc_cycle_reverse() {
+        let preset = make_cycle_preset();
+        let mut handler = PeHandler::new();
+        // First press reverse → starts at index 0, sends value 0, then index wraps to 4
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 0]);
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        // Second press → index 4 → value 35
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 35]);
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        // Third → index 3 → value 26
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert_eq!(r.midi[0].0, [0xB0, 8, 26]);
     }
 }

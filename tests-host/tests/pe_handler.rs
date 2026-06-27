@@ -39,6 +39,7 @@ fn make_test_preset() -> Preset {
                 v
             },
             on_long_press: Vec::new(),
+            cycle_values: Vec::new(),
         })
         .ok();
 
@@ -59,6 +60,7 @@ fn make_test_preset() -> Preset {
                 v.push(Action::PresetNext).ok();
                 v
             },
+            cycle_values: Vec::new(),
         })
         .ok();
 
@@ -79,6 +81,7 @@ fn make_test_preset() -> Preset {
                 v.push(Action::PresetPrev).ok();
                 v
             },
+            cycle_values: Vec::new(),
         })
         .ok();
 
