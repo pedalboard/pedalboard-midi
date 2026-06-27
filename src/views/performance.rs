@@ -75,13 +75,23 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         .build();
 
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
+    const INSET: u32 = 8;
 
     for i in 0..ROWS {
         let y = (PADDING + i * (ROW_HEIGHT + PADDING)) as i32;
-        let rect = Rectangle::new(
-            Point::new(PADDING as i32, y),
-            Size::new(ROW_WIDTH, ROW_HEIGHT),
+
+        let sharp_on_left = matches!(
+            (side, i),
+            (Side::Left, 0) | (Side::Left, 2) | (Side::Right, 1)
         );
+
+        let (x, w) = if sharp_on_left {
+            (PADDING as i32, ROW_WIDTH - INSET)
+        } else {
+            ((PADDING + INSET) as i32, ROW_WIDTH - INSET)
+        };
+
+        let rect = Rectangle::new(Point::new(x, y), Size::new(w, ROW_HEIGHT));
 
         // Sharp corner points toward the physical button location
         // D is above-left of L  → top-left
@@ -133,7 +143,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 rect.top_left + Point::new(0, cs),
             ),
             (Side::Left, 1) => {
-                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, 0);
+                let p = rect.top_left + Point::new(w as i32 - 1, 0);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Left, _) => {
@@ -141,7 +151,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, 0) => {
-                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, 0);
+                let p = rect.top_left + Point::new(w as i32 - 1, 0);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Right, 1) => {
@@ -149,7 +159,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, _) => {
-                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, ROW_HEIGHT as i32 - 1);
+                let p = rect.top_left + Point::new(w as i32 - 1, ROW_HEIGHT as i32 - 1);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, -cs))
             }
         };
