@@ -140,7 +140,7 @@ mod app {
         persist_sender:
             Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
     }
-    const USB_OUT_CAPACITY: usize = 32;
+    const USB_OUT_CAPACITY: usize = 64;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 1;
@@ -737,6 +737,44 @@ mod app {
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
+                                );
+                                for chunk in reply.chunks(3) {
+                                    if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        chunk,
+                                    ) {
+                                        ctx.local.usb_sender_usb_thru.try_send(p).ok();
+                                    }
+                                }
+                            }
+                            sysex_receive_buffer.clear();
+                            continue;
+                        }
+
+                        // Handle Get Property Inquiry (read-back)
+                        if pedalboard_protocol::property_exchange::is_get_property(
+                            sysex_receive_buffer.as_ref(),
+                        ) {
+                            if let Some(resource) =
+                                pedalboard_protocol::property_exchange::extract_get_resource(
+                                    sysex_receive_buffer.as_ref(),
+                                )
+                            {
+                                let req_id = pedalboard_protocol::property_exchange::request_id(
+                                    sysex_receive_buffer.as_ref(),
+                                );
+                                let src_muid = pedalboard_protocol::property_exchange::source_muid(
+                                    sysex_receive_buffer.as_ref(),
+                                );
+                                // Find preset in flash and reply with raw bytes
+                                let data = pedalboard_midi::preset_flash::load_one(resource);
+                                let body = data.unwrap_or(&[]);
+                                let reply = pedalboard_protocol::property_exchange::build_get_reply(
+                                    [0x01, 0x02, 0x03, 0x04],
+                                    src_muid,
+                                    req_id,
+                                    resource,
+                                    body,
                                 );
                                 for chunk in reply.chunks(3) {
                                     if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(

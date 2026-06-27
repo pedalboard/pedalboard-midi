@@ -128,3 +128,41 @@ pub fn load_all(mut callback: impl FnMut(u8, &[u8])) {
         offset += len;
     }
 }
+
+/// Read a single preset's raw bytes from flash. Returns a slice into XIP flash (zero-copy).
+pub fn load_one(preset_index: u8) -> Option<&'static [u8]> {
+    let flash_base = (0x1000_0000 + PRESET_SECTOR_OFFSET) as *const u8;
+
+    let magic = u32::from_le_bytes(unsafe {
+        [
+            *flash_base,
+            *flash_base.add(1),
+            *flash_base.add(2),
+            *flash_base.add(3),
+        ]
+    });
+    if magic != MAGIC {
+        return None;
+    }
+    let count = unsafe { *flash_base.add(4) };
+
+    let mut offset = 5usize;
+    for _ in 0..count {
+        if offset + 3 > SECTOR_SIZE {
+            break;
+        }
+        let idx = unsafe { *flash_base.add(offset) };
+        let len = unsafe {
+            (*flash_base.add(offset + 1) as usize) | ((*flash_base.add(offset + 2) as usize) << 8)
+        };
+        offset += 3;
+        if offset + len > SECTOR_SIZE {
+            break;
+        }
+        if idx == preset_index {
+            return Some(unsafe { core::slice::from_raw_parts(flash_base.add(offset), len) });
+        }
+        offset += len;
+    }
+    None
+}
