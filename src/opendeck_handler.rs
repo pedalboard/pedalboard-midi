@@ -15,8 +15,10 @@ use smart_leds::RGB8;
 pub const PERSIST_CAPACITY: usize = 4;
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum PersistCommand {
     Save(u8, u8, u8, u16),
+    SavePreset(u8, heapless::Vec<u8, 192>),
     EraseAll,
 }
 

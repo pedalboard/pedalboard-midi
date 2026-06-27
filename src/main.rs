@@ -556,7 +556,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 64>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
+        local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
         shared =[usb_midi,usb_dev,opendeck,labels]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -629,35 +629,25 @@ mod app {
                         if pedalboard_protocol::property_exchange::is_set_property(
                             sysex_receive_buffer.as_ref(),
                         ) {
-                            if let Some(body) = pedalboard_protocol::property_exchange::extract_body(
-                                sysex_receive_buffer.as_ref(),
-                            ) {
-                                debug!("PE Set Property body len={}", body.len());
-                                // PoC: update button A label from body
-                                let label_len = body.len().min(16);
-                                ctx.shared.labels.lock(|labels| {
-                                    let preset = 0u8;
-                                    let comp_index = 0u8;
-                                    for (i, &ch) in body[..label_len].iter().enumerate() {
-                                        labels.set_char(
-                                            pedalboard_midi::labels::ComponentType::Switch,
-                                            preset,
-                                            comp_index,
-                                            i as u8,
-                                            ch,
-                                        );
-                                    }
-                                    // zero-terminate
-                                    if label_len < 16 {
-                                        labels.set_char(
-                                            pedalboard_midi::labels::ComponentType::Switch,
-                                            preset,
-                                            comp_index,
-                                            label_len as u8,
-                                            0,
-                                        );
-                                    }
-                                });
+                            if let Some(data) =
+                                pedalboard_protocol::property_exchange::extract_set_property(
+                                    sysex_receive_buffer.as_ref(),
+                                )
+                            {
+                                debug!(
+                                    "PE Set Property preset={} body len={}",
+                                    data.resource,
+                                    data.body.len()
+                                );
+                                if let Ok(blob) = heapless::Vec::from_slice(data.body) {
+                                    ctx.local
+                                        .persist_sender
+                                        .try_send(pedalboard_midi::opendeck_handler::PersistCommand::SavePreset(
+                                            data.resource,
+                                            blob,
+                                        ))
+                                        .ok();
+                                }
                                 // Send ACK reply
                                 let req_id = pedalboard_protocol::property_exchange::request_id(
                                     sysex_receive_buffer.as_ref(),
@@ -913,6 +903,9 @@ mod app {
                 match cmd {
                     PersistCommand::Save(block, section, index, value) => {
                         store.save(block, section, index, value).await;
+                    }
+                    PersistCommand::SavePreset(preset_index, data) => {
+                        info!("preset {} received ({} bytes)", preset_index, data.len());
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;
