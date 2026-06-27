@@ -78,6 +78,12 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     const INSET: u32 = 8;
 
     for i in 0..ROWS {
+        // Skip empty/unused buttons
+        let label = &preset.button_labels[indices[i as usize]];
+        if label.is_empty() {
+            continue;
+        }
+
         let y = (PADDING + i * (ROW_HEIGHT + PADDING)) as i32;
 
         let sharp_on_left = matches!(
@@ -166,7 +172,6 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         corner_pos.into_styled(fill).draw(display)?;
 
         // Label text with shadow for depth, then white on top
-        let label = &preset.button_labels[indices[i as usize]];
         let shadow_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x7));
         let shadow_rect = Rectangle::new(rect.top_left + Point::new(1, 1), rect.size);
         TextBox::with_textbox_style(label.as_str(), shadow_rect, shadow_style, textbox_style)
@@ -197,7 +202,6 @@ pub fn preset_meta_from_config(
             p.buttons
                 .get(j)
                 .map(|b| b.label.clone())
-                .filter(|l| !l.is_empty())
                 .unwrap_or_else(|| String::try_from(defaults[j]).unwrap_or_default())
         });
         (name, labels)
