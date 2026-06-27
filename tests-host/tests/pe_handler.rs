@@ -9,6 +9,9 @@ mod action;
 #[path = "../../src/long_press.rs"]
 mod long_press;
 
+#[path = "../../src/ledring.rs"]
+mod ledring;
+
 #[path = "../../src/pe_handler.rs"]
 mod pe_handler;
 

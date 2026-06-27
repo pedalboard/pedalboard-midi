@@ -498,13 +498,33 @@ mod app {
                             }
                         });
                     }
-                    if !all_sent.is_empty() {
+                    if !all_sent.is_empty() || result.led_dirty {
+                        // Render LEDs from PE state (bypass OpenDeck LED engine)
                         ctx.shared.opendeck.lock(|opendeck| {
                             din_enabled = opendeck.din_midi_enabled();
-                            for (raw, len) in &all_sent {
-                                led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
-                            }
                         });
+                        if result.led_dirty {
+                            ctx.shared.pe_config.lock(|cfg| {
+                                let preset = &cfg.presets[preset_idx as usize];
+                                let anims = pe.led_state(preset);
+                                use pedalboard_midi::leds::LedRings;
+                                const RINGS: [LedRings; 8] = [
+                                    LedRings::A,
+                                    LedRings::B,
+                                    LedRings::C,
+                                    LedRings::D,
+                                    LedRings::E,
+                                    LedRings::F,
+                                    LedRings::Vol,
+                                    LedRings::Gain,
+                                ];
+                                let mut leds = pedalboard_midi::leds::Leds::default();
+                                for (i, anim) in anims.iter().enumerate() {
+                                    leds.set_ledring(*anim, RINGS[i]);
+                                }
+                                led_data = Some(leds.render());
+                            });
+                        }
                     }
                 }
             } else if !events.is_empty() && preset_idx < 4 {
