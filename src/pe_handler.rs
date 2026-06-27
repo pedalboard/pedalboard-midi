@@ -8,6 +8,8 @@ use pedalboard_protocol::config::{Action, ButtonMode, Color, Preset};
 use smart_leds::RGB8;
 
 const NUM_BUTTONS: usize = 6;
+/// ADC upper trim — hardware doesn't reach full 4095. Matches UpperADCOffset(14) from board design.
+const ADC_MAX_TRIMMED: u16 = 3750;
 
 /// System-level actions that transcend MIDI output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,12 +247,16 @@ impl PeHandler {
                     led_dirty = true;
                 }
                 InputEvent::ExpressionPedalA(raw_adc) => {
-                    if let Some(msg) = analog_cc(preset, 0, *raw_adc, 4095) {
+                    // ADC trim: pedal hardware doesn't reach full 4095
+                    // TODO: make configurable (per-board calibration)
+                    let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
+                    if let Some(msg) = analog_cc(preset, 0, adc, ADC_MAX_TRIMMED) {
                         push_midi(&mut midi, &msg);
                     }
                 }
                 InputEvent::ExpressionPedalB(raw_adc) => {
-                    if let Some(msg) = analog_cc(preset, 1, *raw_adc, 4095) {
+                    let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
+                    if let Some(msg) = analog_cc(preset, 1, adc, ADC_MAX_TRIMMED) {
                         push_midi(&mut midi, &msg);
                     }
                 }
