@@ -321,20 +321,26 @@ mod app {
 
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
-        // Load PE presets from flash (sync, runs on init stack)
-        let mut pe_config = pedalboard_protocol::config::Config::default();
-        pedalboard_midi::preset_flash::load_all(|idx, data| {
-            if let Ok(preset) = postcard::from_bytes::<pedalboard_protocol::config::Preset>(data) {
+        // Load PE presets from flash (sync, uses static to avoid stack overflow)
+        static mut PE_CONFIG_INIT: pedalboard_protocol::config::Config =
+            pedalboard_protocol::config::Config {
+                presets: heapless::Vec::new(),
+            };
+        let pe_config = unsafe {
+            let cfg = &mut *core::ptr::addr_of_mut!(PE_CONFIG_INIT);
+            pedalboard_midi::preset_flash::load_all(|idx, data| {
                 let i = idx as usize;
-                while pe_config.presets.len() <= i {
-                    pe_config
-                        .presets
-                        .push(pedalboard_protocol::config::Preset::default())
-                        .ok();
+                while cfg.presets.len() <= i {
+                    cfg.presets.push(Default::default()).ok();
                 }
-                pe_config.presets[i] = preset;
-            }
-        });
+                if let Ok(preset) =
+                    postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
+                {
+                    cfg.presets[i] = preset;
+                }
+            });
+            core::mem::take(cfg)
+        };
 
         (
             Shared {
