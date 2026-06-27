@@ -114,8 +114,7 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        labels: pedalboard_midi::labels::LabelStore<6, 2, 2, 32>,
-        pe_preset: Option<pedalboard_protocol::config::Preset>,
+        pe_config: pedalboard_protocol::config::Config,
     }
 
     #[local]
@@ -327,8 +326,7 @@ mod app {
                 usb_dev,
                 opendeck,
                 active_preset: 0,
-                labels: pedalboard_midi::labels::LabelStore::new(),
-                pe_preset: None,
+                pe_config: pedalboard_protocol::config::Config::default(),
             },
             Local {
                 uart_midi_out,
@@ -385,7 +383,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, labels, pe_preset])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -471,11 +469,11 @@ mod app {
             if !events.is_empty() || preset_changed {
                 if preset_changed {
                     ctx.shared.active_preset.lock(|active_preset| {
-                        // Count active presets (those with non-empty labels), minimum 1
-                        let active_count = ctx.shared.labels.lock(|labels| {
+                        // Count active presets (those with non-empty names), minimum 1
+                        let active_count = ctx.shared.pe_config.lock(|cfg| {
                             let mut count = 0u8;
-                            for i in 0..32 {
-                                if !labels.preset_label(i).is_empty() {
+                            for p in cfg.presets.iter() {
+                                if !p.name.is_empty() {
                                     count += 1;
                                 }
                             }
@@ -494,72 +492,77 @@ mod app {
                         *active_preset = next;
                     });
                 }
-                // Execute PE preset actions (if active)
-                let (pe_handled, pe_actions): (bool, heapless::Vec<([u8; 6], usize), 8>) =
-                    ctx.shared.pe_preset.lock(|pe_preset| {
-                        let Some(preset) = pe_preset.as_ref() else {
-                            return (false, heapless::Vec::new());
+                // Execute PE preset actions for buttons (if active)
+                let pe_handled_buttons = ctx.shared.pe_config.lock(|cfg| {
+                    let preset_idx = ctx.shared.active_preset.lock(|p| *p) as usize;
+                    let Some(preset) = cfg.presets.get(preset_idx) else {
+                        return false;
+                    };
+                    if preset.buttons.is_empty() {
+                        return false;
+                    }
+                    use pedalboard_midi::events::{Edge, InputEvent};
+                    use pedalboard_protocol::config::Action;
+                    for event in events.iter() {
+                        let (btn_idx, edge) = match event {
+                            InputEvent::ButtonA(e) => (0usize, e),
+                            InputEvent::ButtonB(e) => (1, e),
+                            InputEvent::ButtonC(e) => (2, e),
+                            InputEvent::ButtonD(e) => (3, e),
+                            InputEvent::ButtonE(e) => (4, e),
+                            InputEvent::ButtonF(e) => (5, e),
+                            _ => continue,
                         };
-                        let mut actions = heapless::Vec::new();
-                        use pedalboard_midi::events::{Edge, InputEvent};
-                        use pedalboard_protocol::config::Action;
-                        for event in events.iter() {
-                            let (btn_idx, edge) = match event {
-                                InputEvent::ButtonA(e) => (0usize, e),
-                                InputEvent::ButtonB(e) => (1, e),
-                                InputEvent::ButtonC(e) => (2, e),
-                                InputEvent::ButtonD(e) => (3, e),
-                                InputEvent::ButtonE(e) => (4, e),
-                                InputEvent::ButtonF(e) => (5, e),
-                                _ => continue,
-                            };
-                            if *edge != Edge::Activate {
-                                continue;
-                            }
-                            if let Some(btn) = preset.buttons.get(btn_idx) {
-                                for action in &btn.on_press {
-                                    let msg: Option<([u8; 6], usize)> = match action {
-                                        Action::Cc { cc, value, channel } => Some((
-                                            [0xB0 | (channel - 1), *cc, *value, 0, 0, 0],
-                                            3,
-                                        )),
-                                        Action::ProgramChange { program, channel } => Some((
-                                            [0xC0 | (channel - 1), *program, 0, 0, 0, 0],
-                                            2,
-                                        )),
-                                        Action::NoteOn { note, channel } => Some((
-                                            [0x90 | (channel - 1), *note, 127, 0, 0, 0],
-                                            3,
-                                        )),
-                                        Action::NoteOff { note, channel } => Some((
-                                            [0x80 | (channel - 1), *note, 0, 0, 0, 0],
-                                            3,
-                                        )),
-                                        _ => None,
-                                    };
-                                    if let Some(m) = msg {
-                                        actions.push(m).ok();
+                        if *edge != Edge::Activate {
+                            continue;
+                        }
+                        if let Some(btn) = preset.buttons.get(btn_idx) {
+                            for action in &btn.on_press {
+                                let msg: Option<([u8; 6], usize)> = match action {
+                                    Action::Cc { cc, value, channel } => {
+                                        Some(([0xB0 | (channel - 1), *cc, *value, 0, 0, 0], 3))
                                     }
+                                    Action::ProgramChange { program, channel } => {
+                                        Some(([0xC0 | (channel - 1), *program, 0, 0, 0, 0], 2))
+                                    }
+                                    Action::NoteOn { note, channel } => {
+                                        Some(([0x90 | (channel - 1), *note, 127, 0, 0, 0], 3))
+                                    }
+                                    Action::NoteOff { note, channel } => {
+                                        Some(([0x80 | (channel - 1), *note, 0, 0, 0, 0], 3))
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(m) = msg {
+                                    all_sent.push(m).ok();
                                 }
                             }
                         }
-                        (true, actions)
-                    });
-                for m in &pe_actions {
-                    all_sent.push(*m).ok();
-                }
-                if pe_handled {
-                    din_enabled = true;
-                } else {
+                    }
+                    true
+                });
+                // OpenDeck handles encoder/analog events always, and buttons if PE not active
                 ctx.shared.opendeck.lock(|opendeck| {
                     din_enabled = opendeck.din_midi_enabled();
-                    for event in events {
-                        // Capture component info for the last event (avoids flooding)
+                    for event in events.iter() {
+                        use pedalboard_midi::events::InputEvent;
+                        // Skip button events if PE handled them
+                        if pe_handled_buttons {
+                            match event {
+                                InputEvent::ButtonA(_)
+                                | InputEvent::ButtonB(_)
+                                | InputEvent::ButtonC(_)
+                                | InputEvent::ButtonD(_)
+                                | InputEvent::ButtonE(_)
+                                | InputEvent::ButtonF(_) => continue,
+                                _ => {}
+                            }
+                        }
                         let mut ci_buf = [0u8; 16];
-                        if let Some(len) = opendeck.component_info(&event, &mut ci_buf) {
+                        if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
                             component_info_buf = Some((ci_buf, len));
                         }
-                        let mut messages = opendeck.handle_human_input(event);
+                        let mut messages = opendeck.handle_human_input(*event);
                         let mut buf = [0x00u8; 6];
                         while let Ok(Some(m)) = messages.next(&mut buf) {
                             let data = m.data();
@@ -575,7 +578,6 @@ mod app {
                         led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
                     }
                 });
-                }
             }
             // Send LED update outside the lock
             if let Some(data) = led_data {
@@ -617,7 +619,7 @@ mod app {
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck,labels]
+        shared =[usb_midi,usb_dev,opendeck]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -826,7 +828,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck, labels, pe_preset])]
+    #[task(shared = [opendeck, pe_config])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -845,7 +847,7 @@ mod app {
                     let mut buf = [0u8; 78];
                     for &(block, section, index, value) in &entries {
                         if block == 7 {
-                            continue; // label entries handled separately
+                            continue; // legacy label entries (removed), skip
                         }
                         let raw = [
                             0xF0,
@@ -881,26 +883,21 @@ mod app {
                         if let Ok(preset) =
                             postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
                         {
-                            info!("preset {} loaded: \"{}\"", preset_index, preset.name.as_str());
-                            // Update labels from preset
-                            ctx.shared.labels.lock(|labels| {
-                                for (i, btn) in preset.buttons.iter().enumerate() {
-                                    let comp = pedalboard_midi::labels::ComponentType::Switch;
-                                    for (c, &ch) in btn.label.as_bytes().iter().enumerate() {
-                                        labels.set_char(comp, preset_index, i as u8, c as u8, ch);
-                                    }
-                                    labels.set_char(
-                                        comp,
-                                        preset_index,
-                                        i as u8,
-                                        btn.label.len() as u8,
-                                        0,
-                                    );
+                            info!(
+                                "preset {} loaded: \"{}\"",
+                                preset_index,
+                                preset.name.as_str()
+                            );
+                            ctx.shared.pe_config.lock(|cfg| {
+                                let idx = preset_index as usize;
+                                // Extend presets vec if needed
+                                while cfg.presets.len() <= idx {
+                                    cfg.presets
+                                        .push(pedalboard_protocol::config::Preset::default())
+                                        .ok();
                                 }
-                                labels.dirty = true;
+                                cfg.presets[idx] = preset;
                             });
-                            // Store as active preset
-                            ctx.shared.pe_preset.lock(|p| *p = Some(preset));
                         } else {
                             warn!("preset {} deserialize failed", preset_index);
                         }
@@ -979,7 +976,7 @@ mod app {
         }
     }
 
-    #[task(local = [displays], shared = [active_preset, opendeck, labels])]
+    #[task(local = [displays], shared = [active_preset, opendeck, pe_config])]
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
@@ -992,32 +989,10 @@ mod app {
         displays.splash_screen();
         Mono::delay(2000.millis()).await;
 
-        // Load labels from shared store (defaults if empty)
+        // Load labels from PE config (defaults if empty)
         let mut presets: [PresetMeta; 32] = core::array::from_fn(|_| PresetMeta::default());
-        ctx.shared.labels.lock(|labels| {
-            for (i, preset) in presets.iter_mut().enumerate() {
-                let name = labels.preset_label(i);
-                if name.is_empty() {
-                    let mut default_name: String<16> = String::new();
-                    core::fmt::Write::write_fmt(
-                        &mut default_name,
-                        format_args!("Preset {}", i + 1),
-                    )
-                    .ok();
-                    preset.name = default_name;
-                } else {
-                    preset.name = name;
-                }
-                let defaults = ["A", "B", "C", "D", "E", "F"];
-                for (j, default) in defaults.iter().enumerate() {
-                    let label = labels.button_label(i, j);
-                    preset.button_labels[j] = if label.is_empty() {
-                        String::try_from(*default).unwrap_or_default()
-                    } else {
-                        label
-                    };
-                }
-            }
+        ctx.shared.pe_config.lock(|cfg| {
+            load_preset_meta(&mut presets, cfg);
         });
 
         let mut current_preset: u8 = 0;
@@ -1049,39 +1024,20 @@ mod app {
             // Check for preset change
             let new_preset = ctx.shared.active_preset.lock(|p| *p);
 
-            // Refresh labels if changed via SysEx
-            let labels_dirty = ctx.shared.labels.lock(|labels| {
-                if labels.dirty {
-                    labels.dirty = false;
-                    for (i, preset) in presets.iter_mut().enumerate() {
-                        let name = labels.preset_label(i);
-                        if name.is_empty() {
-                            let mut default_name: String<16> = String::new();
-                            core::fmt::Write::write_fmt(
-                                &mut default_name,
-                                format_args!("Preset {}", i + 1),
-                            )
-                            .ok();
-                            preset.name = default_name;
-                        } else {
-                            preset.name = name;
-                        }
-                        let defaults = ["A", "B", "C", "D", "E", "F"];
-                        for (j, default) in defaults.iter().enumerate() {
-                            let label = labels.button_label(i, j);
-                            preset.button_labels[j] = if label.is_empty() {
-                                String::try_from(*default).unwrap_or_default()
-                            } else {
-                                label
-                            };
-                        }
+            // Refresh labels from PE config
+            let config_changed = ctx.shared.pe_config.lock(|cfg| {
+                let mut changed = false;
+                for (i, meta) in presets.iter_mut().enumerate() {
+                    let (name, labels) = preset_meta_from_config(cfg, i);
+                    if meta.name != name || meta.button_labels != labels {
+                        meta.name = name;
+                        meta.button_labels = labels;
+                        changed = true;
                     }
-                    true
-                } else {
-                    false
                 }
+                changed
             });
-            if labels_dirty && !debug_mode {
+            if config_changed && !debug_mode {
                 let idx = (current_preset as usize) % presets.len();
                 displays.draw_performance(&presets[idx]);
             }
@@ -1115,53 +1071,69 @@ mod app {
                             let idx = (current_preset as usize) % presets.len();
                             match raw[1] {
                                 0 => {
-                                    let lbl = ctx.shared.labels.lock(|labels| {
-                                        let l = labels.encoder_label(idx, 0);
-                                        if l.is_empty() {
-                                            String::try_from("Vol").unwrap_or_default()
-                                        } else {
-                                            l
-                                        }
+                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
+                                        cfg.presets
+                                            .get(idx)
+                                            .and_then(|p| p.encoders.first())
+                                            .map(|e| e.label.clone())
+                                            .unwrap_or_default()
                                     });
+                                    let lbl = if lbl.is_empty() {
+                                        String::try_from("Vol").unwrap_or_default()
+                                    } else {
+                                        lbl
+                                    };
                                     displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
                                 1 => {
-                                    let lbl = ctx.shared.labels.lock(|labels| {
-                                        let l = labels.encoder_label(idx, 1);
-                                        if l.is_empty() {
-                                            String::try_from("Gain").unwrap_or_default()
-                                        } else {
-                                            l
-                                        }
+                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
+                                        cfg.presets
+                                            .get(idx)
+                                            .and_then(|p| p.encoders.get(1))
+                                            .map(|e| e.label.clone())
+                                            .unwrap_or_default()
                                     });
+                                    let lbl = if lbl.is_empty() {
+                                        String::try_from("Gain").unwrap_or_default()
+                                    } else {
+                                        lbl
+                                    };
                                     displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
                                 2 => {
-                                    let lbl = ctx.shared.labels.lock(|labels| {
-                                        let l = labels.analog_label(idx, 0);
-                                        if l.is_empty() {
-                                            String::try_from("Exp 1").unwrap_or_default()
-                                        } else {
-                                            l
-                                        }
+                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
+                                        cfg.presets
+                                            .get(idx)
+                                            .and_then(|p| p.analog.first())
+                                            .map(|a| a.label.clone())
+                                            .unwrap_or_default()
                                     });
+                                    let lbl = if lbl.is_empty() {
+                                        String::try_from("Exp 1").unwrap_or_default()
+                                    } else {
+                                        lbl
+                                    };
                                     displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
                                 }
                                 3 => {
-                                    let lbl = ctx.shared.labels.lock(|labels| {
-                                        let l = labels.analog_label(idx, 1);
-                                        if l.is_empty() {
-                                            String::try_from("Exp 2").unwrap_or_default()
-                                        } else {
-                                            l
-                                        }
+                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
+                                        cfg.presets
+                                            .get(idx)
+                                            .and_then(|p| p.analog.get(1))
+                                            .map(|a| a.label.clone())
+                                            .unwrap_or_default()
                                     });
+                                    let lbl = if lbl.is_empty() {
+                                        String::try_from("Exp 2").unwrap_or_default()
+                                    } else {
+                                        lbl
+                                    };
                                     displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
                                     overlay_ticks = OVERLAY_DURATION;
                                     show_overlay = true;
@@ -1233,6 +1205,48 @@ mod app {
                 ctx.local.debug_led.set_low().ok().unwrap();
             }
             Mono::delay(500.millis()).await;
+        }
+    }
+
+    fn preset_meta_from_config(
+        cfg: &pedalboard_protocol::config::Config,
+        index: usize,
+    ) -> (heapless::String<16>, [heapless::String<16>; 6]) {
+        use heapless::String;
+        let defaults = ["A", "B", "C", "D", "E", "F"];
+        if let Some(p) = cfg.presets.get(index) {
+            let name = if p.name.is_empty() {
+                let mut s: String<16> = String::new();
+                core::fmt::Write::write_fmt(&mut s, format_args!("Preset {}", index + 1)).ok();
+                s
+            } else {
+                p.name.clone()
+            };
+            let labels = core::array::from_fn(|j| {
+                p.buttons
+                    .get(j)
+                    .map(|b| b.label.clone())
+                    .filter(|l| !l.is_empty())
+                    .unwrap_or_else(|| String::try_from(defaults[j]).unwrap_or_default())
+            });
+            (name, labels)
+        } else {
+            let mut name: String<16> = String::new();
+            core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", index + 1)).ok();
+            let labels =
+                core::array::from_fn(|j| String::try_from(defaults[j]).unwrap_or_default());
+            (name, labels)
+        }
+    }
+
+    fn load_preset_meta(
+        presets: &mut [pedalboard_midi::views::performance::PresetMeta; 32],
+        cfg: &pedalboard_protocol::config::Config,
+    ) {
+        for (i, meta) in presets.iter_mut().enumerate() {
+            let (name, labels) = preset_meta_from_config(cfg, i);
+            meta.name = name;
+            meta.button_labels = labels;
         }
     }
 }

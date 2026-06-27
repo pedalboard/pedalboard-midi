@@ -3,7 +3,6 @@
 pub mod action;
 pub mod display;
 pub mod events;
-pub mod labels;
 pub mod ledring;
 pub mod leds;
 pub mod long_press;
