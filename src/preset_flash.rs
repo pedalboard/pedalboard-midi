@@ -31,13 +31,6 @@ pub fn save_one(preset_index: u8, data: &[u8]) {
     write_sector(page);
 }
 
-/// Save all preset blobs to flash at once.
-pub fn save_all(presets: &[(u8, &[u8])]) {
-    let mut page = [0xFFu8; SECTOR_SIZE];
-    preset_format::serialize(&mut page, presets);
-    write_sector(&page);
-}
-
 fn flash_sector_slice() -> &'static [u8] {
     let ptr = (0x1000_0000 + PRESET_SECTOR_OFFSET) as *const u8;
     unsafe { core::slice::from_raw_parts(ptr, SECTOR_SIZE) }

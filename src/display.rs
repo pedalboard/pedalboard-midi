@@ -47,20 +47,6 @@ impl MidiLog {
         self.next += 1;
     }
 
-    pub fn push_program_change(&mut self, ch: u8, prog: u8) {
-        let line = &mut self.lines[self.next % MAX_LINES];
-        line.clear();
-        write!(line, "PC   C{:02} #{:3}", ch, prog).ok();
-        self.next += 1;
-    }
-
-    pub fn push_raw(&mut self, msg: &str) {
-        let line = &mut self.lines[self.next % MAX_LINES];
-        line.clear();
-        write!(line, "{}", &msg[..msg.len().min(LINE_LEN)]).ok();
-        self.next += 1;
-    }
-
     /// Render the log to a display
     pub fn draw<D: DrawTarget<Color = Gray4>>(&self, display: &mut D) -> Result<(), D::Error> {
         display.fill_solid(
