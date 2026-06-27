@@ -948,7 +948,6 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "opendeck"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/opendeck?branch=main#3fd3a805598f8e8b32606381e0b3b6c878a97ed2"
 dependencies = [
  "heapless 0.9.3",
  "int-enum",
@@ -1042,7 +1041,6 @@ dependencies = [
 [[package]]
 name = "pedalboard-protocol"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#eb2ce493700ace01e9c7e311361faee30ae080a2"
 dependencies = [
  "heapless 0.9.3",
  "postcard",

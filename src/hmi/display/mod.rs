@@ -35,7 +35,7 @@ macro_rules! version {
 
 macro_rules! version_string {
     () => {
-        concat!(description!(), " v", version!(), " (", git_hash!(), ")")
+        concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH"))
     };
 }
 
@@ -58,7 +58,7 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
     }
     pub fn splash_screen(&mut self) {
         self.display_l.splash_screen();
-        self.display_r.splash_screen();
+        self.display_r.show();
     }
 
     pub fn show(&mut self, loc: DisplayLocation) {
