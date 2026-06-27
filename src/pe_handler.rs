@@ -85,10 +85,23 @@ impl PeHandler {
                 .unwrap_or(&ButtonMode::Momentary);
 
             if has_long_press {
+                // Track physical press for LED (momentary visual feedback)
+                if !matches!(mode, &ButtonMode::Toggle) {
+                    match edge {
+                        Some(Edge::Activate) => {
+                            self.button_active[i] = true;
+                            led_dirty = true;
+                        }
+                        Some(Edge::Deactivate) => {
+                            self.button_active[i] = false;
+                            led_dirty = true;
+                        }
+                        None => {}
+                    }
+                }
                 match self.long_press[i].update(edge) {
                     Some(Gesture::ShortPress) => {
                         if let Some(btn) = preset.buttons.get(i) {
-                            // Short press on a long-press button: toggle or momentary tap
                             if mode == &ButtonMode::Toggle {
                                 self.button_active[i] = !self.button_active[i];
                                 led_dirty = true;
