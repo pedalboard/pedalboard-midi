@@ -280,6 +280,10 @@ impl PeHandler {
             if let Some(btn) = preset.buttons.get(i) {
                 let color = if self.button_active[i] {
                     color_to_rgb(&btn.color.on)
+                } else if btn.color.off == Color::Off {
+                    // Dim the on-color as idle indicator
+                    let on = color_to_rgb(&btn.color.on);
+                    RGB8::new(on.r / 3, on.g / 3, on.b / 3)
                 } else {
                     color_to_rgb(&btn.color.off)
                 };
