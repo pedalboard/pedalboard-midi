@@ -31,9 +31,14 @@ fn main() {
     println!("cargo:rerun-if-changed=memory.x");
 
     let output = Command::new("git")
-        .args(["describe", "--always", "--dirty=+dev"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();
-    println!("cargo:rustc-env=GIT_HASH={}", git_hash.trim());
+    let dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    let suffix = if dirty.stdout.is_empty() { "" } else { "+dev" };
+    println!("cargo:rustc-env=GIT_HASH={}{}", git_hash.trim(), suffix);
 }

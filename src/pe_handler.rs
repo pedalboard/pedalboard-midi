@@ -98,7 +98,7 @@ impl PeHandler {
 
             if has_long_press {
                 // Track physical press for LED (momentary visual feedback)
-                if !matches!(mode, &ButtonMode::Toggle) {
+                if matches!(mode, &ButtonMode::Momentary) {
                     match edge {
                         Some(Edge::Activate) => {
                             self.button_active[i] = true;
@@ -116,6 +116,18 @@ impl PeHandler {
                         if let Some(btn) = preset.buttons.get(i) {
                             if mode == &ButtonMode::Toggle {
                                 self.button_active[i] = !self.button_active[i];
+                                led_dirty = true;
+                            } else if let ButtonMode::RadioGroup(group) = mode {
+                                for j in 0..NUM_BUTTONS {
+                                    if j != i {
+                                        if let Some(other) = preset.buttons.get(j) {
+                                            if other.mode == ButtonMode::RadioGroup(*group) {
+                                                self.button_active[j] = false;
+                                            }
+                                        }
+                                    }
+                                }
+                                self.button_active[i] = true;
                                 led_dirty = true;
                             }
                             execute_actions(
@@ -160,7 +172,17 @@ impl PeHandler {
                                     self.button_active[i] = true;
                                     led_dirty = true;
                                 }
-                                _ => {
+                                ButtonMode::RadioGroup(group) => {
+                                    // Deactivate all others in same group
+                                    for j in 0..NUM_BUTTONS {
+                                        if j != i {
+                                            if let Some(other) = preset.buttons.get(j) {
+                                                if other.mode == ButtonMode::RadioGroup(*group) {
+                                                    self.button_active[j] = false;
+                                                }
+                                            }
+                                        }
+                                    }
                                     self.button_active[i] = true;
                                     led_dirty = true;
                                 }
@@ -176,7 +198,7 @@ impl PeHandler {
                     }
                     Some(Edge::Deactivate) => {
                         if let Some(btn) = preset.buttons.get(i) {
-                            if !matches!(mode, ButtonMode::Toggle) {
+                            if matches!(mode, ButtonMode::Momentary) {
                                 self.button_active[i] = false;
                                 led_dirty = true;
                             }
@@ -283,7 +305,7 @@ impl PeHandler {
                 } else if btn.color.off == Color::Off {
                     // Dim the on-color as idle indicator
                     let on = color_to_rgb(&btn.color.on);
-                    RGB8::new(on.r / 3, on.g / 3, on.b / 3)
+                    RGB8::new(on.r / 6, on.g / 6, on.b / 6)
                 } else {
                     color_to_rgb(&btn.color.off)
                 };

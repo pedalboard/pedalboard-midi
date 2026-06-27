@@ -18,7 +18,7 @@ use embedded_text::{
 
 macro_rules! version_string {
     () => {
-        concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH"))
+        concat!(env!("CARGO_PKG_VERSION"), "\n", env!("GIT_HASH"))
     };
 }
 
