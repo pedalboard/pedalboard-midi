@@ -30,11 +30,10 @@ fn main() {
     // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
 
-    // note: add error checking yourself.
     let output = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
+        .args(["describe", "--always", "--dirty"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();
-    println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+    println!("cargo:rustc-env=GIT_HASH={}", git_hash.trim());
 }
