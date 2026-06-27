@@ -35,6 +35,18 @@ lint: ## lint source code
 attach: ## attach to the running program
 	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
+flash-probe: build ## flash via debug probe (SWD)
+	probe-rs download --chip RP2040 --protocol swd target/thumbv6m-none-eabi/release/pedalboard-midi
+	probe-rs reset --chip RP2040 --protocol swd
+
+flash-bridge: uf2 ## flash via bridge DFU (over network)
+	ssh laenzi@cm5-dev.home "amidi -p hw:2,0,0 -S 'F0 00 53 43 00 00 01 F7' -d -t 2 && amidi -p hw:2,0,0 -S 'F0 00 53 43 00 00 55 F7'"
+	@echo "Waiting for UF2 mount..."
+	ssh laenzi@cm5-dev.home "while [ ! -f /media/laenzi/RPI-RP2/INFO_UF2.TXT ]; do sleep 1; done"
+	scp target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 laenzi@cm5-dev.home:/media/laenzi/RPI-RP2/
+	ssh laenzi@cm5-dev.home "sync"
+	@echo "Flashed via bridge."
+
 device:
 	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
 
