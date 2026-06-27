@@ -431,8 +431,7 @@ mod app {
         let mut lp_d = pedalboard_midi::long_press::LongPressDetector::new();
         let mut lp_f = pedalboard_midi::long_press::LongPressDetector::new();
 
-        // Encoder CC values tracked for PE direct mode
-        let mut encoder_values: [u8; 2] = [0; 2];
+        let mut pe = pedalboard_midi::pe_handler::PeHandler::new();
 
         loop {
             // Drain USB→DIN thru messages
@@ -482,93 +481,92 @@ mod app {
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
-            if !events.is_empty() || preset_changed {
-                if preset_changed {
-                    ctx.shared.active_preset.lock(|active_preset| {
-                        // Count active presets (those with non-empty names), minimum 1
-                        let active_count = ctx.shared.pe_config.lock(|cfg| {
-                            let mut count = 0u8;
-                            for p in cfg.presets.iter() {
-                                if !p.name.is_empty() {
-                                    count += 1;
-                                }
+            if preset_changed {
+                ctx.shared.active_preset.lock(|active_preset| {
+                    // Count active presets (those with non-empty names), minimum 1
+                    let active_count = ctx.shared.pe_config.lock(|cfg| {
+                        let mut count = 0u8;
+                        for p in cfg.presets.iter() {
+                            if !p.name.is_empty() {
+                                count += 1;
                             }
-                            count.max(1)
-                        });
-                        let current = *active_preset;
-                        let next = if gesture_f == Some(Gesture::LongPress) {
-                            (current + 1) % active_count
-                        } else {
-                            if current == 0 {
-                                active_count - 1
-                            } else {
-                                current - 1
-                            }
-                        };
-                        *active_preset = next;
+                        }
+                        count.max(1)
                     });
-                }
-                // Determine if active preset is a PE preset (has a name)
-                // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
-                let preset_idx = ctx.shared.active_preset.lock(|p| *p);
-                let pe_active = ctx.shared.pe_config.lock(|cfg| {
-                    cfg.presets
-                        .get(preset_idx as usize)
-                        .map(|p| !p.name.is_empty())
-                        .unwrap_or(false)
+                    let current = *active_preset;
+                    let next = if gesture_f == Some(Gesture::LongPress) {
+                        (current + 1) % active_count
+                    } else {
+                        if current == 0 {
+                            active_count - 1
+                        } else {
+                            current - 1
+                        }
+                    };
+                    *active_preset = next;
                 });
+            }
 
-                if pe_active {
-                    // PE mode: all input handled from PE preset config
+            // Determine if active preset is a PE preset (has a name)
+            // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
+            let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+            let pe_active = ctx.shared.pe_config.lock(|cfg| {
+                cfg.presets
+                    .get(preset_idx as usize)
+                    .map(|p| !p.name.is_empty())
+                    .unwrap_or(false)
+            });
+
+            if pe_active {
+                // PE mode: only lock pe_config when needed
+                let need_tick = !events.is_empty() || pe.any_active();
+                if need_tick {
                     ctx.shared.pe_config.lock(|cfg| {
                         let preset = &cfg.presets[preset_idx as usize];
-                        let msgs = pedalboard_midi::pe_handler::handle_events(
-                            preset,
-                            &events,
-                            &mut encoder_values,
-                        );
+                        let msgs = pe.handle_events(preset, &events);
                         for (raw, len) in &msgs {
                             let mut buf = [0u8; 6];
                             buf[..*len].copy_from_slice(&raw[..*len]);
                             all_sent.push((buf, *len)).ok();
                         }
                     });
-                    // Still notify OpenDeck LED system of generated MIDI
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        din_enabled = opendeck.din_midi_enabled();
-                        for (raw, len) in &all_sent {
-                            led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
-                        }
-                    });
-                } else if preset_idx < 4 {
-                    // OpenDeck mode (slots 0-3 only): sync preset and handle input
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        opendeck.config.set_active_preset(preset_idx as usize);
-                        din_enabled = opendeck.din_midi_enabled();
-                        for event in events.iter() {
-                            let mut ci_buf = [0u8; 16];
-                            if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
-                                component_info_buf = Some((ci_buf, len));
+                    if !all_sent.is_empty() {
+                        ctx.shared.opendeck.lock(|opendeck| {
+                            din_enabled = opendeck.din_midi_enabled();
+                            for (raw, len) in &all_sent {
+                                led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
                             }
-                            let mut messages = opendeck.handle_human_input(*event);
-                            let mut buf = [0x00u8; 6];
-                            while let Ok(Some(m)) = messages.next(&mut buf) {
-                                let data = m.data();
-                                let len = data.len();
-                                if len > 0 && len <= 6 {
-                                    let mut raw = [0u8; 6];
-                                    raw[..len].copy_from_slice(data);
-                                    all_sent.push((raw, len)).ok();
-                                }
-                            }
-                        }
-                        for (raw, len) in &all_sent {
-                            led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
-                        }
-                    });
+                        });
+                    }
                 }
-                // Slots 4+ with no PE preset: inputs are silent
+            } else if !events.is_empty() && preset_idx < 4 {
+                // OpenDeck mode (slots 0-3 only): sync preset and handle input
+                ctx.shared.opendeck.lock(|opendeck| {
+                    opendeck.config.set_active_preset(preset_idx as usize);
+                    din_enabled = opendeck.din_midi_enabled();
+                    for event in events.iter() {
+                        let mut ci_buf = [0u8; 16];
+                        if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
+                            component_info_buf = Some((ci_buf, len));
+                        }
+                        let mut messages = opendeck.handle_human_input(*event);
+                        let mut buf = [0x00u8; 6];
+                        while let Ok(Some(m)) = messages.next(&mut buf) {
+                            let data = m.data();
+                            let len = data.len();
+                            if len > 0 && len <= 6 {
+                                let mut raw = [0u8; 6];
+                                raw[..len].copy_from_slice(data);
+                                all_sent.push((raw, len)).ok();
+                            }
+                        }
+                    }
+                    for (raw, len) in &all_sent {
+                        led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
+                    }
+                });
             }
+            // Slots 4+ with no PE preset: inputs are silent
             // Send LED update outside the lock
             if let Some(data) = led_data {
                 led_sender.try_send(data).ok();

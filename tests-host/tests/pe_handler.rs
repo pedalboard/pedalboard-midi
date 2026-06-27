@@ -6,27 +6,32 @@ mod events;
 #[path = "../../src/action.rs"]
 mod action;
 
+#[path = "../../src/long_press.rs"]
+mod long_press;
+
 #[path = "../../src/pe_handler.rs"]
 mod pe_handler;
 
 use events::{Edge, InputEvent, Pulse};
 use heapless::Vec;
+use pe_handler::PeHandler;
 use pedalboard_protocol::config::*;
 
 fn make_test_preset() -> Preset {
     let mut buttons: Vec<ButtonConfig, MAX_BUTTONS> = Vec::new();
+    // Button A: on_press NoteOn + on_release NoteOff (no long_press)
     let mut on_press: Vec<Action, MAX_ACTIONS> = Vec::new();
     on_press
-        .push(Action::Cc {
-            cc: 10,
-            value: 127,
+        .push(Action::NoteOn {
+            note: 60,
             channel: 1,
         })
         .ok();
-    on_press
-        .push(Action::ProgramChange {
-            program: 5,
-            channel: 2,
+    let mut on_release: Vec<Action, MAX_ACTIONS> = Vec::new();
+    on_release
+        .push(Action::NoteOff {
+            note: 60,
+            channel: 1,
         })
         .ok();
     buttons
@@ -35,8 +40,35 @@ fn make_test_preset() -> Preset {
             color: LedConfig::default(),
             mode: ButtonMode::default(),
             on_press,
-            on_release: Vec::new(),
+            on_release,
             on_long_press: Vec::new(),
+        })
+        .ok();
+
+    // Button B: has on_long_press (deferred press)
+    let mut on_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
+    on_press_b
+        .push(Action::Cc {
+            cc: 10,
+            value: 127,
+            channel: 1,
+        })
+        .ok();
+    let mut on_long_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
+    on_long_press_b
+        .push(Action::ProgramChange {
+            program: 5,
+            channel: 1,
+        })
+        .ok();
+    buttons
+        .push(ButtonConfig {
+            label: Label::new(),
+            color: LedConfig::default(),
+            mode: ButtonMode::default(),
+            on_press: on_press_b,
+            on_release: Vec::new(),
+            on_long_press: on_long_press_b,
         })
         .ok();
 
@@ -46,17 +78,6 @@ fn make_test_preset() -> Preset {
             label: Label::try_from("Vol").unwrap(),
             action: EncoderAction::Cc {
                 cc: 7,
-                channel: 1,
-                min: 0,
-                max: 127,
-            },
-        })
-        .ok();
-    encoders
-        .push(EncoderConfig {
-            label: Label::try_from("Gain").unwrap(),
-            action: EncoderAction::Cc {
-                cc: 91,
                 channel: 1,
                 min: 0,
                 max: 127,
@@ -84,85 +105,110 @@ fn make_test_preset() -> Preset {
 }
 
 #[test]
-fn button_press_generates_midi() {
+fn on_press_fires_immediately_without_long_press() {
     let preset = make_test_preset();
-    let events = [InputEvent::ButtonA(Edge::Activate)];
-    let mut enc = [0u8; 2];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
-    assert_eq!(msgs.len(), 2);
-    assert_eq!(msgs[0].0, [0xB0, 10, 127]);
-    assert_eq!(msgs[1].0[..2], [0xC1, 5]);
+    let mut handler = PeHandler::new();
+    let msgs = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].0, [0x90, 60, 127]);
 }
 
 #[test]
-fn button_release_ignored() {
+fn on_release_fires_note_off() {
     let preset = make_test_preset();
-    let events = [InputEvent::ButtonA(Edge::Deactivate)];
-    let mut enc = [0u8; 2];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
+    let mut handler = PeHandler::new();
+    let msgs = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].0, [0x80, 60, 0]);
+}
+
+#[test]
+fn long_press_button_defers_on_press() {
+    let preset = make_test_preset();
+    let mut handler = PeHandler::new();
+    // Press B (has long_press) — should NOT fire immediately
+    let msgs = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
     assert!(msgs.is_empty());
 }
 
 #[test]
-fn encoder_vol_clockwise() {
+fn long_press_short_release_fires_on_press() {
     let preset = make_test_preset();
-    let events = [InputEvent::Vol(Pulse::Clockwise)];
-    let mut enc = [64u8, 0];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
+    let mut handler = PeHandler::new();
+    handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+    for _ in 0..100 {
+        handler.handle_events(&preset, &[]);
+    }
+    // Release before threshold → fires on_press
+    let msgs = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].0, [0xB0, 10, 127]);
+}
+
+#[test]
+fn long_press_fires_on_long_press_action() {
+    let preset = make_test_preset();
+    let mut handler = PeHandler::new();
+    handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+    let mut found = false;
+    for _ in 0..501 {
+        let msgs = handler.handle_events(&preset, &[]);
+        if !msgs.is_empty() {
+            assert_eq!(msgs[0].0[..2], [0xC0, 5]); // ProgramChange
+            found = true;
+            break;
+        }
+    }
+    assert!(found);
+}
+
+#[test]
+fn long_press_suppresses_on_press_at_release() {
+    let preset = make_test_preset();
+    let mut handler = PeHandler::new();
+    handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+    for _ in 0..501 {
+        handler.handle_events(&preset, &[]);
+    }
+    // Release after long press — no on_press
+    let msgs = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+    assert!(msgs.is_empty());
+}
+
+#[test]
+fn encoder_generates_cc() {
+    let preset = make_test_preset();
+    let mut handler = PeHandler::new();
+    handler.encoder_values[0] = 64;
+    let msgs = handler.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].0, [0xB0, 7, 65]);
-    assert_eq!(enc[0], 65);
 }
 
 #[test]
-fn encoder_gain_counter_clockwise() {
+fn analog_generates_cc() {
     let preset = make_test_preset();
-    let events = [InputEvent::Gain(Pulse::CounterClockwise)];
-    let mut enc = [0, 64u8];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
-    assert_eq!(msgs.len(), 1);
-    assert_eq!(msgs[0].0, [0xB0, 91, 63]);
-    assert_eq!(enc[1], 63);
-}
-
-#[test]
-fn analog_expression_pedal() {
-    let preset = make_test_preset();
-    let events = [InputEvent::ExpressionPedalA(4095)];
-    let mut enc = [0u8; 2];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
+    let mut handler = PeHandler::new();
+    let msgs = handler.handle_events(&preset, &[InputEvent::ExpressionPedalA(4095)]);
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].0, [0xB0, 11, 127]);
 }
 
 #[test]
-fn empty_preset_produces_no_output() {
+fn empty_preset_is_silent() {
     let preset = Preset {
         name: Label::try_from("Empty").unwrap(),
         buttons: Vec::new(),
         encoders: Vec::new(),
         analog: Vec::new(),
     };
-    let events = [
-        InputEvent::ButtonA(Edge::Activate),
-        InputEvent::Vol(Pulse::Clockwise),
-        InputEvent::ExpressionPedalA(2048),
-    ];
-    let mut enc = [0u8; 2];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
+    let mut handler = PeHandler::new();
+    let msgs = handler.handle_events(
+        &preset,
+        &[
+            InputEvent::ButtonA(Edge::Activate),
+            InputEvent::Vol(Pulse::Clockwise),
+        ],
+    );
     assert!(msgs.is_empty());
-}
-
-#[test]
-fn mixed_events_all_generate() {
-    let preset = make_test_preset();
-    let events = [
-        InputEvent::ButtonA(Edge::Activate),
-        InputEvent::Vol(Pulse::Clockwise),
-        InputEvent::ExpressionPedalA(4095),
-    ];
-    let mut enc = [0u8; 2];
-    let msgs = pe_handler::handle_events(&preset, &events, &mut enc);
-    // 2 button actions + 1 encoder + 1 analog = 4
-    assert_eq!(msgs.len(), 4);
 }
