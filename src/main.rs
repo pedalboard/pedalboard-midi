@@ -321,13 +321,25 @@ mod app {
 
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
+        // Load PE presets from flash
+        let mut pe_config = pedalboard_protocol::config::Config::default();
+        pedalboard_midi::preset_flash::load_all(|idx, data| {
+            if let Ok(preset) = postcard::from_bytes::<pedalboard_protocol::config::Preset>(data) {
+                let i = idx as usize;
+                while pe_config.presets.len() <= i {
+                    pe_config.presets.push(Default::default()).ok();
+                }
+                pe_config.presets[i] = preset;
+            }
+        });
+
         (
             Shared {
                 usb_midi,
                 usb_dev,
                 opendeck,
                 active_preset: 0,
-                pe_config: pedalboard_protocol::config::Config::default(),
+                pe_config,
             },
             Local {
                 uart_midi_out,
@@ -911,20 +923,6 @@ mod app {
                 });
             }
             info!("config persistence ready");
-            // Load PE presets from flash (one at a time to limit stack usage)
-            pedalboard_midi::preset_flash::load_all(|idx, data| {
-                if let Ok(preset) =
-                    postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
-                {
-                    ctx.shared.pe_config.lock(|cfg| {
-                        let i = idx as usize;
-                        while cfg.presets.len() <= i {
-                            cfg.presets.push(Default::default()).ok();
-                        }
-                        cfg.presets[i] = preset;
-                    });
-                }
-            });
             // Enter persist loop
             while let Ok(cmd) = receiver.recv().await {
                 use pedalboard_midi::opendeck_handler::PersistCommand;
