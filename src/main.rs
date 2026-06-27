@@ -115,6 +115,7 @@ mod app {
         opendeck: OpenDeck,
         active_preset: u8,
         labels: pedalboard_midi::labels::LabelStore<6, 2, 2, 32>,
+        pe_preset: Option<pedalboard_protocol::config::Preset>,
     }
 
     #[local]
@@ -327,6 +328,7 @@ mod app {
                 opendeck,
                 active_preset: 0,
                 labels: pedalboard_midi::labels::LabelStore::new(),
+                pe_preset: None,
             },
             Local {
                 uart_midi_out,
@@ -383,7 +385,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, labels])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, labels, pe_preset])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -492,6 +494,63 @@ mod app {
                         *active_preset = next;
                     });
                 }
+                // Execute PE preset actions (if active)
+                let (pe_handled, pe_actions): (bool, heapless::Vec<([u8; 6], usize), 8>) =
+                    ctx.shared.pe_preset.lock(|pe_preset| {
+                        let Some(preset) = pe_preset.as_ref() else {
+                            return (false, heapless::Vec::new());
+                        };
+                        let mut actions = heapless::Vec::new();
+                        use pedalboard_midi::events::{Edge, InputEvent};
+                        use pedalboard_protocol::config::Action;
+                        for event in events.iter() {
+                            let (btn_idx, edge) = match event {
+                                InputEvent::ButtonA(e) => (0usize, e),
+                                InputEvent::ButtonB(e) => (1, e),
+                                InputEvent::ButtonC(e) => (2, e),
+                                InputEvent::ButtonD(e) => (3, e),
+                                InputEvent::ButtonE(e) => (4, e),
+                                InputEvent::ButtonF(e) => (5, e),
+                                _ => continue,
+                            };
+                            if *edge != Edge::Activate {
+                                continue;
+                            }
+                            if let Some(btn) = preset.buttons.get(btn_idx) {
+                                for action in &btn.on_press {
+                                    let msg: Option<([u8; 6], usize)> = match action {
+                                        Action::Cc { cc, value, channel } => Some((
+                                            [0xB0 | (channel - 1), *cc, *value, 0, 0, 0],
+                                            3,
+                                        )),
+                                        Action::ProgramChange { program, channel } => Some((
+                                            [0xC0 | (channel - 1), *program, 0, 0, 0, 0],
+                                            2,
+                                        )),
+                                        Action::NoteOn { note, channel } => Some((
+                                            [0x90 | (channel - 1), *note, 127, 0, 0, 0],
+                                            3,
+                                        )),
+                                        Action::NoteOff { note, channel } => Some((
+                                            [0x80 | (channel - 1), *note, 0, 0, 0, 0],
+                                            3,
+                                        )),
+                                        _ => None,
+                                    };
+                                    if let Some(m) = msg {
+                                        actions.push(m).ok();
+                                    }
+                                }
+                            }
+                        }
+                        (true, actions)
+                    });
+                for m in &pe_actions {
+                    all_sent.push(*m).ok();
+                }
+                if pe_handled {
+                    din_enabled = true;
+                } else {
                 ctx.shared.opendeck.lock(|opendeck| {
                     din_enabled = opendeck.din_midi_enabled();
                     for event in events {
@@ -516,6 +575,7 @@ mod app {
                         led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
                     }
                 });
+                }
             }
             // Send LED update outside the lock
             if let Some(data) = led_data {
@@ -766,7 +826,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck, labels])]
+    #[task(shared = [opendeck, labels, pe_preset])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -818,7 +878,32 @@ mod app {
                         store.save(block, section, index, value).await;
                     }
                     PersistCommand::SavePreset(preset_index, data) => {
-                        info!("preset {} received ({} bytes)", preset_index, data.len());
+                        if let Ok(preset) =
+                            postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
+                        {
+                            info!("preset {} loaded: \"{}\"", preset_index, preset.name.as_str());
+                            // Update labels from preset
+                            ctx.shared.labels.lock(|labels| {
+                                for (i, btn) in preset.buttons.iter().enumerate() {
+                                    let comp = pedalboard_midi::labels::ComponentType::Switch;
+                                    for (c, &ch) in btn.label.as_bytes().iter().enumerate() {
+                                        labels.set_char(comp, preset_index, i as u8, c as u8, ch);
+                                    }
+                                    labels.set_char(
+                                        comp,
+                                        preset_index,
+                                        i as u8,
+                                        btn.label.len() as u8,
+                                        0,
+                                    );
+                                }
+                                labels.dirty = true;
+                            });
+                            // Store as active preset
+                            ctx.shared.pe_preset.lock(|p| *p = Some(preset));
+                        } else {
+                            warn!("preset {} deserialize failed", preset_index);
+                        }
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;
