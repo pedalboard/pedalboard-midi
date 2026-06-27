@@ -570,11 +570,13 @@ mod app {
                         uart_midi_out.write(&mm).ok();
                     }
                 }
-                // Display log (always for locally-generated messages)
-                let mut display_raw = [0u8; 3];
-                let copy_len = (*len).min(3);
-                display_raw[..copy_len].copy_from_slice(&raw[..copy_len]);
-                display_sender.try_send(display_raw).ok();
+                // Display log (only in OpenDeck mode — PE overlay is handled separately)
+                if !pe_active {
+                    let mut display_raw = [0u8; 3];
+                    let copy_len = (*len).min(3);
+                    display_raw[..copy_len].copy_from_slice(&raw[..copy_len]);
+                    display_sender.try_send(display_raw).ok();
+                }
                 // USB MIDI out (always for locally-generated messages)
                 let packet =
                     UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw[..*len]);
