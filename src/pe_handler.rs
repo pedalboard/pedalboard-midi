@@ -3,9 +3,22 @@
 use crate::action::{action_to_midi, analog_cc, encoder_cc, EncoderDirection, MidiMessage};
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::long_press::{Gesture, LongPressDetector};
-use pedalboard_protocol::config::Preset;
+use pedalboard_protocol::config::{Action, Preset};
 
 const NUM_BUTTONS: usize = 6;
+
+/// System-level actions that transcend MIDI output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemAction {
+    PresetNext,
+    PresetPrev,
+}
+
+/// Result of processing events: MIDI messages + system actions.
+pub struct HandleResult {
+    pub midi: heapless::Vec<([u8; 3], usize), 8>,
+    pub system: heapless::Vec<SystemAction, 2>,
+}
 
 /// Stateful PE event handler. Tracks encoder values and long-press state.
 pub struct PeHandler {
@@ -32,16 +45,13 @@ impl PeHandler {
         self.long_press.iter().any(|lp| lp.is_active())
     }
 
-    /// Process input events against a PE preset. Returns raw MIDI messages to send.
+    /// Process input events against a PE preset. Returns MIDI messages and system actions.
     /// Call once per tick (1ms) — long press detection depends on tick rate.
-    pub fn handle_events(
-        &mut self,
-        preset: &Preset,
-        events: &[InputEvent],
-    ) -> heapless::Vec<([u8; 3], usize), 8> {
-        let mut messages = heapless::Vec::new();
+    pub fn handle_events(&mut self, preset: &Preset, events: &[InputEvent]) -> HandleResult {
+        let mut midi = heapless::Vec::new();
+        let mut system = heapless::Vec::new();
 
-        // Update long-press detectors for all buttons (need tick even with no events)
+        // Update long-press detectors for all buttons
         for i in 0..NUM_BUTTONS {
             let edge = events.iter().find_map(|e| match (e, i) {
                 (InputEvent::ButtonA(e), 0) => Some(*e),
@@ -60,54 +70,30 @@ impl PeHandler {
                 .unwrap_or(false);
 
             if has_long_press {
-                // Use long-press detection: defer on_press until release
                 match self.long_press[i].update(edge) {
                     Some(Gesture::ShortPress) => {
-                        // Released before threshold → fire on_press + on_release
                         if let Some(btn) = preset.buttons.get(i) {
-                            for action in &btn.on_press {
-                                if let Some(msg) = action_to_midi(action) {
-                                    push_midi(&mut messages, &msg);
-                                }
-                            }
-                            for action in &btn.on_release {
-                                if let Some(msg) = action_to_midi(action) {
-                                    push_midi(&mut messages, &msg);
-                                }
-                            }
+                            execute_actions(&btn.on_press, &mut midi, &mut system);
+                            execute_actions(&btn.on_release, &mut midi, &mut system);
                         }
                     }
                     Some(Gesture::LongPress) => {
-                        // Held past threshold → fire on_long_press
                         if let Some(btn) = preset.buttons.get(i) {
-                            for action in &btn.on_long_press {
-                                if let Some(msg) = action_to_midi(action) {
-                                    push_midi(&mut messages, &msg);
-                                }
-                            }
+                            execute_actions(&btn.on_long_press, &mut midi, &mut system);
                         }
                     }
                     None => {}
                 }
             } else {
-                // No long-press configured: fire immediately
                 match edge {
                     Some(Edge::Activate) => {
                         if let Some(btn) = preset.buttons.get(i) {
-                            for action in &btn.on_press {
-                                if let Some(msg) = action_to_midi(action) {
-                                    push_midi(&mut messages, &msg);
-                                }
-                            }
+                            execute_actions(&btn.on_press, &mut midi, &mut system);
                         }
                     }
                     Some(Edge::Deactivate) => {
                         if let Some(btn) = preset.buttons.get(i) {
-                            for action in &btn.on_release {
-                                if let Some(msg) = action_to_midi(action) {
-                                    push_midi(&mut messages, &msg);
-                                }
-                            }
+                            execute_actions(&btn.on_release, &mut midi, &mut system);
                         }
                     }
                     None => {}
@@ -121,29 +107,51 @@ impl PeHandler {
                 InputEvent::Vol(pulse) => {
                     let dir = pulse_to_dir(*pulse);
                     if let Some(msg) = encoder_cc(preset, 0, dir, &mut self.encoder_values[0]) {
-                        push_midi(&mut messages, &msg);
+                        push_midi(&mut midi, &msg);
                     }
                 }
                 InputEvent::Gain(pulse) => {
                     let dir = pulse_to_dir(*pulse);
                     if let Some(msg) = encoder_cc(preset, 1, dir, &mut self.encoder_values[1]) {
-                        push_midi(&mut messages, &msg);
+                        push_midi(&mut midi, &msg);
                     }
                 }
                 InputEvent::ExpressionPedalA(raw_adc) => {
                     if let Some(msg) = analog_cc(preset, 0, *raw_adc, 4095) {
-                        push_midi(&mut messages, &msg);
+                        push_midi(&mut midi, &msg);
                     }
                 }
                 InputEvent::ExpressionPedalB(raw_adc) => {
                     if let Some(msg) = analog_cc(preset, 1, *raw_adc, 4095) {
-                        push_midi(&mut messages, &msg);
+                        push_midi(&mut midi, &msg);
                     }
                 }
                 _ => {}
             }
         }
-        messages
+        HandleResult { midi, system }
+    }
+}
+
+fn execute_actions(
+    actions: &heapless::Vec<Action, { pedalboard_protocol::config::MAX_ACTIONS }>,
+    midi: &mut heapless::Vec<([u8; 3], usize), 8>,
+    system: &mut heapless::Vec<SystemAction, 2>,
+) {
+    for action in actions {
+        match action {
+            Action::PresetNext => {
+                system.push(SystemAction::PresetNext).ok();
+            }
+            Action::PresetPrev => {
+                system.push(SystemAction::PresetPrev).ok();
+            }
+            _ => {
+                if let Some(msg) = action_to_midi(action) {
+                    push_midi(midi, &msg);
+                }
+            }
+        }
     }
 }
 
@@ -248,9 +256,9 @@ mod tests {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
         let events = [InputEvent::ButtonA(Edge::Activate)];
-        let msgs = handler.handle_events(&preset, &events);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].0, [0x90, 60, 127]); // NoteOn
+        let r = handler.handle_events(&preset, &events);
+        assert_eq!(r.midi.len(), 1);
+        assert_eq!(r.midi[0].0, [0x90, 60, 127]); // NoteOn
     }
 
     #[test]
@@ -258,9 +266,9 @@ mod tests {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
         let events = [InputEvent::ButtonA(Edge::Deactivate)];
-        let msgs = handler.handle_events(&preset, &events);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].0, [0x80, 60, 0]); // NoteOff
+        let r = handler.handle_events(&preset, &events);
+        assert_eq!(r.midi.len(), 1);
+        assert_eq!(r.midi[0].0, [0x80, 60, 0]); // NoteOff
     }
 
     #[test]
@@ -269,8 +277,8 @@ mod tests {
         let mut handler = PeHandler::new();
         // Press button B (has long_press) — should NOT fire immediately
         let events = [InputEvent::ButtonB(Edge::Activate)];
-        let msgs = handler.handle_events(&preset, &events);
-        assert!(msgs.is_empty());
+        let r = handler.handle_events(&preset, &events);
+        assert!(r.midi.is_empty());
     }
 
     #[test]
@@ -284,9 +292,9 @@ mod tests {
             handler.handle_events(&preset, &[]);
         }
         // Release → short press fires on_press
-        let msgs = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].0, [0xB0, 10, 127]); // CC
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        assert_eq!(r.midi.len(), 1);
+        assert_eq!(r.midi[0].0, [0xB0, 10, 127]); // CC
     }
 
     #[test]
@@ -296,15 +304,16 @@ mod tests {
         // Press
         handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
         // Tick past threshold (500ms)
-        let mut result = heapless::Vec::<([u8; 3], usize), 8>::new();
+        let mut found = false;
         for _ in 0..501 {
-            let msgs = handler.handle_events(&preset, &[]);
-            for m in &msgs {
-                result.push(*m).ok();
+            let r = handler.handle_events(&preset, &[]);
+            if !r.midi.is_empty() {
+                assert_eq!(r.midi[0].0[..2], [0xC0, 5]);
+                found = true;
+                break;
             }
         }
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0[..2], [0xC0, 5]); // ProgramChange
+        assert!(found);
     }
 
     #[test]
@@ -317,8 +326,8 @@ mod tests {
             handler.handle_events(&preset, &[]);
         }
         // Release after long press — should NOT fire on_press
-        let msgs = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
-        assert!(msgs.is_empty());
+        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        assert!(r.midi.is_empty());
     }
 
     #[test]
@@ -327,8 +336,8 @@ mod tests {
         let mut handler = PeHandler::new();
         handler.encoder_values[0] = 64;
         let events = [InputEvent::Vol(Pulse::Clockwise)];
-        let msgs = handler.handle_events(&preset, &events);
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].0, [0xB0, 7, 65]);
+        let r = handler.handle_events(&preset, &events);
+        assert_eq!(r.midi.len(), 1);
+        assert_eq!(r.midi[0].0, [0xB0, 7, 65]);
     }
 }

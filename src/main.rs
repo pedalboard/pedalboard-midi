@@ -428,9 +428,6 @@ mod app {
             opendeck.reset_encoder_rings();
         });
 
-        let mut lp_d = pedalboard_midi::long_press::LongPressDetector::new();
-        let mut lp_f = pedalboard_midi::long_press::LongPressDetector::new();
-
         let mut pe = pedalboard_midi::pe_handler::PeHandler::new();
 
         loop {
@@ -448,64 +445,10 @@ mod app {
                 events.push(*e).ok();
             }
 
-            // Long-press detection for D (prev preset) and F (next preset)
-            use pedalboard_midi::events::InputEvent;
-            use pedalboard_midi::long_press::Gesture;
-            let edge_d = events.iter().find_map(|e| match e {
-                InputEvent::ButtonD(edge) => Some(*edge),
-                _ => None,
-            });
-            let edge_f = events.iter().find_map(|e| match e {
-                InputEvent::ButtonF(edge) => Some(*edge),
-                _ => None,
-            });
-            let gesture_d = lp_d.update(edge_d);
-            let gesture_f = lp_f.update(edge_f);
-
-            // Handle preset switching on long press
-            let mut preset_changed = false;
-            if gesture_d == Some(Gesture::LongPress) || gesture_f == Some(Gesture::LongPress) {
-                preset_changed = true;
-            }
-
-            // Filter out D/F events if long-press is active (suppress normal MIDI)
-            let suppress_d = lp_d.is_active();
-            let suppress_f = lp_f.is_active();
-            events.retain(|e| match e {
-                InputEvent::ButtonD(_) if suppress_d => false,
-                InputEvent::ButtonF(_) if suppress_f => false,
-                _ => true,
-            });
-
             let mut all_sent: heapless::Vec<([u8; 6], usize), 8> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
-            if preset_changed {
-                ctx.shared.active_preset.lock(|active_preset| {
-                    // Count active presets (those with non-empty names), minimum 1
-                    let active_count = ctx.shared.pe_config.lock(|cfg| {
-                        let mut count = 0u8;
-                        for p in cfg.presets.iter() {
-                            if !p.name.is_empty() {
-                                count += 1;
-                            }
-                        }
-                        count.max(1)
-                    });
-                    let current = *active_preset;
-                    let next = if gesture_f == Some(Gesture::LongPress) {
-                        (current + 1) % active_count
-                    } else {
-                        if current == 0 {
-                            active_count - 1
-                        } else {
-                            current - 1
-                        }
-                    };
-                    *active_preset = next;
-                });
-            }
 
             // Determine if active preset is a PE preset (has a name)
             // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
@@ -521,15 +464,40 @@ mod app {
                 // PE mode: only lock pe_config when needed
                 let need_tick = !events.is_empty() || pe.any_active();
                 if need_tick {
-                    ctx.shared.pe_config.lock(|cfg| {
+                    let result = ctx.shared.pe_config.lock(|cfg| {
                         let preset = &cfg.presets[preset_idx as usize];
-                        let msgs = pe.handle_events(preset, &events);
-                        for (raw, len) in &msgs {
-                            let mut buf = [0u8; 6];
-                            buf[..*len].copy_from_slice(&raw[..*len]);
-                            all_sent.push((buf, *len)).ok();
-                        }
+                        pe.handle_events(preset, &events)
                     });
+                    for (raw, len) in &result.midi {
+                        let mut buf = [0u8; 6];
+                        buf[..*len].copy_from_slice(&raw[..*len]);
+                        all_sent.push((buf, *len)).ok();
+                    }
+                    // Handle system actions (preset switching)
+                    for action in &result.system {
+                        use pedalboard_midi::pe_handler::SystemAction;
+                        ctx.shared.active_preset.lock(|active_preset| {
+                            let active_count = ctx
+                                .shared
+                                .pe_config
+                                .lock(|cfg| {
+                                    cfg.presets.iter().filter(|p| !p.name.is_empty()).count() as u8
+                                })
+                                .max(1);
+                            match action {
+                                SystemAction::PresetNext => {
+                                    *active_preset = (*active_preset + 1) % active_count;
+                                }
+                                SystemAction::PresetPrev => {
+                                    *active_preset = if *active_preset == 0 {
+                                        active_count - 1
+                                    } else {
+                                        *active_preset - 1
+                                    };
+                                }
+                            }
+                        });
+                    }
                     if !all_sent.is_empty() {
                         ctx.shared.opendeck.lock(|opendeck| {
                             din_enabled = opendeck.din_midi_enabled();
