@@ -12,3 +12,7 @@ heapless = "0.9.3"
 [[test]]
 name = "performance"
 path = "tests/performance.rs"
+
+[[test]]
+name = "preset_format"
+path = "tests/preset_format.rs"
