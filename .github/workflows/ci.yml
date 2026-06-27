@@ -47,6 +47,13 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt -- --check
+  host-tests:
+    name: Host Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path tests-host/Cargo.toml
   firmware:
     name: Firmware UF2
     runs-on: ubuntu-latest
