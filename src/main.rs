@@ -321,34 +321,13 @@ mod app {
 
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
-        // Load PE presets from flash (sync, uses static to avoid stack overflow)
-        static mut PE_CONFIG_INIT: pedalboard_protocol::config::Config =
-            pedalboard_protocol::config::Config {
-                presets: heapless::Vec::new(),
-            };
-        let pe_config = unsafe {
-            let cfg = &mut *core::ptr::addr_of_mut!(PE_CONFIG_INIT);
-            pedalboard_midi::preset_flash::load_all(|idx, data| {
-                let i = idx as usize;
-                while cfg.presets.len() <= i {
-                    cfg.presets.push(Default::default()).ok();
-                }
-                if let Ok(preset) =
-                    postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
-                {
-                    cfg.presets[i] = preset;
-                }
-            });
-            core::mem::take(cfg)
-        };
-
         (
             Shared {
                 usb_midi,
                 usb_dev,
                 opendeck,
                 active_preset: 0,
-                pe_config,
+                pe_config: pedalboard_protocol::config::Config::default(),
             },
             Local {
                 uart_midi_out,
@@ -932,6 +911,20 @@ mod app {
                 });
             }
             info!("config persistence ready");
+            // Load PE presets from flash (one at a time to limit stack usage)
+            pedalboard_midi::preset_flash::load_all(|idx, data| {
+                if let Ok(preset) =
+                    postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
+                {
+                    ctx.shared.pe_config.lock(|cfg| {
+                        let i = idx as usize;
+                        while cfg.presets.len() <= i {
+                            cfg.presets.push(Default::default()).ok();
+                        }
+                        cfg.presets[i] = preset;
+                    });
+                }
+            });
             // Enter persist loop
             while let Ok(cmd) = receiver.recv().await {
                 use pedalboard_midi::opendeck_handler::PersistCommand;

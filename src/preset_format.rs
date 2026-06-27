@@ -1,12 +1,12 @@
 //! Preset flash format: platform-independent serialization logic.
 //!
 //! Layout: [magic: u32 LE][count: u8][entries...]
-//! Entry: [index: u8][len_lo: u8][len_hi: u8][data: [u8; len]]
+//! Entry: [index: u8][len_lo: u8][len_hi: u8][checksum: u8][data: [u8; len]]
 
 pub const SECTOR_SIZE: usize = 4096;
 pub const MAGIC: u32 = 0x5045_4442; // "PEDB"
 const HEADER_SIZE: usize = 5;
-const ENTRY_HEADER_SIZE: usize = 3;
+const ENTRY_HEADER_SIZE: usize = 4; // index + len_lo + len_hi + checksum
 
 /// Serialize presets into a sector buffer. Returns number of presets written.
 pub fn serialize(buf: &mut [u8; SECTOR_SIZE], presets: &[(u8, &[u8])]) -> u8 {
@@ -23,7 +23,8 @@ pub fn serialize(buf: &mut [u8; SECTOR_SIZE], presets: &[(u8, &[u8])]) -> u8 {
         buf[offset] = idx;
         buf[offset + 1] = (data.len() & 0xFF) as u8;
         buf[offset + 2] = ((data.len() >> 8) & 0xFF) as u8;
-        buf[offset + 3..offset + 3 + data.len()].copy_from_slice(data);
+        buf[offset + 3] = checksum(data);
+        buf[offset + 4..offset + 4 + data.len()].copy_from_slice(data);
         offset += ENTRY_HEADER_SIZE + data.len();
         count += 1;
     }
@@ -32,7 +33,8 @@ pub fn serialize(buf: &mut [u8; SECTOR_SIZE], presets: &[(u8, &[u8])]) -> u8 {
     count
 }
 
-/// Parse presets from a sector buffer. Calls callback for each (index, data).
+/// Parse presets from a sector buffer. Calls callback for each (index, data) found.
+/// Entries with invalid checksums are silently skipped.
 pub fn parse(buf: &[u8], mut callback: impl FnMut(u8, &[u8])) {
     if buf.len() < HEADER_SIZE {
         return;
@@ -50,11 +52,15 @@ pub fn parse(buf: &[u8], mut callback: impl FnMut(u8, &[u8])) {
         }
         let idx = buf[offset];
         let len = (buf[offset + 1] as usize) | ((buf[offset + 2] as usize) << 8);
+        let expected_csum = buf[offset + 3];
         offset += ENTRY_HEADER_SIZE;
         if offset + len > buf.len().min(SECTOR_SIZE) {
             break;
         }
-        callback(idx, &buf[offset..offset + len]);
+        let data = &buf[offset..offset + len];
+        if checksum(data) == expected_csum {
+            callback(idx, data);
+        }
         offset += len;
     }
 }
@@ -77,11 +83,12 @@ pub fn find_one(buf: &[u8], preset_index: u8) -> Option<&[u8]> {
         }
         let idx = buf[offset];
         let len = (buf[offset + 1] as usize) | ((buf[offset + 2] as usize) << 8);
+        let expected_csum = buf[offset + 3];
         offset += ENTRY_HEADER_SIZE;
         if offset + len > buf.len().min(SECTOR_SIZE) {
             break;
         }
-        if idx == preset_index {
+        if idx == preset_index && checksum(&buf[offset..offset + len]) == expected_csum {
             return Some(&buf[offset..offset + len]);
         }
         offset += len;
@@ -113,7 +120,8 @@ pub fn serialize_with_update(
         buf[offset] = idx;
         buf[offset + 1] = (existing.len() & 0xFF) as u8;
         buf[offset + 2] = ((existing.len() >> 8) & 0xFF) as u8;
-        buf[offset + 3..offset + 3 + existing.len()].copy_from_slice(existing);
+        buf[offset + 3] = checksum(existing);
+        buf[offset + 4..offset + 4 + existing.len()].copy_from_slice(existing);
         offset += ENTRY_HEADER_SIZE + existing.len();
         count += 1;
     });
@@ -123,11 +131,21 @@ pub fn serialize_with_update(
         buf[offset] = preset_index;
         buf[offset + 1] = (data.len() & 0xFF) as u8;
         buf[offset + 2] = ((data.len() >> 8) & 0xFF) as u8;
-        buf[offset + 3..offset + 3 + data.len()].copy_from_slice(data);
+        buf[offset + 3] = checksum(data);
+        buf[offset + 4..offset + 4 + data.len()].copy_from_slice(data);
         count += 1;
     }
 
     buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
     buf[4] = count;
     count
+}
+
+/// Simple XOR checksum over data bytes.
+fn checksum(data: &[u8]) -> u8 {
+    let mut csum: u8 = 0xA5; // seed to avoid all-zeros matching
+    for &b in data {
+        csum ^= b;
+    }
+    csum
 }

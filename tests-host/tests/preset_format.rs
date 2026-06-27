@@ -84,3 +84,29 @@ fn realistic_preset_sizes() {
     assert_eq!(find_one(&buf, 1).unwrap().len(), 123);
     assert_eq!(find_one(&buf, 2).unwrap().len(), 124);
 }
+
+#[test]
+fn corrupted_data_is_skipped() {
+    let mut buf = [0u8; preset_format::SECTOR_SIZE];
+    preset_format::serialize(&mut buf, &[(0, b"good"), (1, b"also good")]);
+
+    // Corrupt preset 0's data (flip a byte after the header)
+    buf[9] ^= 0xFF; // data byte of preset 0
+
+    // Preset 0 should be skipped (bad checksum), preset 1 still valid
+    assert_eq!(preset_format::find_one(&buf, 0), None);
+    assert_eq!(preset_format::find_one(&buf, 1), Some(b"also good".as_slice()));
+}
+
+#[test]
+fn totally_garbage_flash_returns_nothing() {
+    // Simulate leftover data from a different format
+    let mut buf = [0x42u8; preset_format::SECTOR_SIZE];
+    buf[0..4].copy_from_slice(&0x5045_4442u32.to_le_bytes()); // valid magic
+    buf[4] = 3; // claims 3 entries but data is garbage
+
+    let mut count = 0;
+    preset_format::parse(&buf, |_, _| count += 1);
+    // Should not call back for any entry (checksums won't match)
+    assert_eq!(count, 0);
+}
