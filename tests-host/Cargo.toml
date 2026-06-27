@@ -17,3 +17,7 @@ path = "tests/performance.rs"
 [[test]]
 name = "preset_format"
 path = "tests/preset_format.rs"
+
+[[test]]
+name = "pe_handler"
+path = "tests/pe_handler.rs"

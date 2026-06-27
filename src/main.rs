@@ -522,112 +522,15 @@ mod app {
                     // PE mode: all input handled from PE preset config
                     ctx.shared.pe_config.lock(|cfg| {
                         let preset = &cfg.presets[preset_idx as usize];
-                        use pedalboard_midi::action::{analog_cc, encoder_cc, EncoderDirection};
-                        use pedalboard_midi::events::{Edge, InputEvent, Pulse};
-                        use pedalboard_protocol::config::Action;
-
-                        for event in events.iter() {
-                            match event {
-                                InputEvent::ButtonA(e)
-                                | InputEvent::ButtonB(e)
-                                | InputEvent::ButtonC(e)
-                                | InputEvent::ButtonD(e)
-                                | InputEvent::ButtonE(e)
-                                | InputEvent::ButtonF(e) => {
-                                    if *e != Edge::Activate {
-                                        continue;
-                                    }
-                                    let btn_idx = match event {
-                                        InputEvent::ButtonA(_) => 0usize,
-                                        InputEvent::ButtonB(_) => 1,
-                                        InputEvent::ButtonC(_) => 2,
-                                        InputEvent::ButtonD(_) => 3,
-                                        InputEvent::ButtonE(_) => 4,
-                                        InputEvent::ButtonF(_) => 5,
-                                        _ => continue,
-                                    };
-                                    if let Some(btn) = preset.buttons.get(btn_idx) {
-                                        for action in &btn.on_press {
-                                            let msg: Option<([u8; 6], usize)> = match action {
-                                                Action::Cc { cc, value, channel } => Some((
-                                                    [0xB0 | (channel - 1), *cc, *value, 0, 0, 0],
-                                                    3,
-                                                )),
-                                                Action::ProgramChange { program, channel } => {
-                                                    Some((
-                                                        [
-                                                            0xC0 | (channel - 1),
-                                                            *program,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                        ],
-                                                        2,
-                                                    ))
-                                                }
-                                                Action::NoteOn { note, channel } => Some((
-                                                    [0x90 | (channel - 1), *note, 127, 0, 0, 0],
-                                                    3,
-                                                )),
-                                                Action::NoteOff { note, channel } => Some((
-                                                    [0x80 | (channel - 1), *note, 0, 0, 0, 0],
-                                                    3,
-                                                )),
-                                                _ => None,
-                                            };
-                                            if let Some(m) = msg {
-                                                all_sent.push(m).ok();
-                                            }
-                                        }
-                                    }
-                                }
-                                InputEvent::Vol(pulse) => {
-                                    let dir = match pulse {
-                                        Pulse::Clockwise => EncoderDirection::Clockwise,
-                                        Pulse::CounterClockwise => {
-                                            EncoderDirection::CounterClockwise
-                                        }
-                                    };
-                                    if let Some(m) =
-                                        encoder_cc(preset, 0, dir, &mut encoder_values[0])
-                                    {
-                                        let mut raw = [0u8; 6];
-                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
-                                        all_sent.push((raw, m.len)).ok();
-                                    }
-                                }
-                                InputEvent::Gain(pulse) => {
-                                    let dir = match pulse {
-                                        Pulse::Clockwise => EncoderDirection::Clockwise,
-                                        Pulse::CounterClockwise => {
-                                            EncoderDirection::CounterClockwise
-                                        }
-                                    };
-                                    if let Some(m) =
-                                        encoder_cc(preset, 1, dir, &mut encoder_values[1])
-                                    {
-                                        let mut raw = [0u8; 6];
-                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
-                                        all_sent.push((raw, m.len)).ok();
-                                    }
-                                }
-                                InputEvent::ExpressionPedalA(raw_adc) => {
-                                    if let Some(m) = analog_cc(preset, 0, *raw_adc, 4095) {
-                                        let mut raw = [0u8; 6];
-                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
-                                        all_sent.push((raw, m.len)).ok();
-                                    }
-                                }
-                                InputEvent::ExpressionPedalB(raw_adc) => {
-                                    if let Some(m) = analog_cc(preset, 1, *raw_adc, 4095) {
-                                        let mut raw = [0u8; 6];
-                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
-                                        all_sent.push((raw, m.len)).ok();
-                                    }
-                                }
-                                InputEvent::VolButton(_) | InputEvent::GainButton(_) => {}
-                            }
+                        let msgs = pedalboard_midi::pe_handler::handle_events(
+                            preset,
+                            &events,
+                            &mut encoder_values,
+                        );
+                        for (raw, len) in &msgs {
+                            let mut buf = [0u8; 6];
+                            buf[..*len].copy_from_slice(&raw[..*len]);
+                            all_sent.push((buf, *len)).ok();
                         }
                     });
                     // Still notify OpenDeck LED system of generated MIDI

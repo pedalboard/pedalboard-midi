@@ -8,6 +8,7 @@ pub mod leds;
 pub mod long_press;
 #[cfg(target_arch = "arm")]
 pub mod opendeck_handler;
+pub mod pe_handler;
 #[cfg(target_arch = "arm")]
 pub mod preset_flash;
 pub mod preset_format;
