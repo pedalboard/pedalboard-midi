@@ -31,6 +31,7 @@ pub struct PeHandler {
     pub encoder_values: [u8; 2],
     button_active: [bool; NUM_BUTTONS],
     cycle_index: [u8; NUM_BUTTONS],
+    last_encoder_tick: [u16; 2],
     long_press: [LongPressDetector; NUM_BUTTONS],
 }
 
@@ -46,8 +47,15 @@ impl PeHandler {
             encoder_values: [0; 2],
             button_active: [false; NUM_BUTTONS],
             cycle_index: [0; NUM_BUTTONS],
+            last_encoder_tick: [0; 2],
             long_press: core::array::from_fn(|_| LongPressDetector::new()),
         }
+    }
+
+    /// Call every 1ms unconditionally to keep encoder acceleration timing accurate.
+    pub fn tick(&mut self) {
+        self.last_encoder_tick[0] = self.last_encoder_tick[0].saturating_add(1);
+        self.last_encoder_tick[1] = self.last_encoder_tick[1].saturating_add(1);
     }
 
     /// Returns true if any button is currently held (long-press counting).
@@ -185,21 +193,56 @@ impl PeHandler {
         }
 
         // Encoder/analog events also dirty LEDs (heatmap updates)
+        // Encoder/analog events
         for event in events {
             match event {
                 InputEvent::Vol(pulse) => {
                     let dir = pulse_to_dir(*pulse);
-                    if let Some(msg) = encoder_cc(preset, 0, dir, &mut self.encoder_values[0]) {
-                        push_midi(&mut midi, &msg);
-                        led_dirty = true;
+                    let steps = accel_steps(self.last_encoder_tick[0]);
+                    self.last_encoder_tick[0] = 0;
+                    for _ in 0..steps {
+                        encoder_cc(preset, 0, dir, &mut self.encoder_values[0]);
                     }
+                    // Send only the final value
+                    if let Some(enc) = preset.encoders.first() {
+                        if let pedalboard_protocol::config::EncoderAction::Cc {
+                            cc, channel, ..
+                        } = &enc.action
+                        {
+                            push_midi(
+                                &mut midi,
+                                &MidiMessage {
+                                    data: [0xB0 | (channel - 1), *cc as u8, self.encoder_values[0]],
+                                    len: 3,
+                                },
+                            );
+                        }
+                    }
+                    led_dirty = true;
                 }
                 InputEvent::Gain(pulse) => {
                     let dir = pulse_to_dir(*pulse);
-                    if let Some(msg) = encoder_cc(preset, 1, dir, &mut self.encoder_values[1]) {
-                        push_midi(&mut midi, &msg);
-                        led_dirty = true;
+                    let steps = accel_steps(self.last_encoder_tick[1]);
+                    self.last_encoder_tick[1] = 0;
+                    for _ in 0..steps {
+                        encoder_cc(preset, 1, dir, &mut self.encoder_values[1]);
                     }
+                    // Send only the final value
+                    if let Some(enc) = preset.encoders.get(1) {
+                        if let pedalboard_protocol::config::EncoderAction::Cc {
+                            cc, channel, ..
+                        } = &enc.action
+                        {
+                            push_midi(
+                                &mut midi,
+                                &MidiMessage {
+                                    data: [0xB0 | (channel - 1), *cc as u8, self.encoder_values[1]],
+                                    len: 3,
+                                },
+                            );
+                        }
+                    }
+                    led_dirty = true;
                 }
                 InputEvent::ExpressionPedalA(raw_adc) => {
                     if let Some(msg) = analog_cc(preset, 0, *raw_adc, 4095) {
@@ -299,6 +342,20 @@ fn execute_actions(
                 }
             }
         }
+    }
+}
+
+/// Acceleration: faster turning = bigger steps.
+/// ticks_since_last is in ms (1ms poll rate).
+fn accel_steps(ticks_since_last: u16) -> u8 {
+    if ticks_since_last < 20 {
+        8 // very fast
+    } else if ticks_since_last < 50 {
+        4 // fast
+    } else if ticks_since_last < 100 {
+        2 // moderate
+    } else {
+        1 // slow/normal
     }
 }
 

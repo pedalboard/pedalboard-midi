@@ -431,6 +431,9 @@ mod app {
         let mut pe = pedalboard_midi::pe_handler::PeHandler::new();
 
         loop {
+            // Tick encoder acceleration timer unconditionally
+            pe.tick();
+
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw) {
