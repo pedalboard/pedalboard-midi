@@ -16,23 +16,6 @@ use embedded_text::{
     TextBox,
 };
 
-macro_rules! description {
-    () => {
-        "Open Pedalboard Platform"
-    };
-}
-macro_rules! git_hash {
-    () => {
-        env!("GIT_HASH")
-    };
-}
-
-macro_rules! version {
-    () => {
-        env!("CARGO_PKG_VERSION")
-    };
-}
-
 macro_rules! version_string {
     () => {
         concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH"))
