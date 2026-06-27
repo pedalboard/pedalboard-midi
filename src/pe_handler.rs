@@ -49,7 +49,7 @@ impl PeHandler {
             encoder_values: [0; 2],
             button_active: [false; NUM_BUTTONS],
             cycle_index: [0; NUM_BUTTONS],
-            last_encoder_tick: [0; 2],
+            last_encoder_tick: [u16::MAX; 2],
             long_press: core::array::from_fn(|_| LongPressDetector::new()),
         }
     }
