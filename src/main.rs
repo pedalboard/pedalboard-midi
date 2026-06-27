@@ -319,7 +319,7 @@ mod app {
             opendeck.config.set_serial_number(&serial_number);
         }
 
-        info!("pedalboard-midi initialized");
+        info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
         (
             Shared {
                 usb_midi,
