@@ -31,7 +31,7 @@ fn main() {
     println!("cargo:rerun-if-changed=memory.x");
 
     let output = Command::new("git")
-        .args(["describe", "--always", "--dirty"])
+        .args(["describe", "--always", "--dirty=+dev"])
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();
