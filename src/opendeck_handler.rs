@@ -74,7 +74,8 @@ impl OpenDeck {
             4095,
         );
 
-        // Configure encoders: enabled, CC mode, pulses_per_step=1, CC#0-1
+        // Configure encoders: enabled, CC mode, pulses_per_step=1
+        // (fallback when no PE config — generates CC#0-1 on ch1)
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,
@@ -130,7 +131,7 @@ impl OpenDeck {
             ));
         }
 
-        // Enable analog inputs with CC#2-3
+        // Enable analog inputs (fallback when no PE config — generates CC#2-3 on ch1)
         for i in 0..2u16 {
             config.process_req(OpenDeckRequest::Configuration(
                 Wish::Set,

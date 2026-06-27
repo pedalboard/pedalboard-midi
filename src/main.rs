@@ -431,6 +431,9 @@ mod app {
         let mut lp_d = pedalboard_midi::long_press::LongPressDetector::new();
         let mut lp_f = pedalboard_midi::long_press::LongPressDetector::new();
 
+        // Encoder CC values tracked for PE direct mode
+        let mut encoder_values: [u8; 2] = [0; 2];
+
         loop {
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -505,92 +508,163 @@ mod app {
                         *active_preset = next;
                     });
                 }
-                // Execute PE preset actions for buttons (if active)
-                let pe_handled_buttons = ctx.shared.pe_config.lock(|cfg| {
-                    let preset_idx = ctx.shared.active_preset.lock(|p| *p) as usize;
-                    let Some(preset) = cfg.presets.get(preset_idx) else {
-                        return false;
-                    };
-                    if preset.buttons.is_empty() {
-                        return false;
-                    }
-                    use pedalboard_midi::events::{Edge, InputEvent};
-                    use pedalboard_protocol::config::Action;
-                    for event in events.iter() {
-                        let (btn_idx, edge) = match event {
-                            InputEvent::ButtonA(e) => (0usize, e),
-                            InputEvent::ButtonB(e) => (1, e),
-                            InputEvent::ButtonC(e) => (2, e),
-                            InputEvent::ButtonD(e) => (3, e),
-                            InputEvent::ButtonE(e) => (4, e),
-                            InputEvent::ButtonF(e) => (5, e),
-                            _ => continue,
-                        };
-                        if *edge != Edge::Activate {
-                            continue;
+                // Determine if active preset is a PE preset (has a name)
+                // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
+                let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                let pe_active = ctx.shared.pe_config.lock(|cfg| {
+                    cfg.presets
+                        .get(preset_idx as usize)
+                        .map(|p| !p.name.is_empty())
+                        .unwrap_or(false)
+                });
+
+                if pe_active {
+                    // PE mode: all input handled from PE preset config
+                    ctx.shared.pe_config.lock(|cfg| {
+                        let preset = &cfg.presets[preset_idx as usize];
+                        use pedalboard_midi::action::{analog_cc, encoder_cc, EncoderDirection};
+                        use pedalboard_midi::events::{Edge, InputEvent, Pulse};
+                        use pedalboard_protocol::config::Action;
+
+                        for event in events.iter() {
+                            match event {
+                                InputEvent::ButtonA(e)
+                                | InputEvent::ButtonB(e)
+                                | InputEvent::ButtonC(e)
+                                | InputEvent::ButtonD(e)
+                                | InputEvent::ButtonE(e)
+                                | InputEvent::ButtonF(e) => {
+                                    if *e != Edge::Activate {
+                                        continue;
+                                    }
+                                    let btn_idx = match event {
+                                        InputEvent::ButtonA(_) => 0usize,
+                                        InputEvent::ButtonB(_) => 1,
+                                        InputEvent::ButtonC(_) => 2,
+                                        InputEvent::ButtonD(_) => 3,
+                                        InputEvent::ButtonE(_) => 4,
+                                        InputEvent::ButtonF(_) => 5,
+                                        _ => continue,
+                                    };
+                                    if let Some(btn) = preset.buttons.get(btn_idx) {
+                                        for action in &btn.on_press {
+                                            let msg: Option<([u8; 6], usize)> = match action {
+                                                Action::Cc { cc, value, channel } => Some((
+                                                    [0xB0 | (channel - 1), *cc, *value, 0, 0, 0],
+                                                    3,
+                                                )),
+                                                Action::ProgramChange { program, channel } => {
+                                                    Some((
+                                                        [
+                                                            0xC0 | (channel - 1),
+                                                            *program,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                        ],
+                                                        2,
+                                                    ))
+                                                }
+                                                Action::NoteOn { note, channel } => Some((
+                                                    [0x90 | (channel - 1), *note, 127, 0, 0, 0],
+                                                    3,
+                                                )),
+                                                Action::NoteOff { note, channel } => Some((
+                                                    [0x80 | (channel - 1), *note, 0, 0, 0, 0],
+                                                    3,
+                                                )),
+                                                _ => None,
+                                            };
+                                            if let Some(m) = msg {
+                                                all_sent.push(m).ok();
+                                            }
+                                        }
+                                    }
+                                }
+                                InputEvent::Vol(pulse) => {
+                                    let dir = match pulse {
+                                        Pulse::Clockwise => EncoderDirection::Clockwise,
+                                        Pulse::CounterClockwise => {
+                                            EncoderDirection::CounterClockwise
+                                        }
+                                    };
+                                    if let Some(m) =
+                                        encoder_cc(preset, 0, dir, &mut encoder_values[0])
+                                    {
+                                        let mut raw = [0u8; 6];
+                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
+                                        all_sent.push((raw, m.len)).ok();
+                                    }
+                                }
+                                InputEvent::Gain(pulse) => {
+                                    let dir = match pulse {
+                                        Pulse::Clockwise => EncoderDirection::Clockwise,
+                                        Pulse::CounterClockwise => {
+                                            EncoderDirection::CounterClockwise
+                                        }
+                                    };
+                                    if let Some(m) =
+                                        encoder_cc(preset, 1, dir, &mut encoder_values[1])
+                                    {
+                                        let mut raw = [0u8; 6];
+                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
+                                        all_sent.push((raw, m.len)).ok();
+                                    }
+                                }
+                                InputEvent::ExpressionPedalA(raw_adc) => {
+                                    if let Some(m) = analog_cc(preset, 0, *raw_adc, 4095) {
+                                        let mut raw = [0u8; 6];
+                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
+                                        all_sent.push((raw, m.len)).ok();
+                                    }
+                                }
+                                InputEvent::ExpressionPedalB(raw_adc) => {
+                                    if let Some(m) = analog_cc(preset, 1, *raw_adc, 4095) {
+                                        let mut raw = [0u8; 6];
+                                        raw[..m.len].copy_from_slice(&m.data[..m.len]);
+                                        all_sent.push((raw, m.len)).ok();
+                                    }
+                                }
+                                InputEvent::VolButton(_) | InputEvent::GainButton(_) => {}
+                            }
                         }
-                        if let Some(btn) = preset.buttons.get(btn_idx) {
-                            for action in &btn.on_press {
-                                let msg: Option<([u8; 6], usize)> = match action {
-                                    Action::Cc { cc, value, channel } => {
-                                        Some(([0xB0 | (channel - 1), *cc, *value, 0, 0, 0], 3))
-                                    }
-                                    Action::ProgramChange { program, channel } => {
-                                        Some(([0xC0 | (channel - 1), *program, 0, 0, 0, 0], 2))
-                                    }
-                                    Action::NoteOn { note, channel } => {
-                                        Some(([0x90 | (channel - 1), *note, 127, 0, 0, 0], 3))
-                                    }
-                                    Action::NoteOff { note, channel } => {
-                                        Some(([0x80 | (channel - 1), *note, 0, 0, 0, 0], 3))
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(m) = msg {
-                                    all_sent.push(m).ok();
+                    });
+                    // Still notify OpenDeck LED system of generated MIDI
+                    ctx.shared.opendeck.lock(|opendeck| {
+                        din_enabled = opendeck.din_midi_enabled();
+                        for (raw, len) in &all_sent {
+                            led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
+                        }
+                    });
+                } else if preset_idx < 4 {
+                    // OpenDeck mode (slots 0-3 only): sync preset and handle input
+                    ctx.shared.opendeck.lock(|opendeck| {
+                        opendeck.config.set_active_preset(preset_idx as usize);
+                        din_enabled = opendeck.din_midi_enabled();
+                        for event in events.iter() {
+                            let mut ci_buf = [0u8; 16];
+                            if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
+                                component_info_buf = Some((ci_buf, len));
+                            }
+                            let mut messages = opendeck.handle_human_input(*event);
+                            let mut buf = [0x00u8; 6];
+                            while let Ok(Some(m)) = messages.next(&mut buf) {
+                                let data = m.data();
+                                let len = data.len();
+                                if len > 0 && len <= 6 {
+                                    let mut raw = [0u8; 6];
+                                    raw[..len].copy_from_slice(data);
+                                    all_sent.push((raw, len)).ok();
                                 }
                             }
                         }
-                    }
-                    true
-                });
-                // OpenDeck handles encoder/analog events always, and buttons if PE not active
-                ctx.shared.opendeck.lock(|opendeck| {
-                    din_enabled = opendeck.din_midi_enabled();
-                    for event in events.iter() {
-                        use pedalboard_midi::events::InputEvent;
-                        // Skip button events if PE handled them
-                        if pe_handled_buttons {
-                            match event {
-                                InputEvent::ButtonA(_)
-                                | InputEvent::ButtonB(_)
-                                | InputEvent::ButtonC(_)
-                                | InputEvent::ButtonD(_)
-                                | InputEvent::ButtonE(_)
-                                | InputEvent::ButtonF(_) => continue,
-                                _ => {}
-                            }
+                        for (raw, len) in &all_sent {
+                            led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
                         }
-                        let mut ci_buf = [0u8; 16];
-                        if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
-                            component_info_buf = Some((ci_buf, len));
-                        }
-                        let mut messages = opendeck.handle_human_input(*event);
-                        let mut buf = [0x00u8; 6];
-                        while let Ok(Some(m)) = messages.next(&mut buf) {
-                            let data = m.data();
-                            let len = data.len();
-                            if len > 0 && len <= 6 {
-                                let mut raw = [0u8; 6];
-                                raw[..len].copy_from_slice(data);
-                                all_sent.push((raw, len)).ok();
-                            }
-                        }
-                    }
-                    for (raw, len) in &all_sent {
-                        led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
-                    }
-                });
+                    });
+                }
+                // Slots 4+ with no PE preset: inputs are silent
             }
             // Send LED update outside the lock
             if let Some(data) = led_data {
@@ -1120,79 +1194,101 @@ mod app {
                     0xB0 => {
                         midi_log.push_cc(ch, raw[1], raw[2]);
                         if !debug_mode {
-                            // Encoder overlay: CC#0 = left, CC#1 = right
+                            // Encoder/analog overlay: match CC# from PE config
                             let idx = (current_preset as usize) % presets.len();
-                            match raw[1] {
-                                0 => {
-                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
-                                        cfg.presets
-                                            .get(idx)
-                                            .and_then(|p| p.encoders.first())
-                                            .map(|e| e.label.clone())
-                                            .unwrap_or_default()
-                                    });
-                                    let lbl = if lbl.is_empty() {
-                                        String::try_from("Vol").unwrap_or_default()
-                                    } else {
-                                        lbl
+                            ctx.shared.pe_config.lock(|cfg| {
+                                let preset = cfg.presets.get(idx);
+                                // Check encoder 0
+                                if let Some(enc) = preset.and_then(|p| p.encoders.first()) {
+                                    let enc_cc = match &enc.action {
+                                        pedalboard_protocol::config::EncoderAction::Cc { cc, .. } => Some(*cc as u8),
+                                        pedalboard_protocol::config::EncoderAction::CcRelative { cc, .. } => Some(*cc),
+                                        _ => None,
                                     };
-                                    displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
-                                    overlay_ticks = OVERLAY_DURATION;
-                                    show_overlay = true;
+                                    if enc_cc == Some(raw[1]) {
+                                        let lbl = if enc.label.is_empty() {
+                                            String::try_from("Vol").unwrap_or_default()
+                                        } else {
+                                            enc.label.clone()
+                                        };
+                                        displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                        return;
+                                    }
                                 }
-                                1 => {
-                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
-                                        cfg.presets
-                                            .get(idx)
-                                            .and_then(|p| p.encoders.get(1))
-                                            .map(|e| e.label.clone())
-                                            .unwrap_or_default()
-                                    });
-                                    let lbl = if lbl.is_empty() {
-                                        String::try_from("Gain").unwrap_or_default()
-                                    } else {
-                                        lbl
+                                // Check encoder 1
+                                if let Some(enc) = preset.and_then(|p| p.encoders.get(1)) {
+                                    let enc_cc = match &enc.action {
+                                        pedalboard_protocol::config::EncoderAction::Cc { cc, .. } => Some(*cc as u8),
+                                        pedalboard_protocol::config::EncoderAction::CcRelative { cc, .. } => Some(*cc),
+                                        _ => None,
                                     };
-                                    displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
-                                    overlay_ticks = OVERLAY_DURATION;
-                                    show_overlay = true;
+                                    if enc_cc == Some(raw[1]) {
+                                        let lbl = if enc.label.is_empty() {
+                                            String::try_from("Gain").unwrap_or_default()
+                                        } else {
+                                            enc.label.clone()
+                                        };
+                                        displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                        return;
+                                    }
                                 }
-                                2 => {
-                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
-                                        cfg.presets
-                                            .get(idx)
-                                            .and_then(|p| p.analog.first())
-                                            .map(|a| a.label.clone())
-                                            .unwrap_or_default()
-                                    });
-                                    let lbl = if lbl.is_empty() {
-                                        String::try_from("Exp 1").unwrap_or_default()
-                                    } else {
-                                        lbl
-                                    };
-                                    displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
-                                    overlay_ticks = OVERLAY_DURATION;
-                                    show_overlay = true;
+                                // Check analog 0
+                                if let Some(a) = preset.and_then(|p| p.analog.first()) {
+                                    if a.cc == raw[1] {
+                                        let lbl = if a.label.is_empty() {
+                                            String::try_from("Exp 1").unwrap_or_default()
+                                        } else {
+                                            a.label.clone()
+                                        };
+                                        displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                        return;
+                                    }
                                 }
-                                3 => {
-                                    let lbl = ctx.shared.pe_config.lock(|cfg| {
-                                        cfg.presets
-                                            .get(idx)
-                                            .and_then(|p| p.analog.get(1))
-                                            .map(|a| a.label.clone())
-                                            .unwrap_or_default()
-                                    });
-                                    let lbl = if lbl.is_empty() {
-                                        String::try_from("Exp 2").unwrap_or_default()
-                                    } else {
-                                        lbl
-                                    };
-                                    displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
-                                    overlay_ticks = OVERLAY_DURATION;
-                                    show_overlay = true;
+                                // Check analog 1
+                                if let Some(a) = preset.and_then(|p| p.analog.get(1)) {
+                                    if a.cc == raw[1] {
+                                        let lbl = if a.label.is_empty() {
+                                            String::try_from("Exp 2").unwrap_or_default()
+                                        } else {
+                                            a.label.clone()
+                                        };
+                                        displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                        return;
+                                    }
                                 }
-                                _ => {}
-                            }
+                                // Fallback: hardcoded CC#0/1/2/3 for OpenDeck default mode
+                                match raw[1] {
+                                    0 => {
+                                        displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                    }
+                                    1 => {
+                                        displays.draw_overlay(DisplayLocation::R, "Gain", raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                    }
+                                    2 => {
+                                        displays.draw_overlay(DisplayLocation::L, "Exp 1", raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                    }
+                                    3 => {
+                                        displays.draw_overlay(DisplayLocation::R, "Exp 2", raw[2]);
+                                        overlay_ticks = OVERLAY_DURATION;
+                                        show_overlay = true;
+                                    }
+                                    _ => {}
+                                }
+                            });
                         }
                     }
                     _ => {}
