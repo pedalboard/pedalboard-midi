@@ -2,7 +2,10 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Gray4,
     prelude::*,
-    primitives::{CornerRadiiBuilder, PrimitiveStyle, Rectangle, RoundedRectangle},
+    primitives::{
+        CornerRadiiBuilder, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle,
+        Triangle,
+    },
 };
 use embedded_text::{
     alignment::{HorizontalAlignment, VerticalAlignment},
@@ -117,6 +120,40 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         RoundedRectangle::new(rect, radii)
             .into_styled(stroke)
             .draw(display)?;
+
+        // Fill sharp corner with a solid triangle indicator
+        let cs = 10i32;
+        let fill = PrimitiveStyleBuilder::new()
+            .fill_color(Gray4::WHITE)
+            .build();
+        let corner_pos = match (side, i) {
+            (Side::Left, 0) => Triangle::new(
+                rect.top_left,
+                rect.top_left + Point::new(cs, 0),
+                rect.top_left + Point::new(0, cs),
+            ),
+            (Side::Left, 1) => {
+                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, 0);
+                Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
+            }
+            (Side::Left, _) => {
+                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
+            }
+            (Side::Right, 0) => {
+                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, 0);
+                Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
+            }
+            (Side::Right, 1) => {
+                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
+            }
+            (Side::Right, _) => {
+                let p = rect.top_left + Point::new(ROW_WIDTH as i32 - 1, ROW_HEIGHT as i32 - 1);
+                Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, -cs))
+            }
+        };
+        corner_pos.into_styled(fill).draw(display)?;
 
         // Label text with shadow for depth, then white on top
         let label = &preset.button_labels[indices[i as usize]];
