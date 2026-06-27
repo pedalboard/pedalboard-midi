@@ -55,3 +55,84 @@ fn empty_labels_still_draws_borders() {
     // Rounded rectangles should still be drawn even with empty labels
     assert!(!display.affected_area().is_zero_sized());
 }
+
+#[test]
+fn preset_meta_defaults_when_config_empty() {
+    let cfg = pedalboard_protocol::config::Config::default();
+    let (name, labels) = performance::preset_meta_from_config(&cfg, 0);
+    assert_eq!(name.as_str(), "Preset 1");
+    assert_eq!(labels[0].as_str(), "A");
+    assert_eq!(labels[5].as_str(), "F");
+}
+
+#[test]
+fn preset_meta_defaults_for_index_beyond_vec() {
+    let cfg = pedalboard_protocol::config::Config::default();
+    let (name, _) = performance::preset_meta_from_config(&cfg, 4);
+    assert_eq!(name.as_str(), "Preset 5");
+}
+
+#[test]
+fn preset_meta_uses_config_name_and_labels() {
+    use heapless::{String, Vec};
+    use pedalboard_protocol::config::*;
+
+    let mut presets = Vec::new();
+    let mut buttons = Vec::new();
+    buttons
+        .push(ButtonConfig {
+            label: String::try_from("Verse").unwrap(),
+            color: LedConfig::default(),
+            mode: ButtonMode::default(),
+            on_press: Vec::new(),
+            on_release: Vec::new(),
+            on_long_press: Vec::new(),
+        })
+        .ok();
+    presets
+        .push(Preset {
+            name: String::try_from("My Song").unwrap(),
+            buttons,
+            encoders: Vec::new(),
+            analog: Vec::new(),
+        })
+        .ok();
+
+    let cfg = Config { presets };
+    let (name, labels) = performance::preset_meta_from_config(&cfg, 0);
+    assert_eq!(name.as_str(), "My Song");
+    assert_eq!(labels[0].as_str(), "Verse");
+    // Remaining buttons fall back to defaults
+    assert_eq!(labels[1].as_str(), "B");
+}
+
+#[test]
+fn preset_meta_empty_label_uses_default() {
+    use heapless::{String, Vec};
+    use pedalboard_protocol::config::*;
+
+    let mut presets = Vec::new();
+    let mut buttons = Vec::new();
+    buttons
+        .push(ButtonConfig {
+            label: String::new(), // empty
+            color: LedConfig::default(),
+            mode: ButtonMode::default(),
+            on_press: Vec::new(),
+            on_release: Vec::new(),
+            on_long_press: Vec::new(),
+        })
+        .ok();
+    presets
+        .push(Preset {
+            name: String::try_from("Song").unwrap(),
+            buttons,
+            encoders: Vec::new(),
+            analog: Vec::new(),
+        })
+        .ok();
+
+    let cfg = Config { presets };
+    let (_, labels) = performance::preset_meta_from_config(&cfg, 0);
+    assert_eq!(labels[0].as_str(), "A"); // empty label → default
+}

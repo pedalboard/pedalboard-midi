@@ -130,3 +130,34 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 
     Ok(())
 }
+
+/// Build display metadata (name + button labels) from a PE config preset.
+/// Falls back to defaults ("Preset N", "A"-"F") if empty.
+pub fn preset_meta_from_config(
+    cfg: &pedalboard_protocol::config::Config,
+    index: usize,
+) -> (String<16>, [String<16>; BUTTON_COUNT]) {
+    let defaults = ["A", "B", "C", "D", "E", "F"];
+    if let Some(p) = cfg.presets.get(index) {
+        let name = if p.name.is_empty() {
+            let mut s: String<16> = String::new();
+            core::fmt::Write::write_fmt(&mut s, format_args!("Preset {}", index + 1)).ok();
+            s
+        } else {
+            p.name.clone()
+        };
+        let labels = core::array::from_fn(|j| {
+            p.buttons
+                .get(j)
+                .map(|b| b.label.clone())
+                .filter(|l| !l.is_empty())
+                .unwrap_or_else(|| String::try_from(defaults[j]).unwrap_or_default())
+        });
+        (name, labels)
+    } else {
+        let mut name: String<16> = String::new();
+        core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", index + 1)).ok();
+        let labels = core::array::from_fn(|j| String::try_from(defaults[j]).unwrap_or_default());
+        (name, labels)
+    }
+}

@@ -1083,7 +1083,8 @@ mod app {
             let config_changed = ctx.shared.pe_config.lock(|cfg| {
                 let mut changed = false;
                 for (i, meta) in presets.iter_mut().enumerate() {
-                    let (name, labels) = preset_meta_from_config(cfg, i);
+                    let (name, labels) =
+                        pedalboard_midi::views::performance::preset_meta_from_config(cfg, i);
                     if meta.name != name || meta.button_labels != labels {
                         meta.name = name;
                         meta.button_labels = labels;
@@ -1263,43 +1264,13 @@ mod app {
         }
     }
 
-    fn preset_meta_from_config(
-        cfg: &pedalboard_protocol::config::Config,
-        index: usize,
-    ) -> (heapless::String<16>, [heapless::String<16>; 6]) {
-        use heapless::String;
-        let defaults = ["A", "B", "C", "D", "E", "F"];
-        if let Some(p) = cfg.presets.get(index) {
-            let name = if p.name.is_empty() {
-                let mut s: String<16> = String::new();
-                core::fmt::Write::write_fmt(&mut s, format_args!("Preset {}", index + 1)).ok();
-                s
-            } else {
-                p.name.clone()
-            };
-            let labels = core::array::from_fn(|j| {
-                p.buttons
-                    .get(j)
-                    .map(|b| b.label.clone())
-                    .filter(|l| !l.is_empty())
-                    .unwrap_or_else(|| String::try_from(defaults[j]).unwrap_or_default())
-            });
-            (name, labels)
-        } else {
-            let mut name: String<16> = String::new();
-            core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", index + 1)).ok();
-            let labels =
-                core::array::from_fn(|j| String::try_from(defaults[j]).unwrap_or_default());
-            (name, labels)
-        }
-    }
-
     fn load_preset_meta(
         presets: &mut [pedalboard_midi::views::performance::PresetMeta; 32],
         cfg: &pedalboard_protocol::config::Config,
     ) {
         for (i, meta) in presets.iter_mut().enumerate() {
-            let (name, labels) = preset_meta_from_config(cfg, i);
+            let (name, labels) =
+                pedalboard_midi::views::performance::preset_meta_from_config(cfg, i);
             meta.name = name;
             meta.button_labels = labels;
         }
