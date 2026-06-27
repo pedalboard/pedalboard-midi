@@ -6,7 +6,6 @@ pub mod events;
 pub mod ledring;
 pub mod leds;
 pub mod long_press;
-pub mod loudness;
 #[cfg(target_arch = "arm")]
 pub mod opendeck_handler;
 #[cfg(target_arch = "arm")]
