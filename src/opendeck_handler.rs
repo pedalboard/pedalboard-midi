@@ -1,5 +1,5 @@
 use crate::events::{Edge, InputEvent, Pulse};
-use crate::ledring::Animation as RingAnim;
+use crate::ledring::{rgb8_to_rgb, Animation as RingAnim, Modifier, Renderer, RingAnimation};
 use crate::leds::{Led, LedData, LedRings, Leds};
 use core::cell::RefCell;
 use midi2::BytesMessage;
@@ -9,7 +9,6 @@ use opendeck::encoder::handler::EncoderPulse;
 use opendeck::handler::Messages;
 use opendeck::led::ControlType;
 use rtic_sync::channel::Sender;
-use smart_leds::colors::*;
 use smart_leds::RGB8;
 
 pub const PERSIST_CAPACITY: usize = 32;
@@ -135,8 +134,8 @@ impl OpenDeck {
         }
     }
 
-    /// Process local MIDI and update LED state. Returns rendered LED data.
-    pub fn notify_local_midi(&mut self, raw: &[u8]) -> LedData {
+    /// Process local MIDI and update LED state.
+    pub fn notify_local_midi(&mut self, raw: &[u8]) {
         if raw.len() >= 3 {
             let is_cc = (raw[0] & 0xF0) == 0xB0;
             if let Some((channel, id, value, is_note_on)) = parse_midi_raw(raw) {
@@ -145,19 +144,15 @@ impl OpenDeck {
             }
         }
         self.update_leds();
-        self.leds.render()
     }
 
-    /// Process an incoming external MIDI message and update LED state. Returns rendered LED data.
-    pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) -> LedData {
-        // Flash Mon LED on external MIDI
-        self.leds.set_single(Led::Mon, Some(DARK_BLUE));
+    /// Process an incoming external MIDI message and update LED state.
+    pub fn handle_midi_input(&mut self, m: &BytesMessage<&[u8]>) {
         if let Some((channel, id, value, is_note_on, is_cc)) = parse_bytes_message(m) {
             self.config
                 .notify_external_midi(channel, id, value, is_note_on, is_cc);
         }
         self.update_leds();
-        self.leds.render()
     }
 
     pub fn process_sysex(&mut self, request: &[u8]) -> OpenDeckConfigResponses {
@@ -185,14 +180,45 @@ impl OpenDeck {
     }
 
     /// Render current LED state (for use after sysex config changes).
-    pub fn render_leds(&self) -> LedData {
-        self.leds.render()
+    pub fn render_leds(&self) -> &LedData {
+        &self.leds.buffer
     }
 
-    /// Turn off Mon LED (called by flash timeout).
-    pub fn clear_mon(&mut self) -> LedData {
-        self.leds.set_single(Led::Mon, None);
-        self.leds.render()
+    /// Return current ring state as RingAnimation array (for led_out event system).
+    pub fn ring_animations(&self) -> [RingAnimation; 8] {
+        let mut anims = [RingAnimation::off(); 8];
+        for (i, anim) in anims
+            .iter_mut()
+            .enumerate()
+            .take(self.config.output_count().min(8))
+        {
+            let ct = self.config.output_control_type(i);
+            let rgb = color_to_rgb(self.config.output_color(i));
+            let is_multi = matches!(
+                ct,
+                ControlType::LocalCcMultiValue
+                    | ControlType::MidiInCcMultiValue
+                    | ControlType::LocalNoteMultiValue
+                    | ControlType::MidiInNoteMultiValue
+            );
+            if is_multi {
+                let level = self.config.output_level(i);
+                let fill = ((level as u16 * 12) / 127).min(12) as u8;
+                *anim = RingAnimation {
+                    renderer: Renderer::Heatmap(fill),
+                    modifier: Modifier::Solid,
+                };
+            } else {
+                let is_static = ct == ControlType::Static;
+                let on = is_static || self.config.output_state(i);
+                *anim = if on {
+                    RingAnimation::solid(rgb8_to_rgb(rgb))
+                } else {
+                    RingAnimation::off()
+                };
+            }
+        }
+        anims
     }
 
     /// Update LED structs from config output state.

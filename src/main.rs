@@ -33,7 +33,7 @@ mod app {
     use embedded_hal::digital::OutputPin;
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
-    use pedalboard_midi::leds::LedData;
+    use pedalboard_midi::leds::LedEvent;
     use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
     use rtic_sync::make_channel;
@@ -130,10 +130,8 @@ mod app {
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
         sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
-        led_sender_midi: Sender<'static, LedData, LED_CAPACITY>,
-        led_sender_usb: Sender<'static, LedData, LED_CAPACITY>,
-        mon_sender_midi: Sender<'static, (), 1>,
-        mon_sender_usb: Sender<'static, (), 1>,
+        led_sender_midi: Sender<'static, LedEvent, LED_CAPACITY>,
+        led_sender_usb: Sender<'static, LedEvent, LED_CAPACITY>,
         usb_sender_din_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
@@ -145,7 +143,7 @@ mod app {
     const USB_OUT_CAPACITY: usize = 80;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
-    const LED_CAPACITY: usize = 1;
+    const LED_CAPACITY: usize = 4;
     const DIN_THRU_CAPACITY: usize = 8;
     const PERSIST_CAPACITY: usize = pedalboard_midi::opendeck_handler::PERSIST_CAPACITY;
 
@@ -310,8 +308,7 @@ mod app {
         let (display_event_sender, display_event_receiver) =
             make_channel!(pedalboard_midi::pe_handler::DisplayEvent, 4);
 
-        let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
-        let (mon_sender, mon_receiver) = make_channel!((), 1);
+        let (led_sender, led_receiver) = make_channel!(LedEvent, LED_CAPACITY);
         let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
         let (persist_sender, persist_receiver) = make_channel!(
             pedalboard_midi::opendeck_handler::PersistCommand,
@@ -319,8 +316,7 @@ mod app {
         );
 
         blink::spawn().unwrap();
-        led_writer::spawn(led_receiver).unwrap();
-        mon_off::spawn(mon_receiver, led_sender.clone()).unwrap();
+        led_out::spawn(led_receiver).unwrap();
         poll_input::spawn(
             usb_sender.clone(),
             display_sender,
@@ -370,8 +366,6 @@ mod app {
                 sender: sysex_sender,
                 led_sender_midi: led_sender.clone(),
                 led_sender_usb: led_sender,
-                mon_sender_midi: mon_sender.clone(),
-                mon_sender_usb: mon_sender,
                 usb_sender_din_thru: usb_sender.clone(),
                 usb_sender_usb_thru: usb_sender.clone(),
                 din_thru_receiver,
@@ -382,27 +376,34 @@ mod app {
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, mon_sender_midi, usb_sender_din_thru], shared = [opendeck])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck])]
     fn midi_in(mut ctx: midi_in::Context) {
         use midi2::prelude::*;
 
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
-                let (led_data, din_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
+                let din_to_usb = ctx.shared.opendeck.lock(|opendeck| {
                     let mut buf = [0x00u8; 3];
                     m.render_slice(&mut buf);
                     let thru = opendeck.din_to_usb_thru();
-                    let ld = if let Ok(m) = BytesMessage::try_from(&buf[..]) {
-                        Some(opendeck.handle_midi_input(&m))
+                    if let Ok(m) = BytesMessage::try_from(&buf[..]) {
+                        opendeck.handle_midi_input(&m);
+                    }
+                    if thru {
+                        Some(buf)
                     } else {
                         None
-                    };
-                    (ld, if thru { Some(buf) } else { None })
+                    }
                 });
-                if let Some(data) = led_data {
-                    ctx.local.led_sender_midi.try_send(data).ok();
-                    ctx.local.mon_sender_midi.try_send(()).ok();
-                }
+                // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
+                ctx.local
+                    .led_sender_midi
+                    .try_send(LedEvent::Flash(
+                        pedalboard_midi::leds::Led::Mon,
+                        smart_leds::RGB8::new(0, 0, 64),
+                        5,
+                    ))
+                    .ok();
                 if let Some(raw) = din_to_usb {
                     let packet =
                         UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw);
@@ -422,7 +423,7 @@ mod app {
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
         mut display_event_sender: Sender<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
-        mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
+        mut led_sender: Sender<'static, LedEvent, LED_CAPACITY>,
         mut persist_sender: Sender<
             'static,
             pedalboard_midi::opendeck_handler::PersistCommand,
@@ -466,22 +467,7 @@ mod app {
                 if let Some(preset) = cfg.presets.get(preset_idx as usize) {
                     if !preset.name.is_empty() {
                         let anims = pe.led_state(preset);
-                        use pedalboard_midi::leds::{LedRings, Leds};
-                        const RINGS: [LedRings; 8] = [
-                            LedRings::A,
-                            LedRings::B,
-                            LedRings::C,
-                            LedRings::D,
-                            LedRings::E,
-                            LedRings::F,
-                            LedRings::Vol,
-                            LedRings::Gain,
-                        ];
-                        let mut leds = Leds::default();
-                        for (i, anim) in anims.iter().enumerate() {
-                            leds.set_ledring(*anim, RINGS[i]);
-                        }
-                        led_sender.try_send(leds.render()).ok();
+                        led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
                     }
                 }
             });
@@ -508,7 +494,7 @@ mod app {
             let mut all_sent: heapless::Vec<([u8; 6], usize), 24> = heapless::Vec::new();
             let mut pe_midi_steps: heapless::Vec<pedalboard_midi::pe_handler::MidiStep, 24> =
                 heapless::Vec::new();
-            let mut led_data: Option<LedData> = None;
+            let mut led_event: Option<LedEvent> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
 
@@ -602,22 +588,7 @@ mod app {
                             ctx.shared.pe_config.lock(|cfg| {
                                 let preset = &cfg.presets[preset_idx as usize];
                                 let anims = pe.led_state(preset);
-                                use pedalboard_midi::leds::LedRings;
-                                const RINGS: [LedRings; 8] = [
-                                    LedRings::A,
-                                    LedRings::B,
-                                    LedRings::C,
-                                    LedRings::D,
-                                    LedRings::E,
-                                    LedRings::F,
-                                    LedRings::Vol,
-                                    LedRings::Gain,
-                                ];
-                                let mut leds = pedalboard_midi::leds::Leds::default();
-                                for (i, anim) in anims.iter().enumerate() {
-                                    leds.set_ledring(*anim, RINGS[i]);
-                                }
-                                led_data = Some(leds.render());
+                                led_event = Some(LedEvent::SetAllRings(anims));
                             });
                         }
                     }
@@ -652,14 +623,15 @@ mod app {
                         }
                     }
                     for (raw, len) in &all_sent {
-                        led_data = Some(opendeck.notify_local_midi(&raw[..*len]));
+                        opendeck.notify_local_midi(&raw[..*len]);
                     }
+                    led_event = Some(LedEvent::SetAllRings(opendeck.ring_animations()));
                 });
             }
             // Slots 4+ with no PE preset: inputs are silent
             // Send LED update outside the lock
-            if let Some(data) = led_data {
-                led_sender.try_send(data).ok();
+            if let Some(evt) = led_event {
+                led_sender.try_send(evt).ok();
             }
             // Send MIDI outside the lock
             if pe_active {
@@ -722,7 +694,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
+        local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
         shared =[usb_midi,usb_dev,opendeck,pe_config]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -756,14 +728,21 @@ mod app {
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
                 if let Ok(m) = midi2::BytesMessage::try_from(packet.payload_bytes()) {
-                    let (led_data, usb_to_din, usb_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
+                    let (usb_to_din, usb_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
                         let to_din = opendeck.usb_to_din_thru();
                         let to_usb = opendeck.usb_to_usb_thru();
-                        let ld = opendeck.handle_midi_input(&m);
-                        (ld, to_din, to_usb)
+                        opendeck.handle_midi_input(&m);
+                        (to_din, to_usb)
                     });
-                    ctx.local.led_sender_usb.try_send(led_data).ok();
-                    ctx.local.mon_sender_usb.try_send(()).ok();
+                    // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
+                    ctx.local
+                        .led_sender_usb
+                        .try_send(LedEvent::Flash(
+                            pedalboard_midi::leds::Led::Mon,
+                            smart_leds::RGB8::new(0, 0, 64),
+                            5,
+                        ))
+                        .ok();
                     // USB→DIN thru
                     if usb_to_din {
                         let raw = packet.payload_bytes();
@@ -1173,31 +1152,31 @@ mod app {
         }
     }
 
-    #[task(local = [led_spi])]
-    async fn led_writer(
-        ctx: led_writer::Context,
-        mut receiver: Receiver<'static, LedData, LED_CAPACITY>,
+    #[task(local = [led_spi, leds: pedalboard_midi::leds::Leds = pedalboard_midi::leds::Leds::new()])]
+    async fn led_out(
+        ctx: led_out::Context,
+        mut receiver: Receiver<'static, LedEvent, LED_CAPACITY>,
     ) {
-        while let Ok(data) = receiver.recv().await {
+        let leds = ctx.local.leds;
+
+        loop {
+            // Drain all pending events
+            while let Ok(evt) = receiver.try_recv() {
+                leds.handle_event(evt);
+            }
+
+            // Tick animations
+            leds.tick();
+
+            // Render and write
+            let data = leds.render();
             ctx.local
                 .led_spi
-                .write(brightness(data.iter().cloned(), 8))
+                .write(brightness(data.iter().cloned(), 32))
                 .unwrap();
-        }
-    }
 
-    #[task(shared = [opendeck])]
-    async fn mon_off(
-        mut ctx: mon_off::Context,
-        mut receiver: Receiver<'static, (), 1>,
-        mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
-    ) {
-        while let Ok(()) = receiver.recv().await {
-            Mono::delay(100.millis()).await;
-            // Drain any extra signals that arrived during the delay
-            while receiver.try_recv().is_ok() {}
-            let data = ctx.shared.opendeck.lock(|opendeck| opendeck.clear_mon());
-            led_sender.try_send(data).ok();
+            // 50Hz frame rate = 20ms
+            Mono::delay(20.millis()).await;
         }
     }
 

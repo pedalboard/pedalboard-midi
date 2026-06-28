@@ -13,8 +13,7 @@ The firmware uses RTIC v2 with async tasks on the RP2040. Dispatcher: `SW0_IRQ`.
 | `sysex_processor` | 1 | async | Serialise OpenDeck SysEx responses → USB out |
 | `send_to_usb_midi` | 1 | async | USB MIDI TX queue drain |
 | `display_out` | 1 | async | OLED rendering (performance view, overlays) |
-| `led_writer` | 1 | async | WS2812 LED ring output via PIO |
-| `mon_off` | 1 | async | LED activity monitor timeout (100ms debounce) |
+| `led_out` | 1 | async | LED ring/single rendering, 50Hz tick loop via PIO |
 | `midi_clock` | 1 | async | BPM-driven MIDI Clock (0xF8) to DIN + USB |
 | `blink` | 1 | async | Debug heartbeat LED (500ms) |
 

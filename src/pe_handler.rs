@@ -7,10 +7,10 @@
 //! - Format conversion (MidiMessage → raw bytes)
 
 use crate::events::{Edge, InputEvent, Pulse};
-use crate::ledring::Animation;
+use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
 use crate::long_press::{Gesture, LongPressDetector};
 use pedalboard_protocol::action::{EncoderDirection, MidiMessage};
-use pedalboard_protocol::config::{ButtonMode, Color, Preset};
+use pedalboard_protocol::config::{ButtonMode, Color, LedAnimation, Preset};
 use pedalboard_protocol::engine::{self, ButtonEvent};
 use pedalboard_protocol::state::{PresetState, PresetStateStore};
 use smart_leds::RGB8;
@@ -38,7 +38,7 @@ pub struct HandleResult {
 }
 
 /// LED state for all 8 rings (A-F + Vol + Gain).
-pub type LedAnimations = [Animation; 8];
+pub type LedAnimations = [RingAnimation; 8];
 
 /// Stateful PE event handler. Thin adapter over protocol::engine.
 pub struct PeHandler {
@@ -295,30 +295,43 @@ impl PeHandler {
 
     /// Compute LED animations for all 8 rings based on current state + preset config.
     pub fn led_state(&self, preset: &Preset) -> LedAnimations {
-        let mut anims = [Animation::Off; 8];
+        let mut anims = [RingAnimation::off(); 8];
 
         for (i, anim) in anims.iter_mut().enumerate().take(NUM_BUTTONS) {
             if let Some(btn) = preset.buttons.get(i) {
-                let color = if self.button_active[i] {
-                    color_to_rgb(&btn.color.on)
+                let on_color = color_to_rgb(&btn.color.on);
+                if on_color == RGB8::default() {
+                    *anim = RingAnimation::off();
+                } else if self.button_active[i] {
+                    let modifier = match btn.color.animation {
+                        LedAnimation::Solid => Modifier::Solid,
+                        LedAnimation::Blink => Modifier::Blink,
+                        LedAnimation::Pulse => Modifier::Pulse,
+                    };
+                    *anim = RingAnimation {
+                        renderer: Renderer::Solid(rgb8_to_rgb(on_color)),
+                        modifier,
+                    };
                 } else if btn.color.off == Color::Off {
-                    let on = color_to_rgb(&btn.color.on);
-                    RGB8::new(on.r / 3, on.g / 3, on.b / 3)
+                    // No explicit off color → glow the on color
+                    *anim = RingAnimation::glow(rgb8_to_rgb(on_color));
                 } else {
-                    color_to_rgb(&btn.color.off)
-                };
-                *anim = if color == RGB8::default() {
-                    Animation::Off
-                } else {
-                    Animation::On(color)
+                    let off_color = color_to_rgb(&btn.color.off);
+                    *anim = RingAnimation::solid(rgb8_to_rgb(off_color));
                 };
             }
         }
 
         let fill_vol = ((self.encoder_values[0] as u16 * 12) / 127).min(12) as u8;
-        anims[6] = Animation::Heatmap(fill_vol);
+        anims[6] = RingAnimation {
+            renderer: Renderer::Heatmap(fill_vol),
+            modifier: Modifier::Solid,
+        };
         let fill_gain = ((self.encoder_values[1] as u16 * 12) / 127).min(12) as u8;
-        anims[7] = Animation::Heatmap(fill_gain);
+        anims[7] = RingAnimation {
+            renderer: Renderer::Heatmap(fill_gain),
+            modifier: Modifier::Solid,
+        };
 
         anims
     }
@@ -428,6 +441,7 @@ fn midi_to_raw(msg: &MidiMessage) -> ([u8; 3], usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledring::Rgb;
     use heapless::Vec;
     use pedalboard_protocol::config::*;
 
@@ -960,16 +974,20 @@ mod tests {
         let mut handler = PeHandler::new();
         handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
         assert!(
-            matches!(handler.led_state(&preset)[1], Animation::On(c) if c == RGB8::new(0, 0, 255))
+            matches!(handler.led_state(&preset)[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
         );
 
         handler.switch_preset(1, &preset, &preset);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
+        );
 
         handler.switch_preset(0, &preset, &preset);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
+        );
     }
 
     // --- LED state tests ---
@@ -982,6 +1000,7 @@ mod tests {
                 color: LedConfig {
                     on: Color::Green,
                     off: Color::Off,
+                    animation: pedalboard_protocol::config::LedAnimation::Solid,
                 },
                 mode: ButtonMode::Momentary,
                 on_press: heapless::Vec::new(),
@@ -996,6 +1015,7 @@ mod tests {
                 color: LedConfig {
                     on: Color::Blue,
                     off: Color::Red,
+                    animation: pedalboard_protocol::config::LedAnimation::Solid,
                 },
                 mode: ButtonMode::Toggle,
                 on_press: heapless::Vec::new(),
@@ -1026,7 +1046,9 @@ mod tests {
         let leds = handler.led_state(&preset);
 
         // Button B should show active color (blue) immediately
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
+        );
     }
 
     #[test]
@@ -1034,8 +1056,12 @@ mod tests {
         let preset = make_led_preset();
         let handler = PeHandler::new();
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/3, 0)));
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
+        assert!(
+            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), modifier: Modifier::Glow } if c == Rgb::new(0, 255, 0))
+        );
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
+        );
     }
 
     #[test]
@@ -1044,7 +1070,9 @@ mod tests {
         let mut handler = PeHandler::new();
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255, 0)));
+        assert!(
+            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 255, 0))
+        );
     }
 
     #[test]
@@ -1054,7 +1082,9 @@ mod tests {
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/3, 0)));
+        assert!(
+            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), modifier: Modifier::Glow } if c == Rgb::new(0, 255, 0))
+        );
     }
 
     #[test]
@@ -1063,15 +1093,21 @@ mod tests {
         let mut handler = PeHandler::new();
         handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
+        );
 
         handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
+        );
 
         handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
+        assert!(
+            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
+        );
     }
 
     #[test]
@@ -1081,8 +1117,20 @@ mod tests {
         handler.encoder_values[0] = 64;
         handler.encoder_values[1] = 127;
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[6], Animation::Heatmap(6)));
-        assert!(matches!(leds[7], Animation::Heatmap(12)));
+        assert!(matches!(
+            leds[6],
+            RingAnimation {
+                renderer: Renderer::Heatmap(6),
+                ..
+            }
+        ));
+        assert!(matches!(
+            leds[7],
+            RingAnimation {
+                renderer: Renderer::Heatmap(12),
+                ..
+            }
+        ));
     }
 
     #[test]
