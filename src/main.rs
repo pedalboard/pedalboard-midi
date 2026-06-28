@@ -348,24 +348,8 @@ mod app {
 
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
-        // Load PE presets from flash
-        let mut pe_config = pedalboard_protocol::config::Config::default();
-        let mut preset_count = 0u8;
-        pedalboard_midi::preset_flash::load_all(|idx, data| {
-            if let Ok(preset) = postcard::from_bytes::<pedalboard_protocol::config::Preset>(data) {
-                let i = idx as usize;
-                while pe_config.presets.len() <= i {
-                    pe_config.presets.push(Default::default()).ok();
-                }
-                pe_config.presets[i] = preset;
-                preset_count += 1;
-            }
-        });
-        if preset_count == 0 {
-            info!("no presets loaded (empty or version mismatch)");
-        } else {
-            info!("{} presets loaded from flash", preset_count);
-        }
+        // Presets loaded asynchronously in persist task
+        let pe_config = pedalboard_protocol::config::Config::default();
 
         (
             Shared {
@@ -710,7 +694,7 @@ mod app {
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, mon_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck]
+        shared =[usb_midi,usb_dev,opendeck,pe_config]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -847,15 +831,28 @@ mod app {
                                 let src_muid = pedalboard_protocol::property_exchange::source_muid(
                                     sysex_receive_buffer.as_ref(),
                                 );
-                                // Find preset in flash and reply with raw bytes
-                                let data = pedalboard_midi::preset_flash::load_one(resource);
-                                let body = data.unwrap_or(&[]);
+                                // Serialize preset from RAM for PE Get reply
+                                static mut GET_BUF: [u8; 192] = [0u8; 192];
+                                let body = ctx.shared.pe_config.lock(|cfg| {
+                                    let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
+                                    if let Some(preset) = cfg.presets.get(resource as usize) {
+                                        postcard::to_slice(preset, buf).ok().map(|s| s.len())
+                                    } else {
+                                        None
+                                    }
+                                });
+                                let reply_body: &[u8] = match body {
+                                    Some(len) => unsafe {
+                                        &(&(*core::ptr::addr_of!(GET_BUF)))[..len]
+                                    },
+                                    None => &[],
+                                };
                                 let reply = pedalboard_protocol::property_exchange::build_get_reply(
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
                                     resource,
-                                    body,
+                                    reply_body,
                                 );
                                 for chunk in reply.chunks(3) {
                                     if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
@@ -1008,6 +1005,31 @@ mod app {
                 });
             }
             info!("config persistence ready");
+
+            // Load presets from flash
+            let mut preset_count = 0u8;
+            store
+                .load_all_presets(|idx, data| {
+                    if let Ok(preset) =
+                        postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
+                    {
+                        ctx.shared.pe_config.lock(|cfg| {
+                            let i = idx as usize;
+                            while cfg.presets.len() <= i {
+                                cfg.presets.push(Default::default()).ok();
+                            }
+                            cfg.presets[i] = preset;
+                        });
+                        preset_count += 1;
+                    }
+                })
+                .await;
+            if preset_count == 0 {
+                info!("no presets loaded (empty or version mismatch)");
+            } else {
+                info!("{} presets loaded from flash", preset_count);
+            }
+
             // Enter persist loop
             while let Ok(cmd) = receiver.recv().await {
                 use pedalboard_midi::opendeck_handler::PersistCommand;
@@ -1034,7 +1056,7 @@ mod app {
                                 }
                                 cfg.presets[idx] = preset;
                             });
-                            pedalboard_midi::preset_flash::save_one(preset_index, &data);
+                            store.save_preset(preset_index, &data).await;
                             // Clear runtime state — presets changed, stale state
                             let buf =
                                 pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
@@ -1068,7 +1090,6 @@ mod app {
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;
-                        pedalboard_midi::preset_flash::erase_all();
                         // Clear EEPROM runtime state
                         let buf = pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
                         use embedded_hal::i2c::I2c;

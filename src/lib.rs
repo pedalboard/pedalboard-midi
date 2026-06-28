@@ -10,8 +10,5 @@ pub mod long_press;
 pub mod opendeck_handler;
 pub mod pe_handler;
 #[cfg(target_arch = "arm")]
-pub mod preset_flash;
-pub mod preset_format;
-#[cfg(target_arch = "arm")]
 pub mod storage;
 pub mod views;

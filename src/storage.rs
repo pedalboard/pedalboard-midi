@@ -10,9 +10,10 @@ use sequential_storage::cache::NoCache;
 use sequential_storage::map::{MapConfig, MapStorage, SerializationError, Value};
 
 const STORAGE_ORIGIN: u32 = 0x001F_0000; // offset from flash start (2MB - 64KB)
-const STORAGE_SIZE: usize = 60 * 1024; // 15 sectors — last sector reserved for preset_flash
+const STORAGE_SIZE: usize = 64 * 1024; // 16 sectors, full region (wear-leveled)
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
+const PRESET_KEY_BASE: u16 = 0x8000; // preset keys: 0x8000 | index
 
 #[derive(Debug)]
 pub struct FlashError;
@@ -97,6 +98,23 @@ impl<'a> Value<'a> for ConfigValue {
     }
 }
 
+/// Variable-size preset blob stored in flash.
+#[derive(Clone, Debug)]
+pub struct PresetValue<'a>(pub &'a [u8]);
+
+impl<'a> Value<'a> for PresetValue<'a> {
+    fn serialize_into(&self, buffer: &mut [u8]) -> Result<usize, SerializationError> {
+        if buffer.len() < self.0.len() {
+            return Err(SerializationError::BufferTooSmall);
+        }
+        buffer[..self.0.len()].copy_from_slice(self.0);
+        Ok(self.0.len())
+    }
+    fn deserialize_from(buffer: &'a [u8]) -> Result<(Self, usize), SerializationError> {
+        Ok((PresetValue(buffer), buffer.len()))
+    }
+}
+
 /// Encode a config key: block(3 bits) | section(5 bits) | index(8 bits) = u16
 pub fn encode_key(block: u8, section: u8, index: u8) -> u16 {
     ((block as u16) << 13) | ((section as u16) << 8) | index as u16
@@ -152,11 +170,53 @@ impl ConfigStore {
         while let Ok(Some((key, ConfigValue(value)))) =
             iter.next::<ConfigValue>(&mut item_buf).await
         {
+            if key >= PRESET_KEY_BASE {
+                continue; // skip preset keys
+            }
             let block = ((key >> 13) & 0x07) as u8;
             let section = ((key >> 8) & 0x1F) as u8;
             let index = (key & 0xFF) as u8;
             entries.push((block, section, index, value)).ok();
         }
         entries
+    }
+
+    /// Store a preset blob.
+    pub async fn save_preset(&mut self, index: u8, data: &[u8]) {
+        let key = PRESET_KEY_BASE | index as u16;
+        let _ = self
+            .map
+            .store_item(&mut self.buf, &key, &PresetValue(data))
+            .await;
+    }
+
+    /// Load a single preset blob into the provided buffer. Returns the slice of data read.
+    pub async fn load_preset<'b>(&mut self, index: u8, out: &'b mut [u8]) -> Option<&'b [u8]> {
+        let key = PRESET_KEY_BASE | index as u16;
+        let item: Option<PresetValue<'_>> = self
+            .map
+            .fetch_item(&mut self.buf, &key)
+            .await
+            .ok()
+            .flatten();
+        if let Some(PresetValue(data)) = item {
+            let len = data.len().min(out.len());
+            out[..len].copy_from_slice(&data[..len]);
+            Some(&out[..len])
+        } else {
+            None
+        }
+    }
+
+    /// Load all presets. Calls callback for each (index, data) found.
+    pub async fn load_all_presets(&mut self, mut callback: impl FnMut(u8, &[u8])) {
+        for idx in 0..32u8 {
+            let key = PRESET_KEY_BASE | idx as u16;
+            let item: Result<Option<PresetValue<'_>>, _> =
+                self.map.fetch_item(&mut self.buf, &key).await;
+            if let Ok(Some(PresetValue(data))) = item {
+                callback(idx, data);
+            }
+        }
     }
 }
