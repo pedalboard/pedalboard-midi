@@ -3,9 +3,22 @@
 /// Maximum serialized size of a single preset (postcard-encoded).
 /// Used for PE receive/send buffers and the persist channel Vec.
 ///
-/// When increasing this value, also update:
+/// # Preset data flow and buffer chain
+///
+/// ```text
+/// Upload (PE SET):
+///   USB SysEx [Vec<u8, 256>] → decode_mcoded7 [u8; N] → SavePreset [Vec<u8, N>]
+///     → persist channel → save_preset → flash (via 256-byte page writes)
+///
+/// Read-back (PE GET):
+///   flash → load_all_presets [u8; 4096] → Preset (RAM)
+///   pe-read → postcard::to_slice [u8; N] → encode_mcoded7 → Vec<u8, 256> SysEx reply
+///     → USB out channel (capacity >= reply_size / 3)
+/// ```
+///
+/// `N` = `MAX_PRESET_SIZE`. When increasing, also update:
 /// - `pedalboard-protocol`: `build_get_reply` Vec capacity and `encoded_body` buffer
-/// - Below: `USB_OUT_CAPACITY` (the static assert will catch this)
+/// - `USB_OUT_CAPACITY` (the static assert will catch this)
 pub const MAX_PRESET_SIZE: usize = 256;
 
 /// Maximum PE GET reply message size (capped by protocol Vec<u8, 256>).
