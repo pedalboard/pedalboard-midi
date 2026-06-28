@@ -10,7 +10,7 @@ use sequential_storage::cache::NoCache;
 use sequential_storage::map::{MapConfig, MapStorage, SerializationError, Value};
 
 const STORAGE_ORIGIN: u32 = 0x001F_0000; // offset from flash start (2MB - 64KB)
-const STORAGE_SIZE: usize = 64 * 1024;
+const STORAGE_SIZE: usize = 60 * 1024; // 15 sectors — last sector reserved for preset_flash
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
 
