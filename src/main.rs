@@ -470,7 +470,7 @@ mod app {
 
             // Determine if active preset is a PE preset (has a name)
             // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
-            let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+            let mut preset_idx = ctx.shared.active_preset.lock(|p| *p);
             let pe_active = ctx.shared.pe_config.lock(|cfg| {
                 cfg.presets
                     .get(preset_idx as usize)
@@ -537,12 +537,17 @@ mod app {
                     for evt in result.display {
                         display_event_sender.try_send(evt).ok();
                     }
-                    if !all_sent.is_empty() || result.led_dirty {
+                    // Preset switch always dirties LEDs (new colors/states)
+                    let led_dirty = result.led_dirty || !result.system.is_empty();
+                    if !result.system.is_empty() {
+                        preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                    }
+                    if !all_sent.is_empty() || led_dirty {
                         // Render LEDs from PE state (bypass OpenDeck LED engine)
                         ctx.shared.opendeck.lock(|opendeck| {
                             din_enabled = opendeck.din_midi_enabled();
                         });
-                        if result.led_dirty {
+                        if led_dirty {
                             ctx.shared.pe_config.lock(|cfg| {
                                 let preset = &cfg.presets[preset_idx as usize];
                                 let anims = pe.led_state(preset);

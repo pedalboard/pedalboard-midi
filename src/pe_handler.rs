@@ -755,6 +755,28 @@ mod tests {
             .any(|(raw, _)| raw[0] == 0xB0 && raw[1] == 7 && raw[2] == 100));
     }
 
+    #[test]
+    fn led_state_updates_after_switch() {
+        let preset = make_led_preset();
+        let mut handler = PeHandler::new();
+
+        // Activate button B (toggle) in preset 0
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert!(
+            matches!(handler.led_state(&preset)[1], Animation::On(c) if c == RGB8::new(0, 0, 255))
+        );
+
+        // Switch to preset 1 — LED should reflect fresh state (inactive = red)
+        handler.switch_preset(1, &preset);
+        let leds = handler.led_state(&preset);
+        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
+
+        // Switch back to preset 0 — LED should reflect saved state (active = blue)
+        handler.switch_preset(0, &preset);
+        let leds = handler.led_state(&preset);
+        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+    }
+
     // --- LED state tests ---
 
     fn make_led_preset() -> Preset {
