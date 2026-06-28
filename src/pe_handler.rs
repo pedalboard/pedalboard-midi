@@ -136,9 +136,10 @@ impl PeHandler {
                         let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
                         self.apply_state(&state);
                         self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
-                        // Also fire on_release for toggle (short press = both)
+                        // For momentary: also release (button is no longer held)
+                        // For toggle/radio with on_release: fire release actions
                         if let Some(btn) = preset.buttons.get(i) {
-                            if !btn.on_release.is_empty() && mode != &ButtonMode::Momentary {
+                            if mode == &ButtonMode::Momentary || !btn.on_release.is_empty() {
                                 let mut state2 = self.working_state();
                                 let r2 = engine::process_button(
                                     &mut state2,
@@ -501,6 +502,26 @@ mod tests {
         }
         let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
         assert!(r.midi.is_empty());
+    }
+
+    #[test]
+    fn momentary_with_long_press_led_off_after_short_release() {
+        // Button B: momentary + has on_long_press
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+
+        // Press and release quickly (short press)
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert!(handler.button_active[1]); // LED on while held
+
+        // Tick a few times (not enough for long press)
+        for _ in 0..100 {
+            handler.handle_events(&preset, &[]);
+        }
+
+        // Release — should fire on_press AND clear LED
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        assert!(!handler.button_active[1]); // LED must be off after release
     }
 
     #[test]
