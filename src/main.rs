@@ -1221,17 +1221,30 @@ mod app {
 
         let mut midi_log = pedalboard_midi::display::MidiLog::new();
         let mut debug_mode = false;
+        let mut debug_mode_ticks: u8 = 0;
+        const DEBUG_MODE_TIMEOUT: u8 = 25; // 25 * 200ms = 5 seconds
 
         loop {
             let mut show_overlay = false;
 
             // Check if SysEx session switched mode
             let sysex_active = ctx.shared.opendeck.lock(|od| od.config.sysex_enabled());
-            if sysex_active != debug_mode {
-                debug_mode = sysex_active;
-                if debug_mode {
-                    displays.draw_midi_log(&midi_log);
-                } else {
+            if sysex_active && !debug_mode {
+                debug_mode = true;
+                debug_mode_ticks = DEBUG_MODE_TIMEOUT;
+                displays.draw_midi_log(&midi_log);
+            } else if sysex_active && debug_mode {
+                debug_mode_ticks = DEBUG_MODE_TIMEOUT;
+            } else if !sysex_active && debug_mode {
+                debug_mode = false;
+                let idx = (current_preset as usize) % presets.len();
+                displays.draw_performance(&presets[idx]);
+            }
+            // Timeout: recover if ConnectionClose was never received
+            if debug_mode && debug_mode_ticks > 0 {
+                debug_mode_ticks -= 1;
+                if debug_mode_ticks == 0 {
+                    debug_mode = false;
                     let idx = (current_preset as usize) % presets.len();
                     displays.draw_performance(&presets[idx]);
                 }
@@ -1336,6 +1349,9 @@ mod app {
             }
 
             while let Ok(raw) = receiver.try_recv() {
+                if debug_mode {
+                    debug_mode_ticks = DEBUG_MODE_TIMEOUT;
+                }
                 let status = raw[0] & 0xF0;
                 let ch = (raw[0] & 0x0F) + 1;
                 match status {
