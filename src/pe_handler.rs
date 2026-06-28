@@ -296,7 +296,7 @@ impl PeHandler {
                     color_to_rgb(&btn.color.on)
                 } else if btn.color.off == Color::Off {
                     let on = color_to_rgb(&btn.color.on);
-                    RGB8::new(on.r / 6, on.g / 6, on.b / 6)
+                    RGB8::new(on.r / 3, on.g / 3, on.b / 3)
                 } else {
                     color_to_rgb(&btn.color.off)
                 };
@@ -1019,7 +1019,7 @@ mod tests {
         let preset = make_led_preset();
         let handler = PeHandler::new();
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/6, 0)));
+        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/3, 0)));
         assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
     }
 
@@ -1039,7 +1039,7 @@ mod tests {
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/6, 0)));
+        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/3, 0)));
     }
 
     #[test]
