@@ -66,10 +66,22 @@ impl PeHandler {
     pub fn switch_preset(
         &mut self,
         new_preset: u8,
-        preset: &Preset,
+        old_preset: &Preset,
+        new_preset_cfg: &Preset,
     ) -> heapless::Vec<([u8; 3], usize), 16> {
+        // Clear momentary visual feedback — only toggle/radio state should persist
+        for i in 0..NUM_BUTTONS {
+            if let Some(btn) = old_preset.buttons.get(i) {
+                if matches!(btn.mode, ButtonMode::Momentary) {
+                    self.button_active[i] = false;
+                }
+            }
+        }
+
         let mut working = self.working_state();
-        let recall = self.state_store.switch(new_preset, &mut working, preset);
+        let recall = self
+            .state_store
+            .switch(new_preset, &mut working, new_preset_cfg);
         self.apply_state(&working);
         self.long_press = core::array::from_fn(|_| LongPressDetector::new());
 
@@ -525,6 +537,158 @@ mod tests {
     }
 
     #[test]
+    fn long_press_switch_clears_held_button_led() {
+        // Button B has on_long_press (PresetNext). After long-press triggers
+        // a preset switch, the new preset should NOT show button B as active.
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+
+        // Hold button B
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert!(handler.button_active[1]); // visual feedback while held
+
+        // Tick past threshold — long press fires
+        for _ in 0..501 {
+            handler.handle_events(&preset, &[]);
+        }
+
+        // Now simulate what poll_input does: switch_preset
+        handler.switch_preset(1, &preset, &preset);
+
+        // New preset should have clean state — button B not active
+        assert!(!handler.button_active[1]);
+    }
+
+    #[test]
+    fn long_press_switch_does_not_save_held_button_as_active() {
+        // When switching away via long-press, the held button's visual feedback
+        // should NOT be persisted. Switching back should show it inactive.
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+
+        // Hold button B and trigger long-press to switch to preset 1
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        for _ in 0..501 {
+            handler.handle_events(&preset, &[]);
+        }
+        handler.switch_preset(1, &preset, &preset);
+
+        // Switch back to preset 0 — button B should NOT be active
+        handler.switch_preset(0, &preset, &preset);
+        assert!(!handler.button_active[1]);
+    }
+
+    #[test]
+    fn toggle_state_preserved_across_switch_via_different_button() {
+        // P1: button A=toggle, button B=momentary+long_press(switch)
+        // 1. Short-press A (toggle ON)
+        // 2. Long-press B to switch to preset 1
+        // 3. Long-press B to switch back to preset 0
+        // => A should still be toggle ON
+        use pedalboard_protocol::config::*;
+
+        let mut buttons_p1: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        // A: Toggle
+        let mut on_press_a: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_press_a
+            .push(Action::Cc {
+                cc: 0,
+                value: 127,
+                channel: 1,
+            })
+            .ok();
+        buttons_p1
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Toggle,
+                on_press: on_press_a,
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+        // B: Momentary + long_press = next_preset
+        let mut on_long_b: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_long_b.push(Action::PresetNext).ok();
+        buttons_p1
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press: heapless::Vec::new(),
+                on_release: heapless::Vec::new(),
+                on_long_press: on_long_b.clone(),
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+
+        let preset_p1 = Preset {
+            name: Label::try_from("P1").unwrap(),
+            buttons: buttons_p1,
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+        };
+
+        // P2: B also has long_press (to switch back)
+        let mut buttons_p2: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        buttons_p2
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press: heapless::Vec::new(),
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+        buttons_p2
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press: heapless::Vec::new(),
+                on_release: heapless::Vec::new(),
+                on_long_press: on_long_b,
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+
+        let preset_p2 = Preset {
+            name: Label::try_from("P2").unwrap(),
+            buttons: buttons_p2,
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+        };
+
+        let mut handler = PeHandler::new();
+
+        // 1. Short-press A on P1 (toggle ON)
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonA(Edge::Activate)]);
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        assert!(handler.button_active[0]); // toggled ON
+
+        // 2. Long-press B to switch to P2
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonB(Edge::Activate)]);
+        for _ in 0..501 {
+            handler.handle_events(&preset_p1, &[]);
+        }
+        // Simulate poll_input: switch_preset
+        handler.switch_preset(1, &preset_p1, &preset_p2);
+
+        // 3. Long-press B to switch back to P1
+        handler.handle_events(&preset_p2, &[InputEvent::ButtonB(Edge::Activate)]);
+        for _ in 0..501 {
+            handler.handle_events(&preset_p2, &[]);
+        }
+        handler.switch_preset(0, &preset_p2, &preset_p1);
+
+        // A should still be toggled ON
+        assert!(handler.button_active[0]);
+    }
+
+    #[test]
     fn encoder_still_works() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
@@ -555,16 +719,21 @@ mod tests {
 
     #[test]
     fn switch_preset_saves_and_restores_state() {
-        let preset = make_test_preset();
+        // Use the LED preset which has button B as Toggle
+        let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
-        assert!(handler.button_active[0]);
 
-        handler.switch_preset(1, &preset);
-        assert!(!handler.button_active[0]);
+        // Toggle button B on
+        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        assert!(handler.button_active[1]);
 
-        handler.switch_preset(0, &preset);
-        assert!(handler.button_active[0]);
+        // Switch to preset 1 — fresh state
+        handler.switch_preset(1, &preset, &preset);
+        assert!(!handler.button_active[1]);
+
+        // Switch back — toggle state restored
+        handler.switch_preset(0, &preset, &preset);
+        assert!(handler.button_active[1]);
     }
 
     #[test]
@@ -572,10 +741,10 @@ mod tests {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
         handler.encoder_values[0] = 100;
-        handler.switch_preset(1, &preset);
+        handler.switch_preset(1, &preset, &preset);
         assert_eq!(handler.encoder_values[0], 0);
 
-        let recall = handler.switch_preset(0, &preset);
+        let recall = handler.switch_preset(0, &preset, &preset);
         assert_eq!(handler.encoder_values[0], 100);
         assert!(recall
             .iter()
@@ -591,11 +760,11 @@ mod tests {
             matches!(handler.led_state(&preset)[1], Animation::On(c) if c == RGB8::new(0, 0, 255))
         );
 
-        handler.switch_preset(1, &preset);
+        handler.switch_preset(1, &preset, &preset);
         let leds = handler.led_state(&preset);
         assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
 
-        handler.switch_preset(0, &preset);
+        handler.switch_preset(0, &preset, &preset);
         let leds = handler.led_state(&preset);
         assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
     }

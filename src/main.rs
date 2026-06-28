@@ -520,8 +520,9 @@ mod app {
                         let new_preset = ctx.shared.active_preset.lock(|p| *p);
                         // Switch preset state and recall MIDI to external gear
                         let recall_midi = ctx.shared.pe_config.lock(|cfg| {
-                            let preset = &cfg.presets[new_preset as usize];
-                            pe.switch_preset(new_preset, preset)
+                            let old_preset = &cfg.presets[preset_idx as usize];
+                            let new_preset_cfg = &cfg.presets[new_preset as usize];
+                            pe.switch_preset(new_preset, old_preset, new_preset_cfg)
                         });
                         for (raw, len) in &recall_midi {
                             let mut buf = [0u8; 6];
