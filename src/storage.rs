@@ -60,17 +60,20 @@ impl NorFlash for FlashStorage {
     }
 
     async fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
-        let flash_addr = STORAGE_ORIGIN + offset;
-        // rp2040 ROM requires 256-byte aligned address and length multiple of 256
-        let aligned_addr = flash_addr & !0xFF;
-        let start_offset = (flash_addr - aligned_addr) as usize;
-        // Write one 256-byte page with data positioned at the correct offset
-        let mut page_buf = [0xFFu8; PAGE_SIZE];
-        let copy_len = bytes.len().min(PAGE_SIZE - start_offset);
-        page_buf[start_offset..start_offset + copy_len].copy_from_slice(&bytes[..copy_len]);
-        cortex_m::interrupt::free(|_| unsafe {
-            rp2040_flash::flash::flash_range_program(aligned_addr, &page_buf, true);
-        });
+        let mut flash_addr = STORAGE_ORIGIN + offset;
+        let mut remaining = bytes;
+        while !remaining.is_empty() {
+            let aligned_addr = flash_addr & !0xFF;
+            let start_offset = (flash_addr - aligned_addr) as usize;
+            let copy_len = remaining.len().min(PAGE_SIZE - start_offset);
+            let mut page_buf = [0xFFu8; PAGE_SIZE];
+            page_buf[start_offset..start_offset + copy_len].copy_from_slice(&remaining[..copy_len]);
+            cortex_m::interrupt::free(|_| unsafe {
+                rp2040_flash::flash::flash_range_program(aligned_addr, &page_buf, true);
+            });
+            remaining = &remaining[copy_len..];
+            flash_addr += copy_len as u32;
+        }
         Ok(())
     }
 }

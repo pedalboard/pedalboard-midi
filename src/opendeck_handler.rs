@@ -21,6 +21,8 @@ pub enum PersistCommand {
     SaveActivePreset(u8),
     SaveState(heapless::Vec<u8, 128>),
     EraseAll,
+    Reboot,
+    Bootloader,
 }
 
 pub struct PedalboardHandler {
@@ -37,10 +39,16 @@ impl PedalboardHandler {
 
 impl opendeck::SystemHandler for PedalboardHandler {
     fn reboot(&self) {
-        cortex_m::peripheral::SCB::sys_reset();
+        self.persist_sender
+            .borrow_mut()
+            .try_send(PersistCommand::Reboot)
+            .ok();
     }
     fn bootloader(&self) {
-        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+        self.persist_sender
+            .borrow_mut()
+            .try_send(PersistCommand::Bootloader)
+            .ok();
     }
     fn factory_reset(&self) {
         self.persist_sender

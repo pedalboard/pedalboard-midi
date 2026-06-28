@@ -1116,6 +1116,12 @@ mod app {
                         info!("factory reset: storage + presets + eeprom erased, rebooting");
                         cortex_m::peripheral::SCB::sys_reset();
                     }
+                    PersistCommand::Reboot => {
+                        cortex_m::peripheral::SCB::sys_reset();
+                    }
+                    PersistCommand::Bootloader => {
+                        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                    }
                 }
             }
         } else {
