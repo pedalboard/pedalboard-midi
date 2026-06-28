@@ -1020,12 +1020,13 @@ mod app {
                             postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
                         {
                             info!(
-                                "preset {} saved: \"{}\"",
+                                "preset {} loaded: \"{}\"",
                                 preset_index,
                                 preset.name.as_str()
                             );
                             ctx.shared.pe_config.lock(|cfg| {
                                 let idx = preset_index as usize;
+                                // Extend presets vec if needed
                                 while cfg.presets.len() <= idx {
                                     cfg.presets
                                         .push(pedalboard_protocol::config::Preset::default())
