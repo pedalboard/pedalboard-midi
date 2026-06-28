@@ -463,7 +463,7 @@ mod app {
                 events.push(*e).ok();
             }
 
-            let mut all_sent: heapless::Vec<([u8; 6], usize), 8> = heapless::Vec::new();
+            let mut all_sent: heapless::Vec<([u8; 6], usize), 24> = heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
@@ -518,6 +518,16 @@ mod app {
                     }
                     if !result.system.is_empty() {
                         let new_preset = ctx.shared.active_preset.lock(|p| *p);
+                        // Switch preset state and recall MIDI to external gear
+                        let recall_midi = ctx.shared.pe_config.lock(|cfg| {
+                            let preset = &cfg.presets[new_preset as usize];
+                            pe.switch_preset(new_preset, preset)
+                        });
+                        for (raw, len) in &recall_midi {
+                            let mut buf = [0u8; 6];
+                            buf[..*len].copy_from_slice(&raw[..*len]);
+                            all_sent.push((buf, *len)).ok();
+                        }
                         use pedalboard_midi::opendeck_handler::PersistCommand;
                         persist_sender
                             .try_send(PersistCommand::SaveActivePreset(new_preset))

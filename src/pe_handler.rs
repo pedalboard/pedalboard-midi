@@ -58,6 +58,7 @@ pub struct PeHandler {
     cycle_index: [u8; NUM_BUTTONS],
     last_encoder_tick: [u16; 2],
     long_press: [LongPressDetector; NUM_BUTTONS],
+    state_store: pedalboard_protocol::state::PresetStateStore,
 }
 
 impl Default for PeHandler {
@@ -74,7 +75,46 @@ impl PeHandler {
             cycle_index: [0; NUM_BUTTONS],
             last_encoder_tick: [u16::MAX; 2],
             long_press: core::array::from_fn(|_| LongPressDetector::new()),
+            state_store: pedalboard_protocol::state::PresetStateStore::new(),
         }
+    }
+
+    /// Switch to a new preset: saves current state, loads new state,
+    /// and returns MIDI messages to sync external gear to the new preset's state.
+    pub fn switch_preset(
+        &mut self,
+        new_preset: u8,
+        preset: &Preset,
+    ) -> heapless::Vec<([u8; 3], usize), 16> {
+        use pedalboard_protocol::state::PresetState;
+
+        // Pack current working state
+        let mut working = PresetState {
+            button_active: self.button_active,
+            cycle_index: self.cycle_index,
+            encoder_values: self.encoder_values,
+        };
+
+        // Delegate to protocol crate
+        let recall = self.state_store.switch(new_preset, &mut working, preset);
+
+        // Unpack new working state
+        self.button_active = working.button_active;
+        self.cycle_index = working.cycle_index;
+        self.encoder_values = working.encoder_values;
+
+        // Reset long-press detectors
+        self.long_press = core::array::from_fn(|_| LongPressDetector::new());
+
+        // Convert MidiMessage to raw tuples
+        let mut result = heapless::Vec::new();
+        for msg in &recall {
+            let mut raw = [0u8; 3];
+            let len = msg.len.min(3);
+            raw[..len].copy_from_slice(&msg.data[..len]);
+            result.push((raw, len)).ok();
+        }
+        result
     }
 
     /// Call every 1ms unconditionally to keep encoder acceleration timing accurate.
@@ -671,6 +711,48 @@ mod tests {
             }
             _ => panic!("expected EncoderOverlay"),
         }
+    }
+
+    // --- Preset switch tests ---
+
+    #[test]
+    fn switch_preset_saves_and_restores_state() {
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+
+        // Toggle state in preset 0: press button A
+        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        assert!(handler.button_active[0]);
+
+        // Switch to preset 1
+        handler.switch_preset(1, &preset);
+        // State should be fresh (not carried from preset 0)
+        assert!(!handler.button_active[0]);
+
+        // Switch back to preset 0
+        handler.switch_preset(0, &preset);
+        // State should be restored
+        assert!(handler.button_active[0]);
+    }
+
+    #[test]
+    fn switch_preset_recalls_encoder_values() {
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+
+        // Set encoder value in preset 0
+        handler.encoder_values[0] = 100;
+        // Switch to preset 1
+        handler.switch_preset(1, &preset);
+        assert_eq!(handler.encoder_values[0], 0);
+
+        // Switch back — value recalled
+        let recall = handler.switch_preset(0, &preset);
+        assert_eq!(handler.encoder_values[0], 100);
+        // Recall should include CC message for the encoder
+        assert!(recall
+            .iter()
+            .any(|(raw, _)| raw[0] == 0xB0 && raw[1] == 7 && raw[2] == 100));
     }
 
     // --- LED state tests ---
