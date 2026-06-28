@@ -199,12 +199,10 @@ pub fn preset_meta_from_config(
             p.name.clone()
         };
         let labels = core::array::from_fn(|j| {
-            p.buttons
-                .get(j)
-                .map(|b| &b.label)
-                .filter(|l| !l.is_empty())
-                .cloned()
-                .unwrap_or_else(|| String::try_from(defaults[j]).unwrap_or_default())
+            match p.buttons.get(j) {
+                Some(b) => b.label.clone(), // empty label = intentionally hidden
+                None => String::try_from(defaults[j]).unwrap_or_default(),
+            }
         });
         (name, labels)
     } else {

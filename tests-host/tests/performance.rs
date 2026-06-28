@@ -136,5 +136,5 @@ fn preset_meta_empty_label_uses_default() {
 
     let cfg = Config { presets };
     let (_, labels) = performance::preset_meta_from_config(&cfg, 0);
-    assert_eq!(labels[0].as_str(), "A"); // empty label → default
+    assert_eq!(labels[0].as_str(), ""); // empty label = intentionally hidden
 }
