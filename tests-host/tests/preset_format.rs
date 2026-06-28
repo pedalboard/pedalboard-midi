@@ -103,10 +103,46 @@ fn totally_garbage_flash_returns_nothing() {
     // Simulate leftover data from a different format
     let mut buf = [0x42u8; preset_format::SECTOR_SIZE];
     buf[0..4].copy_from_slice(&0x5045_4442u32.to_le_bytes()); // valid magic
-    buf[4] = 3; // claims 3 entries but data is garbage
+    buf[4] = preset_format::FORMAT_VERSION; // correct version
+    buf[5] = 3; // claims 3 entries but data is garbage
 
     let mut count = 0;
     preset_format::parse(&buf, |_, _| count += 1);
     // Should not call back for any entry (checksums won't match)
     assert_eq!(count, 0);
+}
+
+#[test]
+fn version_mismatch_rejects_all() {
+    let mut buf = [0u8; preset_format::SECTOR_SIZE];
+    preset_format::serialize(&mut buf, &[(0, b"good"), (1, b"also good")]);
+
+    // Tamper version byte
+    buf[4] = preset_format::FORMAT_VERSION + 1;
+
+    assert_eq!(preset_format::find_one(&buf, 0), None);
+    let mut count = 0;
+    preset_format::parse(&buf, |_, _| count += 1);
+    assert_eq!(count, 0);
+}
+
+/// Canary test: if this fails, you changed the Preset serialization layout.
+/// Bump `PRESET_SCHEMA_VERSION` in pedalboard-protocol/src/config.rs.
+#[test]
+fn preset_serialized_size_canary() {
+    use pedalboard_protocol::config::*;
+
+    let preset = Preset {
+        name: "Test".try_into().unwrap(),
+        buttons: heapless::Vec::new(),
+        encoders: heapless::Vec::new(),
+        analog: heapless::Vec::new(),
+    };
+    let bytes = postcard::to_allocvec(&preset).unwrap();
+    // Empty preset with just a name — if this size changes, the layout changed.
+    assert_eq!(
+        bytes.len(),
+        8,
+        "Preset serialized size changed! Bump PRESET_SCHEMA_VERSION in pedalboard-protocol."
+    );
 }

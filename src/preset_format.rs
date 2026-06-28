@@ -5,7 +5,7 @@
 
 pub const SECTOR_SIZE: usize = 4096;
 pub const MAGIC: u32 = 0x5045_4442; // "PEDB"
-pub const FORMAT_VERSION: u8 = 1;
+pub const FORMAT_VERSION: u8 = pedalboard_protocol::config::PRESET_SCHEMA_VERSION;
 const HEADER_SIZE: usize = 6; // magic(4) + version(1) + count(1)
 const ENTRY_HEADER_SIZE: usize = 4; // index + len_lo + len_hi + checksum
 
