@@ -140,7 +140,7 @@ mod app {
             Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
         eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
-    const USB_OUT_CAPACITY: usize = 80;
+    const USB_OUT_CAPACITY: usize = 96;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 4;
@@ -789,7 +789,7 @@ mod app {
                                     data.resource,
                                     data.body.len()
                                 );
-                                let mut decoded = [0u8; 256];
+                                let mut decoded = [0u8; pedalboard_midi::MAX_PRESET_SIZE];
                                 let dec_len =
                                     pedalboard_protocol::property_exchange::decode_mcoded7(
                                         data.body,
@@ -845,7 +845,8 @@ mod app {
                                     sysex_receive_buffer.as_ref(),
                                 );
                                 // Serialize preset from RAM for PE Get reply
-                                static mut GET_BUF: [u8; 192] = [0u8; 192];
+                                static mut GET_BUF: [u8; pedalboard_midi::MAX_PRESET_SIZE] =
+                                    [0u8; pedalboard_midi::MAX_PRESET_SIZE];
                                 let body = ctx.shared.pe_config.lock(|cfg| {
                                     let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
                                     if let Some(preset) = cfg.presets.get(resource as usize) {

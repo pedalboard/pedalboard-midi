@@ -1,5 +1,9 @@
 #![no_std]
 
+/// Maximum serialized size of a single preset (postcard-encoded).
+/// Used for PE receive/send buffers and the persist channel Vec.
+pub const MAX_PRESET_SIZE: usize = 256;
+
 pub mod action;
 pub mod display;
 pub mod events;

@@ -17,7 +17,7 @@ pub const PERSIST_CAPACITY: usize = 32;
 #[allow(clippy::large_enum_variant)]
 pub enum PersistCommand {
     Save(u8, u8, u8, u16),
-    SavePreset(u8, heapless::Vec<u8, 192>),
+    SavePreset(u8, heapless::Vec<u8, { crate::MAX_PRESET_SIZE }>),
     SaveActivePreset(u8),
     SaveState(heapless::Vec<u8, 128>),
     EraseAll,
