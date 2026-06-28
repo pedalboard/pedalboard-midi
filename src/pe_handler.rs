@@ -319,8 +319,18 @@ impl PeHandler {
                     };
                     *anim = RingAnimation { renderer, modifier };
                 } else if btn.color.off == Color::Off {
-                    // No explicit off color → glow the on color
-                    *anim = RingAnimation::glow(rgb8_to_rgb(on_color));
+                    // No explicit off color → glow with same renderer shape
+                    let rgb = rgb8_to_rgb(on_color);
+                    let renderer = match btn.color.renderer {
+                        LedRenderer::Solid => Renderer::Solid(rgb),
+                        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
+                        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
+                        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
+                    };
+                    *anim = RingAnimation {
+                        renderer,
+                        modifier: Modifier::Glow,
+                    };
                 } else {
                     let off_color = color_to_rgb(&btn.color.off);
                     *anim = RingAnimation::solid(rgb8_to_rgb(off_color));

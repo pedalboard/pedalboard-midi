@@ -789,7 +789,7 @@ mod app {
                                     data.resource,
                                     data.body.len()
                                 );
-                                let mut decoded = [0u8; 192];
+                                let mut decoded = [0u8; 256];
                                 let dec_len =
                                     pedalboard_protocol::property_exchange::decode_mcoded7(
                                         data.body,
