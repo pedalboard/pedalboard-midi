@@ -908,7 +908,6 @@ mod app {
                             let block = sysex_receive_buffer[8];
                             let section = sysex_receive_buffer[9];
                             let index = sysex_receive_buffer[11]; // LSB
-                                                                  // Store raw two-byte value as-is (high << 8 | low)
                             let value = ((sysex_receive_buffer[12] as u16) << 8)
                                 | sysex_receive_buffer[13] as u16;
                             ctx.local
