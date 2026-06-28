@@ -19,6 +19,7 @@ pub const PERSIST_CAPACITY: usize = 4;
 pub enum PersistCommand {
     Save(u8, u8, u8, u16),
     SavePreset(u8, heapless::Vec<u8, 192>),
+    SaveActivePreset(u8),
     EraseAll,
 }
 

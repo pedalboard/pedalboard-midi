@@ -48,12 +48,12 @@ fn draw_right_renders_buttons_d_e_f() {
 }
 
 #[test]
-fn empty_labels_still_draws_borders() {
+fn empty_labels_still_draws_nothing() {
     let mut display = new_display();
     let preset = PresetMeta::default();
     performance::draw(&mut display, &preset, Side::Left).unwrap();
-    // Rounded rectangles should still be drawn even with empty labels
-    assert!(!display.affected_area().is_zero_sized());
+    // Empty labels → nothing drawn (buttons with no label are hidden)
+    assert!(display.affected_area().is_zero_sized());
 }
 
 #[test]

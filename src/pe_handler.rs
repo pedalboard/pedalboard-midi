@@ -18,10 +18,33 @@ pub enum SystemAction {
     PresetPrev,
 }
 
-/// Result of processing events: MIDI messages + system actions + LED dirty flag.
+/// Which display to show an overlay on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplaySide {
+    L,
+    R,
+}
+
+/// Display events emitted directly from actions (no MIDI round-trip).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisplayEvent {
+    EncoderOverlay {
+        side: DisplaySide,
+        label: pedalboard_protocol::config::Label,
+        value: u8,
+    },
+    AnalogOverlay {
+        side: DisplaySide,
+        label: pedalboard_protocol::config::Label,
+        value: u8,
+    },
+}
+
+/// Result of processing events: MIDI messages + system actions + display + LED dirty flag.
 pub struct HandleResult {
     pub midi: heapless::Vec<([u8; 3], usize), 8>,
     pub system: heapless::Vec<SystemAction, 2>,
+    pub display: heapless::Vec<DisplayEvent, 2>,
     pub led_dirty: bool,
 }
 
@@ -70,6 +93,7 @@ impl PeHandler {
     pub fn handle_events(&mut self, preset: &Preset, events: &[InputEvent]) -> HandleResult {
         let mut midi = heapless::Vec::new();
         let mut system = heapless::Vec::new();
+        let mut display = heapless::Vec::new();
         let mut led_dirty = false;
 
         // Update long-press detectors for all buttons
@@ -241,6 +265,13 @@ impl PeHandler {
                                 },
                             );
                         }
+                        display
+                            .push(DisplayEvent::EncoderOverlay {
+                                side: DisplaySide::L,
+                                label: enc.label.clone(),
+                                value: self.encoder_values[0],
+                            })
+                            .ok();
                     }
                     led_dirty = true;
                 }
@@ -265,6 +296,13 @@ impl PeHandler {
                                 },
                             );
                         }
+                        display
+                            .push(DisplayEvent::EncoderOverlay {
+                                side: DisplaySide::R,
+                                label: enc.label.clone(),
+                                value: self.encoder_values[1],
+                            })
+                            .ok();
                     }
                     led_dirty = true;
                 }
@@ -273,12 +311,34 @@ impl PeHandler {
                     // TODO: make configurable (per-board calibration)
                     let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
                     if let Some(msg) = analog_cc(preset, 0, adc, ADC_MAX_TRIMMED) {
+                        display
+                            .push(DisplayEvent::AnalogOverlay {
+                                side: DisplaySide::L,
+                                label: preset
+                                    .analog
+                                    .first()
+                                    .map(|a| a.label.clone())
+                                    .unwrap_or_default(),
+                                value: msg.data[2],
+                            })
+                            .ok();
                         push_midi(&mut midi, &msg);
                     }
                 }
                 InputEvent::ExpressionPedalB(raw_adc) => {
                     let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
                     if let Some(msg) = analog_cc(preset, 1, adc, ADC_MAX_TRIMMED) {
+                        display
+                            .push(DisplayEvent::AnalogOverlay {
+                                side: DisplaySide::R,
+                                label: preset
+                                    .analog
+                                    .get(1)
+                                    .map(|a| a.label.clone())
+                                    .unwrap_or_default(),
+                                value: msg.data[2],
+                            })
+                            .ok();
                         push_midi(&mut midi, &msg);
                     }
                 }
@@ -288,6 +348,7 @@ impl PeHandler {
         HandleResult {
             midi,
             system,
+            display,
             led_dirty,
         }
     }
@@ -595,6 +656,23 @@ mod tests {
         assert_eq!(r.midi[0].0, [0xB0, 7, 65]);
     }
 
+    #[test]
+    fn encoder_emits_display_event() {
+        let preset = make_test_preset();
+        let mut handler = PeHandler::new();
+        handler.encoder_values[0] = 64;
+        let r = handler.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
+        assert_eq!(r.display.len(), 1);
+        match &r.display[0] {
+            DisplayEvent::EncoderOverlay { side, label, value } => {
+                assert_eq!(*side, DisplaySide::L);
+                assert_eq!(label.as_str(), "Vol");
+                assert_eq!(*value, 65);
+            }
+            _ => panic!("expected EncoderOverlay"),
+        }
+    }
+
     // --- LED state tests ---
 
     fn make_led_preset() -> Preset {
@@ -643,8 +721,8 @@ mod tests {
         let preset = make_led_preset();
         let handler = PeHandler::new();
         let leds = handler.led_state(&preset);
-        // Button A: off color = Off → Animation::Off
-        assert!(matches!(leds[0], Animation::Off));
+        // Button A: off color = Off, on = Green → dim green idle indicator
+        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/6, 0)));
         // Button B: off color = Red → Animation::On(red)
         assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(255, 0, 0)));
     }
@@ -665,7 +743,8 @@ mod tests {
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
         handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
         let leds = handler.led_state(&preset);
-        assert!(matches!(leds[0], Animation::Off));
+        // Returns to dim idle (on=Green, off=Off → dim green)
+        assert!(matches!(leds[0], Animation::On(c) if c == RGB8::new(0, 255/6, 0)));
     }
 
     #[test]

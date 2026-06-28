@@ -289,6 +289,8 @@ mod app {
         sysex_processor::spawn(sysex_receiver, usb_sender.clone()).unwrap();
 
         let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
+        let (display_event_sender, display_event_receiver) =
+            make_channel!(pedalboard_midi::pe_handler::DisplayEvent, 2);
 
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
@@ -301,8 +303,15 @@ mod app {
         blink::spawn().unwrap();
         led_writer::spawn(led_receiver).unwrap();
         mon_off::spawn(mon_receiver, led_sender.clone()).unwrap();
-        poll_input::spawn(usb_sender.clone(), display_sender, led_sender.clone()).unwrap();
-        display_out::spawn(display_receiver).unwrap();
+        poll_input::spawn(
+            usb_sender.clone(),
+            display_sender,
+            display_event_sender,
+            led_sender.clone(),
+            persist_sender.clone(),
+        )
+        .unwrap();
+        display_out::spawn(display_receiver, display_event_receiver).unwrap();
         persist::spawn(persist_receiver).unwrap();
         midi_clock::spawn(usb_sender.clone(), din_thru_sender.clone()).unwrap();
 
@@ -401,7 +410,13 @@ mod app {
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+        mut display_event_sender: Sender<'static, pedalboard_midi::pe_handler::DisplayEvent, 2>,
         mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
+        mut persist_sender: Sender<
+            'static,
+            pedalboard_midi::opendeck_handler::PersistCommand,
+            PERSIST_CAPACITY,
+        >,
     ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
@@ -500,6 +515,17 @@ mod app {
                                 }
                             }
                         });
+                    }
+                    if !result.system.is_empty() {
+                        let new_preset = ctx.shared.active_preset.lock(|p| *p);
+                        use pedalboard_midi::opendeck_handler::PersistCommand;
+                        persist_sender
+                            .try_send(PersistCommand::SaveActivePreset(new_preset))
+                            .ok();
+                    }
+                    // Send display events directly (no MIDI round-trip)
+                    for evt in result.display {
+                        display_event_sender.try_send(evt).ok();
                     }
                     if !all_sent.is_empty() || result.led_dirty {
                         // Render LEDs from PE state (bypass OpenDeck LED engine)
@@ -847,7 +873,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck, pe_config])]
+    #[task(shared = [opendeck, pe_config, active_preset])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -858,6 +884,13 @@ mod app {
     ) {
         info!("config persistence: loading from flash");
         if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
+            // Restore active preset from flash
+            if let Some(idx) = store.load(8, 0, 0).await {
+                let preset_idx = idx as u8;
+                ctx.shared.active_preset.lock(|p| *p = preset_idx);
+                info!("restored active preset: {}", preset_idx);
+            }
+
             // Load persisted config and replay as SET commands
             let entries = store.load_all().await;
             if !entries.is_empty() {
@@ -921,6 +954,9 @@ mod app {
                         } else {
                             warn!("preset {} deserialize failed", preset_index);
                         }
+                    }
+                    PersistCommand::SaveActivePreset(idx) => {
+                        store.save(8, 0, 0, idx as u16).await;
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;
@@ -1000,6 +1036,7 @@ mod app {
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+        mut event_receiver: Receiver<'static, pedalboard_midi::pe_handler::DisplayEvent, 2>,
     ) {
         use crate::hmi::display::DisplayLocation;
         use heapless::String;
@@ -1076,6 +1113,34 @@ mod app {
                     );
                     overlay_ticks = PRESET_OVERLAY_DURATION;
                     show_overlay = true;
+                }
+            }
+
+            // PE display events (direct from action layer, no MIDI round-trip)
+            while let Ok(evt) = event_receiver.try_recv() {
+                use crate::hmi::display::DisplayLocation;
+                use pedalboard_midi::pe_handler::{DisplayEvent, DisplaySide};
+                if !debug_mode {
+                    match &evt {
+                        DisplayEvent::EncoderOverlay { side, label, value }
+                        | DisplayEvent::AnalogOverlay { side, label, value } => {
+                            let loc = match side {
+                                DisplaySide::L => DisplayLocation::L,
+                                DisplaySide::R => DisplayLocation::R,
+                            };
+                            let lbl = if label.is_empty() {
+                                match side {
+                                    DisplaySide::L => "Vol",
+                                    DisplaySide::R => "Gain",
+                                }
+                            } else {
+                                label.as_str()
+                            };
+                            displays.draw_overlay(loc, lbl, *value);
+                            overlay_ticks = OVERLAY_DURATION;
+                            show_overlay = true;
+                        }
+                    }
                 }
             }
 

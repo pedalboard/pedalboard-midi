@@ -30,3 +30,9 @@ repos:
         entry: cargo check --release
         language: system
         pass_filenames: false
+
+      - id: host-tests
+        name: host tests
+        entry: cargo test --manifest-path tests-host/Cargo.toml --target x86_64-unknown-linux-gnu
+        language: system
+        pass_filenames: false
