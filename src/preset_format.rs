@@ -1,17 +1,19 @@
 //! Preset flash format: platform-independent serialization logic.
 //!
-//! Layout: [magic: u32 LE][count: u8][entries...]
+//! Layout: [magic: u32 LE][version: u8][count: u8][entries...]
 //! Entry: [index: u8][len_lo: u8][len_hi: u8][checksum: u8][data: [u8; len]]
 
 pub const SECTOR_SIZE: usize = 4096;
 pub const MAGIC: u32 = 0x5045_4442; // "PEDB"
-const HEADER_SIZE: usize = 5;
+pub const FORMAT_VERSION: u8 = 1;
+const HEADER_SIZE: usize = 6; // magic(4) + version(1) + count(1)
 const ENTRY_HEADER_SIZE: usize = 4; // index + len_lo + len_hi + checksum
 
 /// Serialize presets into a sector buffer. Returns number of presets written.
 pub fn serialize(buf: &mut [u8; SECTOR_SIZE], presets: &[(u8, &[u8])]) -> u8 {
     buf.fill(0xFF);
     buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
+    buf[4] = FORMAT_VERSION;
 
     let mut offset = HEADER_SIZE;
     let mut count = 0u8;
@@ -29,12 +31,13 @@ pub fn serialize(buf: &mut [u8; SECTOR_SIZE], presets: &[(u8, &[u8])]) -> u8 {
         count += 1;
     }
 
-    buf[4] = count;
+    buf[5] = count;
     count
 }
 
 /// Parse presets from a sector buffer. Calls callback for each (index, data) found.
 /// Entries with invalid checksums are silently skipped.
+/// Returns immediately if version doesn't match (stale format).
 pub fn parse(buf: &[u8], mut callback: impl FnMut(u8, &[u8])) {
     if buf.len() < HEADER_SIZE {
         return;
@@ -43,7 +46,10 @@ pub fn parse(buf: &[u8], mut callback: impl FnMut(u8, &[u8])) {
     if magic != MAGIC {
         return;
     }
-    let count = buf[4];
+    if buf[4] != FORMAT_VERSION {
+        return;
+    }
+    let count = buf[5];
 
     let mut offset = HEADER_SIZE;
     for _ in 0..count {
@@ -74,7 +80,10 @@ pub fn find_one(buf: &[u8], preset_index: u8) -> Option<&[u8]> {
     if magic != MAGIC {
         return None;
     }
-    let count = buf[4];
+    if buf[4] != FORMAT_VERSION {
+        return None;
+    }
+    let count = buf[5];
 
     let mut offset = HEADER_SIZE;
     for _ in 0..count {
@@ -137,7 +146,8 @@ pub fn serialize_with_update(
     }
 
     buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
-    buf[4] = count;
+    buf[4] = FORMAT_VERSION;
+    buf[5] = count;
     count
 }
 

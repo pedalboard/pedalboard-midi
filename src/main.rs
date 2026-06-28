@@ -350,6 +350,7 @@ mod app {
 
         // Load PE presets from flash
         let mut pe_config = pedalboard_protocol::config::Config::default();
+        let mut preset_count = 0u8;
         pedalboard_midi::preset_flash::load_all(|idx, data| {
             if let Ok(preset) = postcard::from_bytes::<pedalboard_protocol::config::Preset>(data) {
                 let i = idx as usize;
@@ -357,8 +358,14 @@ mod app {
                     pe_config.presets.push(Default::default()).ok();
                 }
                 pe_config.presets[i] = preset;
+                preset_count += 1;
             }
         });
+        if preset_count == 0 {
+            info!("no presets loaded (empty or version mismatch)");
+        } else {
+            info!("{} presets loaded from flash", preset_count);
+        }
 
         (
             Shared {
