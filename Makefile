@@ -25,13 +25,13 @@ attach: ## attach to the running program
 	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
 flash: uf2 ## flash firmware via bridge DFU (over network)
-	@echo "Entering bootloader via CLI..."
+	@echo "Entering bootloader..."
 	cd ../pedalboard-cli && cargo run -q -- bootloader
-	@echo "Waiting for UF2 mount..."
-	ssh laenzi@cm5-dev.home "while [ ! -f /media/laenzi/RPI-RP2/INFO_UF2.TXT ]; do sleep 1; done"
-	scp target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 laenzi@cm5-dev.home:/media/laenzi/RPI-RP2/
+	@echo "Mounting UF2 drive..."
+	ssh laenzi@cm5-dev.home "until [ -b /dev/sda1 ]; do sleep 0.5; done; sudo mkdir -p /mnt/uf2; sudo mount -o uid=1000,gid=1000 /dev/sda1 /mnt/uf2"
+	scp target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 laenzi@cm5-dev.home:/mnt/uf2/
 	ssh laenzi@cm5-dev.home "sync"
-	@echo "Flashed via bridge."
+	@echo "Flashed. Bridge will auto-reconnect."
 
 flash-probe: build ## flash via debug probe (SWD, development only)
 	probe-rs download --chip RP2040 --protocol swd target/thumbv6m-none-eabi/release/pedalboard-midi
