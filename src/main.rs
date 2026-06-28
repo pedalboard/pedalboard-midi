@@ -141,6 +141,10 @@ mod app {
         eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
     const USB_OUT_CAPACITY: usize = 96;
+    const _: () = assert!(
+        USB_OUT_CAPACITY >= pedalboard_midi::MIN_USB_OUT_CAPACITY,
+        "USB_OUT_CAPACITY too small for MAX_PRESET_SIZE PE replies"
+    );
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 4;
