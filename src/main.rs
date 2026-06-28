@@ -115,6 +115,7 @@ mod app {
         opendeck: OpenDeck,
         active_preset: u8,
         pe_config: pedalboard_protocol::config::Config,
+        state_store: pedalboard_protocol::state::PresetStateStore,
     }
 
     #[local]
@@ -139,6 +140,7 @@ mod app {
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
         persist_sender:
             Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
+        eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
     const USB_OUT_CAPACITY: usize = 64;
     const SYSEX_CAPACITY: usize = 1;
@@ -276,6 +278,22 @@ mod app {
                 .is_ok()
         };
 
+        // Read runtime state from EEPROM (data address 0x50)
+        let mut restored_state = pedalboard_protocol::state::PresetStateStore::new();
+        let mut restored_active: u8 = 0;
+        {
+            use embedded_hal::i2c::I2c;
+            let mut buf = [0u8; 128];
+            if i2c.write_read(0x50u8, &[0x00u8], &mut buf).is_ok() {
+                if let Some(store) = pedalboard_protocol::state::PresetStateStore::from_eeprom(&buf)
+                {
+                    restored_active = store.active_index();
+                    restored_state = store;
+                    info!("EEPROM: restored runtime state, preset {}", restored_active);
+                }
+            }
+        }
+
         let i2c_bus = ctx.local.i2c_bus.write(AtomicCell::new(i2c));
         let mut displays = crate::hmi::display::Displays::new(
             AtomicDevice::new(i2c_bus),
@@ -347,8 +365,9 @@ mod app {
                 usb_midi,
                 usb_dev,
                 opendeck,
-                active_preset: 0,
+                active_preset: restored_active,
                 pe_config,
+                state_store: restored_state,
             },
             Local {
                 uart_midi_out,
@@ -367,6 +386,7 @@ mod app {
                 din_thru_receiver,
                 din_thru_sender,
                 persist_sender,
+                eeprom_i2c: AtomicDevice::new(i2c_bus),
             },
         )
     }
@@ -405,7 +425,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config, state_store])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -443,7 +463,10 @@ mod app {
             opendeck.reset_encoder_rings();
         });
 
-        let mut pe = pedalboard_midi::pe_handler::PeHandler::new();
+        let mut pe = {
+            let store = ctx.shared.state_store.lock(|s| s.clone());
+            pedalboard_midi::pe_handler::PeHandler::with_state(store)
+        };
 
         loop {
             // Tick encoder acceleration timer unconditionally
@@ -532,6 +555,9 @@ mod app {
                         use pedalboard_midi::opendeck_handler::PersistCommand;
                         persist_sender
                             .try_send(PersistCommand::SaveActivePreset(new_preset))
+                            .ok();
+                        persist_sender
+                            .try_send(PersistCommand::SaveState(pe.eeprom_state()))
                             .ok();
                     }
                     // Send display events directly (no MIDI round-trip)
@@ -889,7 +915,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck, pe_config, active_preset])]
+    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, active_preset, state_store])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -898,15 +924,9 @@ mod app {
             PERSIST_CAPACITY,
         >,
     ) {
+        let eeprom = ctx.local.eeprom_i2c;
         info!("config persistence: loading from flash");
         if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
-            // Restore active preset from flash
-            if let Some(idx) = store.load(8, 0, 0).await {
-                let preset_idx = idx as u8;
-                ctx.shared.active_preset.lock(|p| *p = preset_idx);
-                info!("restored active preset: {}", preset_idx);
-            }
-
             // Load persisted config and replay as SET commands
             let entries = store.load_all().await;
             if !entries.is_empty() {
@@ -973,6 +993,21 @@ mod app {
                     }
                     PersistCommand::SaveActivePreset(idx) => {
                         store.save(8, 0, 0, idx as u16).await;
+                    }
+                    PersistCommand::SaveState(data) => {
+                        // Write to AT24CS01 EEPROM at 0x50 in 8-byte pages
+                        use embedded_hal::i2c::I2c;
+                        for page in 0..(data.len() + 7) / 8 {
+                            let offset = page * 8;
+                            let end = (offset + 8).min(data.len());
+                            let mut buf = [0u8; 9]; // addr + 8 data bytes
+                            buf[0] = offset as u8;
+                            let len = end - offset;
+                            buf[1..1 + len].copy_from_slice(&data[offset..end]);
+                            eeprom.write(0x50u8, &buf[..1 + len]).ok();
+                            // AT24CS01 write cycle time: 5ms
+                            Mono::delay(5.millis()).await;
+                        }
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;

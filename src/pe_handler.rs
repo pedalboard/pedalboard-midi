@@ -61,6 +61,19 @@ impl PeHandler {
         }
     }
 
+    /// Create with a restored state store (from EEPROM).
+    pub fn with_state(store: PresetStateStore) -> Self {
+        let state = store.current().clone();
+        Self {
+            encoder_values: state.encoder_values,
+            button_active: state.button_active,
+            cycle_index: state.cycle_index,
+            last_encoder_tick: [u16::MAX; 2],
+            long_press: core::array::from_fn(|_| LongPressDetector::new_fired()),
+            state_store: store,
+        }
+    }
+
     /// Switch to a new preset: saves current state, loads new state,
     /// and returns MIDI messages to sync external gear.
     pub fn switch_preset(
@@ -91,6 +104,18 @@ impl PeHandler {
             result.push(midi_to_raw(msg)).ok();
         }
         result
+    }
+
+    /// Serialize current state to a 128-byte EEPROM buffer for persistence.
+    pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
+        let mut buf = [0u8; 128];
+        // Save current working state into the store before serializing
+        let mut store_copy = self.state_store.clone();
+        let working = self.working_state();
+        // Update the active preset's state in the store copy
+        store_copy.save_working(&working);
+        store_copy.to_eeprom(&mut buf);
+        heapless::Vec::from_slice(&buf).unwrap_or_default()
     }
 
     /// Call every 1ms unconditionally to keep encoder acceleration timing accurate.
