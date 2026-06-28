@@ -1022,6 +1022,19 @@ mod app {
                                 cfg.presets[idx] = preset;
                             });
                             pedalboard_midi::preset_flash::save_one(preset_index, &data);
+                            // Clear runtime state — presets changed, stale state
+                            let mut cleared = pedalboard_protocol::state::PresetStateStore::new();
+                            let mut buf = [0u8; 128];
+                            cleared.to_eeprom(&mut buf);
+                            use embedded_hal::i2c::I2c;
+                            for page in 0..16 {
+                                let offset = page * 8;
+                                let mut wbuf = [0u8; 9];
+                                wbuf[0] = offset as u8;
+                                wbuf[1..9].copy_from_slice(&buf[offset..offset + 8]);
+                                eeprom.write(0x50u8, &wbuf).ok();
+                                Mono::delay(5.millis()).await;
+                            }
                         } else {
                             warn!("preset {} deserialize failed", preset_index);
                         }
