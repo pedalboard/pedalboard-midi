@@ -1061,7 +1061,19 @@ mod app {
                     }
                     PersistCommand::EraseAll => {
                         store.erase_all().await;
-                        info!("factory reset: storage erased, rebooting");
+                        pedalboard_midi::preset_flash::erase_all();
+                        // Clear EEPROM runtime state
+                        let buf = pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
+                        use embedded_hal::i2c::I2c;
+                        for page in 0..16 {
+                            let offset = page * 8;
+                            let mut wbuf = [0u8; 9];
+                            wbuf[0] = offset as u8;
+                            wbuf[1..9].copy_from_slice(&buf[offset..offset + 8]);
+                            eeprom.write(0x50u8, &wbuf).ok();
+                            Mono::delay(5.millis()).await;
+                        }
+                        info!("factory reset: storage + presets + eeprom erased, rebooting");
                         cortex_m::peripheral::SCB::sys_reset();
                     }
                 }

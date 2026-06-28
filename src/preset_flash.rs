@@ -31,6 +31,13 @@ pub fn save_one(preset_index: u8, data: &[u8]) {
     write_sector(page);
 }
 
+/// Erase the entire preset sector (factory reset).
+pub fn erase_all() {
+    cortex_m::interrupt::free(|_| unsafe {
+        rp2040_flash::flash::flash_range_erase(PRESET_SECTOR_OFFSET, SECTOR_SIZE as u32, true);
+    });
+}
+
 fn flash_sector_slice() -> &'static [u8] {
     let ptr = (0x1000_0000 + PRESET_SECTOR_OFFSET) as *const u8;
     unsafe { core::slice::from_raw_parts(ptr, SECTOR_SIZE) }
