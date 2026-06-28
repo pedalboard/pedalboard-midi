@@ -38,6 +38,8 @@ pub enum LedEvent {
     SetSingle(Led, Option<RGB8>),
     /// Flash a single LED for `duration_ticks` frames then auto-clear.
     Flash(Led, RGB8, u8),
+    /// MIDI clock tick (24ppqn). When received, animations sync to BPM.
+    BpmTick,
 }
 
 pub struct Leds {
@@ -45,6 +47,9 @@ pub struct Leds {
     ledrings: [LedRing; NUM_LED_RINGS],
     flash_ticks: [u8; NUM_LEDS],
     pub buffer: LedData,
+    tick: u16,
+    bpm_tick: u16,
+    bpm_active: bool,
 }
 
 impl Leds {
@@ -54,6 +59,9 @@ impl Leds {
             ledrings: [LedRing::new(8); NUM_LED_RINGS],
             flash_ticks: [0; NUM_LEDS],
             buffer: [RGB8 { r: 0, g: 0, b: 0 }; LED_OUTPUTS],
+            tick: 0,
+            bpm_tick: 0,
+            bpm_active: false,
         }
     }
 
@@ -86,14 +94,16 @@ impl Leds {
                 self.singles[led as usize] = Some(color);
                 self.flash_ticks[led as usize] = duration;
             }
+            LedEvent::BpmTick => {
+                self.bpm_active = true;
+                self.bpm_tick = self.bpm_tick.wrapping_add(1);
+            }
         }
     }
 
-    /// Advance all animations by one frame. Call at 50Hz.
+    /// Advance global animation tick. Call at 50Hz (or BPM-derived rate).
     pub fn tick(&mut self) {
-        for ring in &mut self.ledrings {
-            ring.tick();
-        }
+        self.tick = self.tick.wrapping_add(1);
         // Count down flash timers
         for (i, ticks) in self.flash_ticks.iter_mut().enumerate() {
             if *ticks > 0 {
@@ -107,8 +117,15 @@ impl Leds {
 
     /// Render current state into internal buffer, return reference.
     pub fn render(&mut self) -> &LedData {
+        // Use BPM-synced tick when MIDI clock is running, else free-running
+        let anim_tick = if self.bpm_active {
+            self.bpm_tick
+        } else {
+            self.tick
+        };
+
         for (ring_index, ring) in self.ledrings.iter().enumerate() {
-            for (led_index, pixel) in render_ring(ring).into_iter().enumerate() {
+            for (led_index, pixel) in render_ring(ring, anim_tick).into_iter().enumerate() {
                 self.buffer[ring_index * LEDS_PER_RING + led_index] = pixel;
             }
         }
@@ -200,12 +217,12 @@ mod tests {
             },
         ));
         let ring_start = LedRings::A as usize * LEDS_PER_RING;
-        let on_frame = leds.render();
+        let on_val = leds.render()[ring_start];
         for _ in 0..12 {
             leds.tick();
         }
-        let off_frame = leds.render();
-        assert_ne!(on_frame[ring_start], off_frame[ring_start]);
+        let off_val = leds.render()[ring_start];
+        assert_ne!(on_val, off_val);
     }
 
     #[test]

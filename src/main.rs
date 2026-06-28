@@ -327,7 +327,12 @@ mod app {
         .unwrap();
         display_out::spawn(display_receiver, display_event_receiver).unwrap();
         persist::spawn(persist_receiver).unwrap();
-        midi_clock::spawn(usb_sender.clone(), din_thru_sender.clone()).unwrap();
+        midi_clock::spawn(
+            usb_sender.clone(),
+            din_thru_sender.clone(),
+            led_sender.clone(),
+        )
+        .unwrap();
 
         let mut opendeck = OpenDeck::new(
             opendeck::config::FirmwareVersion {
@@ -1453,6 +1458,7 @@ mod app {
         mut ctx: midi_clock::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         mut din_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
+        mut led_sender: Sender<'static, LedEvent, LED_CAPACITY>,
     ) {
         loop {
             let interval_us = ctx.shared.opendeck.lock(|opendeck| {
@@ -1473,6 +1479,8 @@ mod app {
                     {
                         sender.try_send(packet).ok();
                     }
+                    // Sync LED animations to BPM
+                    led_sender.try_send(LedEvent::BpmTick).ok();
                     Mono::delay((us as u64).micros()).await;
                 }
                 None => {

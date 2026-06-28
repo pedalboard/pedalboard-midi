@@ -44,8 +44,8 @@ pub fn rgb8_to_rgb(c: RGB8) -> Rgb {
 }
 
 /// Render a LedRing to smart_leds format.
-pub fn render_ring(ring: &LedRing) -> LedData {
-    let frame = ring.render();
+pub fn render_ring(ring: &LedRing, tick: u16) -> LedData {
+    let frame = ring.render(tick);
     let mut out = [RGB8::default(); LEDS_PER_RING];
     for (i, px) in frame.iter().enumerate() {
         out[i] = rgb_to_rgb8(*px);
@@ -75,7 +75,7 @@ mod tests {
     fn render_ring_output_matches() {
         let mut ring = LedRing::default();
         ring.set(RingAnimation::solid(Rgb::new(100, 50, 25)));
-        let data = render_ring(&ring);
+        let data = render_ring(&ring, 0);
         assert!(data
             .iter()
             .all(|px| px.r == 100 && px.g == 50 && px.b == 25));
