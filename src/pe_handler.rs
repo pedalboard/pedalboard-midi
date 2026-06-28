@@ -10,7 +10,7 @@ use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
 use crate::long_press::{Gesture, LongPressDetector};
 use pedalboard_protocol::action::{EncoderDirection, MidiMessage};
-use pedalboard_protocol::config::{ButtonMode, Color, LedAnimation, Preset};
+use pedalboard_protocol::config::{ButtonMode, Color, LedAnimation, LedRenderer, Preset};
 use pedalboard_protocol::engine::{self, ButtonEvent};
 use pedalboard_protocol::state::{PresetState, PresetStateStore};
 use smart_leds::RGB8;
@@ -307,11 +307,17 @@ impl PeHandler {
                         LedAnimation::Solid => Modifier::Solid,
                         LedAnimation::Blink => Modifier::Blink,
                         LedAnimation::Pulse => Modifier::Pulse,
+                        LedAnimation::Rotate => Modifier::Rotate,
+                        LedAnimation::ColorCycle => Modifier::ColorCycle,
                     };
-                    *anim = RingAnimation {
-                        renderer: Renderer::Solid(rgb8_to_rgb(on_color)),
-                        modifier,
+                    let rgb = rgb8_to_rgb(on_color);
+                    let renderer = match btn.color.renderer {
+                        LedRenderer::Solid => Renderer::Solid(rgb),
+                        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
+                        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
+                        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
                     };
+                    *anim = RingAnimation { renderer, modifier };
                 } else if btn.color.off == Color::Off {
                     // No explicit off color → glow the on color
                     *anim = RingAnimation::glow(rgb8_to_rgb(on_color));
@@ -1001,6 +1007,8 @@ mod tests {
                     on: Color::Green,
                     off: Color::Off,
                     animation: pedalboard_protocol::config::LedAnimation::Solid,
+                    renderer: pedalboard_protocol::config::LedRenderer::Solid,
+                    renderer_param: 0,
                 },
                 mode: ButtonMode::Momentary,
                 on_press: heapless::Vec::new(),
@@ -1016,6 +1024,8 @@ mod tests {
                     on: Color::Blue,
                     off: Color::Red,
                     animation: pedalboard_protocol::config::LedAnimation::Solid,
+                    renderer: pedalboard_protocol::config::LedRenderer::Solid,
+                    renderer_param: 0,
                 },
                 mode: ButtonMode::Toggle,
                 on_press: heapless::Vec::new(),
