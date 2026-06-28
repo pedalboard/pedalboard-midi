@@ -998,6 +998,23 @@ mod tests {
     }
 
     #[test]
+    fn led_state_reflects_restored_state_on_boot() {
+        // Simulate: state was saved with button B (toggle) active
+        let mut store = pedalboard_protocol::state::PresetStateStore::new();
+        let mut working = pedalboard_protocol::state::PresetState::default();
+        working.button_active[1] = true; // Toggle B was ON
+        store.save_working(&working);
+
+        // Create handler from restored state (as boot would)
+        let handler = PeHandler::with_state(store);
+        let preset = make_led_preset();
+        let leds = handler.led_state(&preset);
+
+        // Button B should show active color (blue) immediately
+        assert!(matches!(leds[1], Animation::On(c) if c == RGB8::new(0, 0, 255)));
+    }
+
+    #[test]
     fn led_state_off_by_default() {
         let preset = make_led_preset();
         let handler = PeHandler::new();

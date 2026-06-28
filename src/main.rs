@@ -468,6 +468,34 @@ mod app {
             pedalboard_midi::pe_handler::PeHandler::with_state(store)
         };
 
+        // Initial LED render from restored state
+        {
+            let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+            ctx.shared.pe_config.lock(|cfg| {
+                if let Some(preset) = cfg.presets.get(preset_idx as usize) {
+                    if !preset.name.is_empty() {
+                        let anims = pe.led_state(preset);
+                        use pedalboard_midi::leds::{LedRings, Leds};
+                        const RINGS: [LedRings; 8] = [
+                            LedRings::A,
+                            LedRings::B,
+                            LedRings::C,
+                            LedRings::D,
+                            LedRings::E,
+                            LedRings::F,
+                            LedRings::Vol,
+                            LedRings::Gain,
+                        ];
+                        let mut leds = Leds::default();
+                        for (i, anim) in anims.iter().enumerate() {
+                            leds.set_ledring(*anim, RINGS[i]);
+                        }
+                        led_sender.try_send(leds.render()).ok();
+                    }
+                }
+            });
+        }
+
         loop {
             // Tick encoder acceleration timer unconditionally
             pe.tick();
@@ -596,6 +624,13 @@ mod app {
                                 led_data = Some(leds.render());
                             });
                         }
+                    }
+                    // Persist state to EEPROM on any state change
+                    if led_dirty && result.system.is_empty() {
+                        use pedalboard_midi::opendeck_handler::PersistCommand;
+                        persist_sender
+                            .try_send(PersistCommand::SaveState(pe.eeprom_state()))
+                            .ok();
                     }
                 }
             } else if !events.is_empty() && preset_idx < 4 {
