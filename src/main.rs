@@ -506,6 +506,8 @@ mod app {
             }
 
             let mut all_sent: heapless::Vec<([u8; 6], usize), 24> = heapless::Vec::new();
+            let mut pe_midi_steps: heapless::Vec<pedalboard_midi::pe_handler::MidiStep, 24> =
+                heapless::Vec::new();
             let mut led_data: Option<LedData> = None;
             let mut din_enabled = true;
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
@@ -528,10 +530,8 @@ mod app {
                         let preset = &cfg.presets[preset_idx as usize];
                         pe.handle_events(preset, &events)
                     });
-                    for (raw, len) in &result.midi {
-                        let mut buf = [0u8; 6];
-                        buf[..*len].copy_from_slice(&raw[..*len]);
-                        all_sent.push((buf, *len)).ok();
+                    for step in &result.midi {
+                        pe_midi_steps.push(step.clone()).ok();
                     }
                     // Handle system actions (preset switching)
                     for action in &result.system {
@@ -569,7 +569,12 @@ mod app {
                         for (raw, len) in &recall_midi {
                             let mut buf = [0u8; 6];
                             buf[..*len].copy_from_slice(&raw[..*len]);
-                            all_sent.push((buf, *len)).ok();
+                            pe_midi_steps
+                                .push(pedalboard_midi::pe_handler::MidiStep::Send(
+                                    [buf[0], buf[1], buf[2]],
+                                    *len,
+                                ))
+                                .ok();
                         }
                         use pedalboard_midi::opendeck_handler::PersistCommand;
                         persist_sender
@@ -588,7 +593,7 @@ mod app {
                     if !result.system.is_empty() {
                         preset_idx = ctx.shared.active_preset.lock(|p| *p);
                     }
-                    if !all_sent.is_empty() || led_dirty {
+                    if !pe_midi_steps.is_empty() || led_dirty {
                         // Render LEDs from PE state (bypass OpenDeck LED engine)
                         ctx.shared.opendeck.lock(|opendeck| {
                             din_enabled = opendeck.din_midi_enabled();
@@ -657,6 +662,30 @@ mod app {
                 led_sender.try_send(data).ok();
             }
             // Send MIDI outside the lock
+            if pe_active {
+                use pedalboard_midi::pe_handler::MidiStep;
+                for step in &pe_midi_steps {
+                    match step {
+                        MidiStep::Send(raw, len) => {
+                            if din_enabled {
+                                if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
+                                    uart_midi_out.write(&mm).ok();
+                                }
+                            }
+                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                CableNumber::Cable0,
+                                &raw[..*len],
+                            );
+                            if let Ok(packet) = packet {
+                                sender.try_send(packet).ok();
+                            }
+                        }
+                        MidiStep::Delay(ms) => {
+                            Mono::delay(fugit::ExtU32::millis(*ms as u32).into()).await;
+                        }
+                    }
+                }
+            }
             for (raw, len) in &all_sent {
                 // DIN MIDI out (only if enabled)
                 if din_enabled {

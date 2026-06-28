@@ -17,7 +17,7 @@ mod pe_handler;
 
 use events::{Edge, InputEvent, Pulse};
 use heapless::Vec;
-use pe_handler::{PeHandler, SystemAction};
+use pe_handler::{MidiStep, PeHandler, SystemAction};
 use pedalboard_protocol::config::*;
 
 fn make_test_preset() -> Preset {
@@ -107,7 +107,7 @@ fn on_press_fires_immediately() {
     let mut h = PeHandler::new();
     let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
     assert_eq!(r.midi.len(), 1);
-    assert_eq!(r.midi[0].0, [0x90, 60, 127]);
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
     assert!(r.system.is_empty());
 }
 
@@ -117,7 +117,7 @@ fn on_release_fires_note_off() {
     let mut h = PeHandler::new();
     let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
     assert_eq!(r.midi.len(), 1);
-    assert_eq!(r.midi[0].0, [0x80, 60, 0]);
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn short_release_fires_on_press() {
     }
     let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
     assert_eq!(r.midi.len(), 1);
-    assert_eq!(r.midi[0].0, [0xB0, 10, 127]);
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
     assert!(r.system.is_empty());
 }
 
@@ -198,5 +198,39 @@ fn encoder_generates_cc() {
     h.encoder_values[0] = 64;
     let r = h.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
     assert_eq!(r.midi.len(), 1);
-    assert_eq!(r.midi[0].0, [0xB0, 7, 65]);
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
+}
+
+#[test]
+fn action_sequence_with_delay() {
+    let mut buttons: Vec<ButtonConfig, MAX_BUTTONS> = Vec::new();
+    buttons
+        .push(ButtonConfig {
+            label: Label::new(),
+            color: LedConfig::default(),
+            mode: ButtonMode::default(),
+            on_press: {
+                let mut v = Vec::new();
+                v.push(Action::Cc { cc: 1, value: 127, channel: 1 }).ok();
+                v.push(Action::Delay(100)).ok();
+                v.push(Action::Cc { cc: 1, value: 0, channel: 1 }).ok();
+                v
+            },
+            on_release: Vec::new(),
+            on_long_press: Vec::new(),
+            cycle_values: Vec::new(),
+        })
+        .ok();
+    let preset = Preset {
+        name: Label::try_from("Delay").unwrap(),
+        buttons,
+        encoders: Vec::new(),
+        analog: Vec::new(),
+    };
+    let mut h = PeHandler::new();
+    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+    assert_eq!(r.midi.len(), 3);
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 1, 127]));
+    assert_eq!(r.midi[1], MidiStep::Delay(100));
+    assert!(matches!(&r.midi[2], MidiStep::Send(d, _) if *d == [0xB0, 1, 0]));
 }

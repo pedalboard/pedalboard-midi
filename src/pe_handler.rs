@@ -20,11 +20,18 @@ const NUM_BUTTONS: usize = 6;
 const ADC_MAX_TRIMMED: u16 = 3750;
 
 // Re-export types used by main.rs
-pub use pedalboard_protocol::engine::{DisplayEvent, DisplaySide, SystemAction};
+pub use pedalboard_protocol::engine::{ActionStep, DisplayEvent, DisplaySide, SystemAction};
 
-/// Result of processing events: MIDI messages + system actions + display + LED dirty flag.
+/// A step in an action sequence: either raw MIDI bytes to send, or a delay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MidiStep {
+    Send([u8; 3], usize),
+    Delay(u16),
+}
+
+/// Result of processing events: MIDI steps + system actions + display + LED dirty flag.
 pub struct HandleResult {
-    pub midi: heapless::Vec<([u8; 3], usize), 8>,
+    pub midi: heapless::Vec<MidiStep, 8>,
     pub system: heapless::Vec<SystemAction, 2>,
     pub display: heapless::Vec<DisplayEvent, 2>,
     pub led_dirty: bool,
@@ -335,13 +342,21 @@ impl PeHandler {
     fn merge_result(
         &self,
         r: &engine::EngineResult,
-        midi: &mut heapless::Vec<([u8; 3], usize), 8>,
+        midi: &mut heapless::Vec<MidiStep, 8>,
         system: &mut heapless::Vec<SystemAction, 2>,
         display: &mut heapless::Vec<DisplayEvent, 2>,
         led_dirty: &mut bool,
     ) {
-        for msg in &r.midi {
-            midi.push(midi_to_raw(msg)).ok();
+        for step in &r.midi {
+            match step {
+                ActionStep::Send(msg) => {
+                    midi.push(MidiStep::Send(midi_to_raw(msg).0, midi_to_raw(msg).1))
+                        .ok();
+                }
+                ActionStep::Delay(ms) => {
+                    midi.push(MidiStep::Delay(*ms)).ok();
+                }
+            }
         }
         for s in &r.system {
             system.push(*s).ok();
@@ -498,7 +513,7 @@ mod tests {
         let mut handler = PeHandler::new();
         let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
         assert_eq!(r.midi.len(), 1);
-        assert_eq!(r.midi[0].0, [0x90, 60, 127]);
+        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
     }
 
     #[test]
@@ -507,7 +522,7 @@ mod tests {
         let mut handler = PeHandler::new();
         let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
         assert_eq!(r.midi.len(), 1);
-        assert_eq!(r.midi[0].0, [0x80, 60, 0]);
+        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
     }
 
     #[test]
@@ -528,7 +543,7 @@ mod tests {
         }
         let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
         assert_eq!(r.midi.len(), 1);
-        assert_eq!(r.midi[0].0, [0xB0, 10, 127]);
+        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
     }
 
     #[test]
@@ -540,7 +555,7 @@ mod tests {
         for _ in 0..501 {
             let r = handler.handle_events(&preset, &[]);
             if !r.midi.is_empty() {
-                assert_eq!(r.midi[0].0[..2], [0xC0, 5]);
+                assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if d[..2] == [0xC0, 5]));
                 found = true;
                 break;
             }
@@ -883,7 +898,7 @@ mod tests {
         handler.encoder_values[0] = 64;
         let r = handler.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
         assert_eq!(r.midi.len(), 1);
-        assert_eq!(r.midi[0].0, [0xB0, 7, 65]);
+        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
     }
 
     #[test]
