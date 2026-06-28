@@ -31,6 +31,16 @@ impl LongPressDetector {
         }
     }
 
+    /// Create a detector in "fired" state — a subsequent Deactivate will be suppressed.
+    /// Used after preset switch to ignore stale button releases.
+    pub fn new_fired() -> Self {
+        Self {
+            held_ticks: 0,
+            active: false,
+            fired: true,
+        }
+    }
+
     /// Call every tick with the current button edge (if any).
     /// Returns a gesture when detected.
     pub fn update(&mut self, edge: Option<Edge>) -> Option<Gesture> {

@@ -56,7 +56,7 @@ impl PeHandler {
             button_active: [false; NUM_BUTTONS],
             cycle_index: [0; NUM_BUTTONS],
             last_encoder_tick: [u16::MAX; 2],
-            long_press: core::array::from_fn(|_| LongPressDetector::new()),
+            long_press: core::array::from_fn(|_| LongPressDetector::new_fired()),
             state_store: PresetStateStore::new(),
         }
     }
@@ -83,7 +83,8 @@ impl PeHandler {
             .state_store
             .switch(new_preset, &mut working, new_preset_cfg);
         self.apply_state(&working);
-        self.long_press = core::array::from_fn(|_| LongPressDetector::new());
+        // Use "fired" state so stale Deactivate from the switch button is suppressed
+        self.long_press = core::array::from_fn(|_| LongPressDetector::new_fired());
 
         let mut result = heapless::Vec::new();
         for msg in &recall {
@@ -141,9 +142,27 @@ impl PeHandler {
                         None => {}
                     }
                 }
+                // Emit display hint on press, cancel on release
+                if let Some(Edge::Activate) = edge {
+                    if let Some(btn) = preset.buttons.get(i) {
+                        let hint_action = btn.on_long_press.iter().find_map(|a| match a {
+                            pedalboard_protocol::config::Action::PresetNext => {
+                                Some(SystemAction::PresetNext)
+                            }
+                            pedalboard_protocol::config::Action::PresetPrev => {
+                                Some(SystemAction::PresetPrev)
+                            }
+                            _ => None,
+                        });
+                        if let Some(action) = hint_action {
+                            display.push(DisplayEvent::LongPressHint { action }).ok();
+                        }
+                    }
+                }
                 // Long-press detection resolves gesture
                 match self.long_press[i].update(edge) {
                     Some(Gesture::ShortPress) => {
+                        display.push(DisplayEvent::LongPressCancel).ok();
                         let mut state = self.working_state();
                         let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
                         self.apply_state(&state);
@@ -686,6 +705,150 @@ mod tests {
 
         // A should still be toggled ON
         assert!(handler.button_active[0]);
+    }
+
+    #[test]
+    fn toggle_with_long_press_state_preserved_across_switch() {
+        // Bug reproduction: D(3)=Toggle+on_long_press, F(5)=Radio+on_long_press(next)
+        // P2: D(3)=Momentary+on_long_press(prev)
+        // Sequence: short-press D on P1, long-press F to P2, long-press D on P2 back to P1
+        // Expected: D on P1 still toggled ON
+        use pedalboard_protocol::config::*;
+
+        let mut buttons_p1: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        // A,B,C (0-2): Radio(1)
+        for _ in 0..3 {
+            buttons_p1
+                .push(ButtonConfig {
+                    label: Label::new(),
+                    color: LedConfig::default(),
+                    mode: ButtonMode::RadioGroup(1),
+                    on_press: heapless::Vec::new(),
+                    on_release: heapless::Vec::new(),
+                    on_long_press: heapless::Vec::new(),
+                    cycle_values: heapless::Vec::new(),
+                })
+                .ok();
+        }
+        // D (3): Toggle + on_long_press(prev)
+        let mut on_press_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_press_d
+            .push(Action::Cc {
+                cc: 0,
+                value: 127,
+                channel: 3,
+            })
+            .ok();
+        let mut on_long_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_long_d.push(Action::PresetPrev).ok();
+        buttons_p1
+            .push(ButtonConfig {
+                label: Label::try_from("Bypass").unwrap(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Toggle,
+                on_press: on_press_d,
+                on_release: heapless::Vec::new(),
+                on_long_press: on_long_d,
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+        // E (4): empty
+        buttons_p1
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::Momentary,
+                on_press: heapless::Vec::new(),
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+        // F (5): Radio(1) + on_long_press(next)
+        let mut on_long_f: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+        on_long_f.push(Action::PresetNext).ok();
+        buttons_p1
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig::default(),
+                mode: ButtonMode::RadioGroup(1),
+                on_press: heapless::Vec::new(),
+                on_release: heapless::Vec::new(),
+                on_long_press: on_long_f,
+                cycle_values: heapless::Vec::new(),
+            })
+            .ok();
+
+        let preset_p1 = Preset {
+            name: Label::try_from("Live FX").unwrap(),
+            buttons: buttons_p1,
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+        };
+
+        // P2: all momentary, D(3) has on_long_press(prev)
+        let mut buttons_p2: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        for i in 0..6 {
+            let mut lp: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
+            if i == 3 {
+                lp.push(Action::PresetPrev).ok();
+            }
+            buttons_p2
+                .push(ButtonConfig {
+                    label: Label::new(),
+                    color: LedConfig::default(),
+                    mode: ButtonMode::Momentary,
+                    on_press: heapless::Vec::new(),
+                    on_release: heapless::Vec::new(),
+                    on_long_press: lp,
+                    cycle_values: heapless::Vec::new(),
+                })
+                .ok();
+        }
+
+        let preset_p2 = Preset {
+            name: Label::try_from("Looper").unwrap(),
+            buttons: buttons_p2,
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+        };
+
+        let mut handler = PeHandler::new();
+
+        // 1. Short-press D on P1 (toggle ON). D has on_long_press so it defers.
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Activate)]);
+        for _ in 0..50 {
+            handler.handle_events(&preset_p1, &[]);
+        }
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Deactivate)]);
+        assert!(
+            handler.button_active[3],
+            "D should be toggled ON after short press"
+        );
+
+        // 2. Long-press F on P1 (switch to P2)
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonF(Edge::Activate)]);
+        for _ in 0..501 {
+            handler.handle_events(&preset_p1, &[]);
+        }
+        handler.switch_preset(1, &preset_p1, &preset_p2);
+
+        // 3. Long-press D on P2 (switch back to P1)
+        handler.handle_events(&preset_p2, &[InputEvent::ButtonD(Edge::Activate)]);
+        for _ in 0..501 {
+            handler.handle_events(&preset_p2, &[]);
+        }
+        handler.switch_preset(0, &preset_p2, &preset_p1);
+
+        // Stale Deactivate arrives from the button D release on P2
+        // (user releases D after the switch — this must NOT toggle D on P1)
+        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Deactivate)]);
+
+        // D on P1 should still be toggled ON
+        assert!(
+            handler.button_active[3],
+            "D (Bypass) toggle state lost after switch round-trip"
+        );
     }
 
     #[test]

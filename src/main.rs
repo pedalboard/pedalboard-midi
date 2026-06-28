@@ -290,7 +290,7 @@ mod app {
 
         let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
         let (display_event_sender, display_event_receiver) =
-            make_channel!(pedalboard_midi::pe_handler::DisplayEvent, 2);
+            make_channel!(pedalboard_midi::pe_handler::DisplayEvent, 4);
 
         let (led_sender, led_receiver) = make_channel!(LedData, LED_CAPACITY);
         let (mon_sender, mon_receiver) = make_channel!((), 1);
@@ -410,7 +410,7 @@ mod app {
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
-        mut display_event_sender: Sender<'static, pedalboard_midi::pe_handler::DisplayEvent, 2>,
+        mut display_event_sender: Sender<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
         mut led_sender: Sender<'static, LedData, LED_CAPACITY>,
         mut persist_sender: Sender<
             'static,
@@ -1052,7 +1052,7 @@ mod app {
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
-        mut event_receiver: Receiver<'static, pedalboard_midi::pe_handler::DisplayEvent, 2>,
+        mut event_receiver: Receiver<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
     ) {
         use crate::hmi::display::DisplayLocation;
         use heapless::String;
@@ -1135,7 +1135,7 @@ mod app {
             // PE display events (direct from action layer, no MIDI round-trip)
             while let Ok(evt) = event_receiver.try_recv() {
                 use crate::hmi::display::DisplayLocation;
-                use pedalboard_midi::pe_handler::{DisplayEvent, DisplaySide};
+                use pedalboard_midi::pe_handler::{DisplayEvent, DisplaySide, SystemAction};
                 if !debug_mode {
                     match &evt {
                         DisplayEvent::EncoderOverlay { side, label, value }
@@ -1154,6 +1154,38 @@ mod app {
                             };
                             displays.draw_overlay(loc, lbl, *value);
                             overlay_ticks = OVERLAY_DURATION;
+                            show_overlay = true;
+                        }
+                        DisplayEvent::LongPressHint { action } => {
+                            let label = match action {
+                                SystemAction::PresetNext => {
+                                    let next = (current_preset as usize + 1) % presets.len();
+                                    if presets[next].name.is_empty() {
+                                        ">> Next"
+                                    } else {
+                                        presets[next].name.as_str()
+                                    }
+                                }
+                                SystemAction::PresetPrev => {
+                                    let prev = if current_preset == 0 {
+                                        presets.len() - 1
+                                    } else {
+                                        (current_preset as usize) - 1
+                                    };
+                                    if presets[prev].name.is_empty() {
+                                        "<< Prev"
+                                    } else {
+                                        presets[prev].name.as_str()
+                                    }
+                                }
+                            };
+                            displays.draw_long_press_hint(label);
+                            show_overlay = true;
+                        }
+                        DisplayEvent::LongPressCancel => {
+                            // Return to performance view
+                            let idx = (current_preset as usize) % presets.len();
+                            displays.draw_performance(&presets[idx]);
                             show_overlay = true;
                         }
                     }

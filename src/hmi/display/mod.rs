@@ -121,6 +121,21 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             }
         }
     }
+
+    pub fn draw_long_press_hint(&mut self, label: &str) {
+        use pedalboard_midi::views::preset_overlay;
+        // Show hint on both displays
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            preset_overlay::draw_long_press_hint(display, label).ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            preset_overlay::draw_long_press_hint(display, label).ok();
+            display.flush().ok();
+        }
+    }
 }
 
 struct Display<I2C> {

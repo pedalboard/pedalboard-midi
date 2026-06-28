@@ -65,3 +65,41 @@ pub fn draw_name<D: DrawTarget<Color = Gray4>>(
 
     Ok(())
 }
+
+/// Draw a long-press hint with inverted background (white bg, dark text)
+pub fn draw_long_press_hint<D: DrawTarget<Color = Gray4>>(
+    display: &mut D,
+    label: &str,
+) -> Result<(), D::Error> {
+    use embedded_graphics::primitives::{
+        CornerRadii, PrimitiveStyleBuilder, Rectangle, RoundedRectangle,
+    };
+    use embedded_text::{
+        alignment::{HorizontalAlignment, VerticalAlignment},
+        style::TextBoxStyleBuilder,
+        TextBox,
+    };
+
+    // Inverted rounded rectangle background
+    let bg = PrimitiveStyleBuilder::new()
+        .fill_color(Gray4::WHITE)
+        .build();
+    let margin = 12u32;
+    let rect = Rectangle::new(
+        Point::new(margin as i32, 44),
+        Size::new(DISPLAY_SIZE - 2 * margin, 40),
+    );
+    RoundedRectangle::new(rect, CornerRadii::new(Size::new(8, 8)))
+        .into_styled(bg)
+        .draw(display)?;
+
+    // Dark text on white background
+    let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::BLACK);
+    let centered = TextBoxStyleBuilder::new()
+        .alignment(HorizontalAlignment::Center)
+        .vertical_alignment(VerticalAlignment::Middle)
+        .build();
+    TextBox::with_textbox_style(label, rect, text_style, centered).draw(display)?;
+
+    Ok(())
+}
