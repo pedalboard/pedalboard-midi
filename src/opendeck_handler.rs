@@ -12,7 +12,7 @@ use rtic_sync::channel::Sender;
 use smart_leds::colors::*;
 use smart_leds::RGB8;
 
-pub const PERSIST_CAPACITY: usize = 16;
+pub const PERSIST_CAPACITY: usize = 32;
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
