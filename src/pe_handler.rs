@@ -534,6 +534,7 @@ mod tests {
             buttons,
             encoders,
             analog: Vec::new(),
+            defaults: Default::default(),
         }
     }
 
@@ -717,6 +718,7 @@ mod tests {
             buttons: buttons_p1,
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
+            defaults: Default::default(),
         };
 
         // P2: B also has long_press (to switch back)
@@ -749,6 +751,7 @@ mod tests {
             buttons: buttons_p2,
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
+            defaults: Default::default(),
         };
 
         let mut handler = PeHandler::new();
@@ -854,6 +857,7 @@ mod tests {
             buttons: buttons_p1,
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
+            defaults: Default::default(),
         };
 
         // P2: all momentary, D(3) has on_long_press(prev)
@@ -881,6 +885,7 @@ mod tests {
             buttons: buttons_p2,
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
+            defaults: Default::default(),
         };
 
         let mut handler = PeHandler::new();
@@ -1049,6 +1054,7 @@ mod tests {
             buttons,
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
+            defaults: Default::default(),
         }
     }
 

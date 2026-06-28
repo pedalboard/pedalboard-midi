@@ -96,6 +96,7 @@ fn preset_meta_uses_config_name_and_labels() {
             buttons,
             encoders: Vec::new(),
             analog: Vec::new(),
+            defaults: Default::default(),
         })
         .ok();
 
@@ -131,6 +132,7 @@ fn preset_meta_empty_label_uses_default() {
             buttons,
             encoders: Vec::new(),
             analog: Vec::new(),
+            defaults: Default::default(),
         })
         .ok();
 

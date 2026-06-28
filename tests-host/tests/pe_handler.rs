@@ -98,6 +98,7 @@ fn make_test_preset() -> Preset {
         buttons,
         encoders,
         analog: Vec::new(),
+        defaults: Default::default(),
     }
 }
 
@@ -226,6 +227,7 @@ fn action_sequence_with_delay() {
         buttons,
         encoders: Vec::new(),
         analog: Vec::new(),
+        defaults: Default::default(),
     };
     let mut h = PeHandler::new();
     let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);

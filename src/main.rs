@@ -1074,9 +1074,29 @@ mod app {
                                 cfg.presets[idx] = preset;
                             });
                             store.save_preset(preset_index, &data).await;
-                            // Clear runtime state — presets changed, stale state
-                            let buf =
-                                pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
+                            // Write initial state from preset defaults to EEPROM
+                            let buf = ctx.shared.pe_config.lock(|cfg| {
+                                let mut state_store =
+                                    pedalboard_protocol::state::PresetStateStore::new();
+                                for (i, p) in cfg.presets.iter().enumerate() {
+                                    if i >= pedalboard_protocol::state::EEPROM_MAX_PRESETS {
+                                        break;
+                                    }
+                                    if !p.defaults.button_active.is_empty()
+                                        || !p.defaults.encoder_values.is_empty()
+                                    {
+                                        state_store.set_state(
+                                            i,
+                                            pedalboard_protocol::state::PresetState::from_defaults(
+                                                p,
+                                            ),
+                                        );
+                                    }
+                                }
+                                let mut buf = [0u8; 128];
+                                state_store.to_eeprom(&mut buf);
+                                buf
+                            });
                             use embedded_hal::i2c::I2c;
                             for page in 0..16 {
                                 let offset = page * 8;
