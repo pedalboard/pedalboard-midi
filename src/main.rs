@@ -142,7 +142,7 @@ mod app {
             Sender<'static, pedalboard_midi::opendeck_handler::PersistCommand, PERSIST_CAPACITY>,
         eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
-    const USB_OUT_CAPACITY: usize = 64;
+    const USB_OUT_CAPACITY: usize = 80;
     const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 1;
@@ -785,7 +785,13 @@ mod app {
                                     data.resource,
                                     data.body.len()
                                 );
-                                if let Ok(blob) = heapless::Vec::from_slice(data.body) {
+                                let mut decoded = [0u8; 192];
+                                let dec_len =
+                                    pedalboard_protocol::property_exchange::decode_mcoded7(
+                                        data.body,
+                                        &mut decoded,
+                                    );
+                                if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len]) {
                                     ctx.local
                                         .persist_sender
                                         .try_send(pedalboard_midi::opendeck_handler::PersistCommand::SavePreset(
