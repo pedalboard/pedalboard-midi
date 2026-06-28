@@ -1023,9 +1023,8 @@ mod app {
                             });
                             pedalboard_midi::preset_flash::save_one(preset_index, &data);
                             // Clear runtime state — presets changed, stale state
-                            let mut cleared = pedalboard_protocol::state::PresetStateStore::new();
-                            let mut buf = [0u8; 128];
-                            cleared.to_eeprom(&mut buf);
+                            let buf =
+                                pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
                             use embedded_hal::i2c::I2c;
                             for page in 0..16 {
                                 let offset = page * 8;
@@ -1045,15 +1044,12 @@ mod app {
                     PersistCommand::SaveState(data) => {
                         // Write to AT24CS01 EEPROM at 0x50 in 8-byte pages
                         use embedded_hal::i2c::I2c;
-                        for page in 0..(data.len() + 7) / 8 {
+                        for page in 0..16 {
                             let offset = page * 8;
-                            let end = (offset + 8).min(data.len());
-                            let mut buf = [0u8; 9]; // addr + 8 data bytes
-                            buf[0] = offset as u8;
-                            let len = end - offset;
-                            buf[1..1 + len].copy_from_slice(&data[offset..end]);
-                            eeprom.write(0x50u8, &buf[..1 + len]).ok();
-                            // AT24CS01 write cycle time: 5ms
+                            let mut wbuf = [0u8; 9];
+                            wbuf[0] = offset as u8;
+                            wbuf[1..9].copy_from_slice(&data[offset..offset + 8]);
+                            eeprom.write(0x50u8, &wbuf).ok();
                             Mono::delay(5.millis()).await;
                         }
                     }
