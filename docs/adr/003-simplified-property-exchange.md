@@ -101,3 +101,15 @@ safe (0x00–0x7F). Only the mcoded7-encoded body section can represent 8-bit da
 - `pedalboard-midi` (Rust, RP2040) — handles PE Set/Get in USB RX ISR
 - `pedalboard-bridge` (Go, CM5) — transparent passthrough (treats as opaque SysEx)
 - `pedalboard-protocol` (Rust, shared) — framing, encode/decode, types
+
+## When to revisit
+
+DAW integration is the most likely trigger for full MIDI-CI compliance. If DAWs
+like Bitwig, Reaper, or Logic add MIDI-CI PE support for auto-discovering
+controller presets and parameter mappings, implementing the spec would provide
+real value — zero-config studio setup without manual MIDI learn.
+
+Migration path: wrap existing byte resource IDs in JSON headers at the protocol
+crate level. Firmware internal logic (persist, apply config) stays unchanged —
+only the SysEx parsing layer needs a JSON wrapper. The `midi2` crate (issue #79)
+may provide PE building blocks when its PE module matures.
