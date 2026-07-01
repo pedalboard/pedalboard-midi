@@ -19,11 +19,18 @@ Options considered:
 1. **Custom SysEx with manufacturer ID** — Own framing from scratch. Full flexibility
    but requires designing and documenting a complete message format.
 2. **Full MIDI-CI Property Exchange** — Spec-compliant JSON headers, standard resource
-   names. Too expensive for RP2040: requires JSON parsing, string handling, and
-   heap allocation in a no_std environment with 264KB RAM.
+   names. The RP2040 could handle this (264KB RAM, `serde_json_core` exists for
+   no_std), but full compliance requires implementing resource discovery, MUID
+   negotiation, subscription semantics, and pagination — weeks of engineering
+   effort for zero practical benefit since we control both endpoints.
 3. **MIDI-CI envelope with simplified addressing** — Use the standard MIDI-CI PE
    SysEx structure (sub-ID2, MUIDs, request IDs, chunk headers) but replace the
    JSON resource header with a single byte.
+
+The deciding factor is **engineering ROI**, not hardware capability. Full MIDI-CI
+compliance would only matter for third-party interop (DAW auto-discovery,
+generic MIDI-CI editors, multi-device buses). None of these apply to a
+self-contained pedalboard controller with its own CLI.
 
 ## Decision
 
