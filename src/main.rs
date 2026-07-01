@@ -116,6 +116,7 @@ mod app {
         opendeck: OpenDeck,
         active_preset: u8,
         pe_config: pedalboard_protocol::config::Config,
+        global_config: pedalboard_protocol::config::GlobalConfig,
         state_store: pedalboard_protocol::state::PresetStateStore,
     }
 
@@ -372,6 +373,7 @@ mod app {
                 opendeck,
                 active_preset: restored_active,
                 pe_config,
+                global_config: pedalboard_protocol::config::GlobalConfig::default(),
                 state_store: restored_state,
             },
             Local {
@@ -435,7 +437,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config, state_store])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -622,10 +624,8 @@ mod app {
                             .ok();
                     }
                     if !pe_midi_steps.is_empty() || led_dirty {
-                        // Render LEDs from PE state (bypass OpenDeck LED engine)
-                        ctx.shared.opendeck.lock(|opendeck| {
-                            din_enabled = opendeck.din_midi_enabled();
-                        });
+                        // Read DIN enabled from global config (PE mode — no OpenDeck needed)
+                        din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
                         if led_dirty {
                             ctx.shared.pe_config.lock(|cfg| {
                                 let preset = &cfg.presets[preset_idx as usize];
@@ -644,9 +644,9 @@ mod app {
                 }
             } else if !events.is_empty() && preset_idx < 4 {
                 // OpenDeck mode (slots 0-3 only): sync preset and handle input
+                din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
                 ctx.shared.opendeck.lock(|opendeck| {
                     opendeck.config.set_active_preset(preset_idx as usize);
-                    din_enabled = opendeck.din_midi_enabled();
                     for event in events.iter() {
                         let mut ci_buf = [0u8; 16];
                         if let Some(len) = opendeck.component_info(event, &mut ci_buf) {
@@ -834,26 +834,47 @@ mod app {
                                     sysex_receive_buffer.as_ref(),
                                 )
                             {
-                                debug!(
-                                    "PE Set Property preset={} body len={}",
-                                    data.resource,
-                                    data.body.len()
-                                );
                                 let mut decoded = [0u8; pedalboard_midi::MAX_PRESET_SIZE];
                                 let dec_len =
                                     pedalboard_protocol::property_exchange::decode_mcoded7(
                                         data.body,
                                         &mut decoded,
                                     );
-                                if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len]) {
-                                    ctx.local
-                                        .persist_sender
-                                        .try_send(pedalboard_midi::opendeck_handler::PersistCommand::SavePreset(
-                                            data.resource,
-                                            blob,
-                                        ))
-                                        .ok();
+
+                                if data.resource
+                                    == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
+                                {
+                                    // Global config — save via persist task (applied on load)
+                                    debug!("PE Set GlobalConfig body len={}", dec_len);
+                                    if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len])
+                                    {
+                                        ctx.local
+                                            .persist_sender
+                                            .try_send(pedalboard_midi::opendeck_handler::PersistCommand::SavePreset(
+                                                pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE,
+                                                blob,
+                                            ))
+                                            .ok();
+                                    }
+                                } else {
+                                    // Preset
+                                    debug!(
+                                        "PE Set Property preset={} body len={}",
+                                        data.resource,
+                                        data.body.len()
+                                    );
+                                    if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len])
+                                    {
+                                        ctx.local
+                                            .persist_sender
+                                            .try_send(pedalboard_midi::opendeck_handler::PersistCommand::SavePreset(
+                                                data.resource,
+                                                blob,
+                                            ))
+                                            .ok();
+                                    }
                                 }
+
                                 // Send ACK reply
                                 let req_id = pedalboard_protocol::property_exchange::request_id(
                                     sysex_receive_buffer.as_ref(),
@@ -894,17 +915,25 @@ mod app {
                                 let src_muid = pedalboard_protocol::property_exchange::source_muid(
                                     sysex_receive_buffer.as_ref(),
                                 );
-                                // Serialize preset from RAM for PE Get reply
+                                // Serialize from RAM for PE Get reply
                                 static mut GET_BUF: [u8; pedalboard_midi::MAX_PRESET_SIZE] =
                                     [0u8; pedalboard_midi::MAX_PRESET_SIZE];
-                                let body = ctx.shared.pe_config.lock(|cfg| {
-                                    let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
-                                    if let Some(preset) = cfg.presets.get(resource as usize) {
-                                        postcard::to_slice(preset, buf).ok().map(|s| s.len())
-                                    } else {
-                                        None
-                                    }
-                                });
+                                let body = if resource
+                                    == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
+                                {
+                                    // Global config not readable from ISR — return empty
+                                    // (CLI should use pe-read only for presets)
+                                    None
+                                } else {
+                                    ctx.shared.pe_config.lock(|cfg| {
+                                        let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
+                                        if let Some(preset) = cfg.presets.get(resource as usize) {
+                                            postcard::to_slice(preset, buf).ok().map(|s| s.len())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                };
                                 let reply_body: &[u8] = match body {
                                     Some(len) => unsafe {
                                         &(&(*core::ptr::addr_of!(GET_BUF)))[..len]
@@ -1023,7 +1052,7 @@ mod app {
         }
     }
 
-    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, active_preset, state_store])]
+    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, global_config, active_preset, state_store])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<
@@ -1094,6 +1123,23 @@ mod app {
                 info!("{} presets loaded from flash", preset_count);
             }
 
+            // Load global config from flash
+            let mut gc_buf = [0u8; 64];
+            if let Some(data) = store
+                .load_preset(
+                    pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE,
+                    &mut gc_buf,
+                )
+                .await
+            {
+                if let Ok(gc) =
+                    postcard::from_bytes::<pedalboard_protocol::config::GlobalConfig>(data)
+                {
+                    info!("global config loaded from flash");
+                    ctx.shared.global_config.lock(|g| *g = gc);
+                }
+            }
+
             // Enter persist loop
             while let Ok(cmd) = receiver.recv().await {
                 use pedalboard_midi::opendeck_handler::PersistCommand;
@@ -1102,7 +1148,17 @@ mod app {
                         store.save(block, section, index, value).await;
                     }
                     PersistCommand::SavePreset(preset_index, data) => {
-                        if let Ok(preset) =
+                        if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
+                            // Global config — apply and save to flash
+                            if let Ok(gc) = postcard::from_bytes::<
+                                pedalboard_protocol::config::GlobalConfig,
+                            >(&data)
+                            {
+                                info!("global config applied and saved");
+                                ctx.shared.global_config.lock(|g| *g = gc);
+                            }
+                            store.save_preset(preset_index, &data).await;
+                        } else if let Ok(preset) =
                             postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
                         {
                             info!(
@@ -1563,7 +1619,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck])]
+    #[task(shared = [global_config])]
     async fn midi_clock(
         mut ctx: midi_clock::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -1571,10 +1627,9 @@ mod app {
         mut led_sender: Sender<'static, LedEvent, LED_CAPACITY>,
     ) {
         loop {
-            let interval_us = ctx.shared.opendeck.lock(|opendeck| {
-                let send_clock = opendeck.config.global_midi().send_midi_clock_enabled();
-                if send_clock {
-                    Some(opendeck.config.bpm().tick_interval_us())
+            let interval_us = ctx.shared.global_config.lock(|gc| {
+                if gc.midi_clock {
+                    Some(gc.tick_interval_us())
                 } else {
                     None
                 }
