@@ -88,8 +88,24 @@ impl PeHandler {
         new_preset: u8,
         old_preset: &Preset,
         new_preset_cfg: &Preset,
-    ) -> heapless::Vec<([u8; 3], usize), 16> {
-        // Clear momentary visual feedback — only toggle/radio state should persist
+    ) -> heapless::Vec<MidiStep, 32> {
+        let mut result: heapless::Vec<MidiStep, 32> = heapless::Vec::new();
+
+        // 1. Fire on_exit for old preset
+        for action in &old_preset.on_exit {
+            match action {
+                pedalboard_protocol::config::Action::Delay(ms) => {
+                    result.push(MidiStep::Delay(*ms)).ok();
+                }
+                _ => {
+                    if let Some(msg) = pedalboard_protocol::action::action_to_midi(action) {
+                        result.push(MidiStep::Send(msg.data, msg.len)).ok();
+                    }
+                }
+            }
+        }
+
+        // 2. Clear momentary visual feedback — only toggle/radio state should persist
         for i in 0..NUM_BUTTONS {
             if let Some(btn) = old_preset.buttons.get(i) {
                 if matches!(btn.mode, ButtonMode::Momentary) {
@@ -98,6 +114,7 @@ impl PeHandler {
             }
         }
 
+        // 3. Save/load state
         let mut working = self.working_state();
         let recall = self
             .state_store
@@ -106,10 +123,25 @@ impl PeHandler {
         // Use "fired" state so stale Deactivate from the switch button is suppressed
         self.long_press = core::array::from_fn(|_| LongPressDetector::new_fired());
 
-        let mut result = heapless::Vec::new();
-        for msg in &recall {
-            result.push(midi_to_raw(msg)).ok();
+        // 4. Fire on_enter for new preset
+        for action in &new_preset_cfg.on_enter {
+            match action {
+                pedalboard_protocol::config::Action::Delay(ms) => {
+                    result.push(MidiStep::Delay(*ms)).ok();
+                }
+                _ => {
+                    if let Some(msg) = pedalboard_protocol::action::action_to_midi(action) {
+                        result.push(MidiStep::Send(msg.data, msg.len)).ok();
+                    }
+                }
+            }
         }
+
+        // 5. Recall MIDI (active toggles + encoder values)
+        for msg in &recall {
+            result.push(MidiStep::Send(msg.data, msg.len)).ok();
+        }
+
         result
     }
 
@@ -535,6 +567,8 @@ mod tests {
             encoders,
             analog: Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         }
     }
 
@@ -719,6 +753,8 @@ mod tests {
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         };
 
         // P2: B also has long_press (to switch back)
@@ -752,6 +788,8 @@ mod tests {
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         };
 
         let mut handler = PeHandler::new();
@@ -858,6 +896,8 @@ mod tests {
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         };
 
         // P2: all momentary, D(3) has on_long_press(prev)
@@ -886,6 +926,8 @@ mod tests {
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         };
 
         let mut handler = PeHandler::new();
@@ -986,7 +1028,7 @@ mod tests {
         assert_eq!(handler.encoder_values[0], 100);
         assert!(recall
             .iter()
-            .any(|(raw, _)| raw[0] == 0xB0 && raw[1] == 7 && raw[2] == 100));
+            .any(|step| matches!(step, MidiStep::Send(raw, _) if raw[0] == 0xB0 && raw[1] == 7 && raw[2] == 100)));
     }
 
     #[test]
@@ -1055,6 +1097,8 @@ mod tests {
             encoders: heapless::Vec::new(),
             analog: heapless::Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         }
     }
 

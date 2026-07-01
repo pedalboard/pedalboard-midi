@@ -477,6 +477,25 @@ mod app {
                     if !preset.name.is_empty() {
                         let anims = pe.led_state(preset);
                         led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
+                        // Fire on_enter for the boot preset
+                        for action in &preset.on_enter {
+                            match action {
+                                pedalboard_protocol::config::Action::Delay(_) => {}
+                                _ => {
+                                    if let Some(msg) =
+                                        pedalboard_protocol::action::action_to_midi(action)
+                                    {
+                                        let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                            CableNumber::Cable0,
+                                            &msg.data[..msg.len],
+                                        );
+                                        if let Ok(packet) = packet {
+                                            sender.try_send(packet).ok();
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             });
@@ -562,20 +581,13 @@ mod app {
                     if !result.system.is_empty() {
                         let new_preset = ctx.shared.active_preset.lock(|p| *p);
                         // Switch preset state and recall MIDI to external gear
-                        let recall_midi = ctx.shared.pe_config.lock(|cfg| {
+                        let switch_midi = ctx.shared.pe_config.lock(|cfg| {
                             let old_preset = &cfg.presets[preset_idx as usize];
                             let new_preset_cfg = &cfg.presets[new_preset as usize];
                             pe.switch_preset(new_preset, old_preset, new_preset_cfg)
                         });
-                        for (raw, len) in &recall_midi {
-                            let mut buf = [0u8; 6];
-                            buf[..*len].copy_from_slice(&raw[..*len]);
-                            pe_midi_steps
-                                .push(pedalboard_midi::pe_handler::MidiStep::Send(
-                                    [buf[0], buf[1], buf[2]],
-                                    *len,
-                                ))
-                                .ok();
+                        for step in &switch_midi {
+                            pe_midi_steps.push(step.clone()).ok();
                         }
                         use pedalboard_midi::opendeck_handler::PersistCommand;
                         persist_sender

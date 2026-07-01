@@ -97,6 +97,8 @@ fn preset_meta_uses_config_name_and_labels() {
             encoders: Vec::new(),
             analog: Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         })
         .ok();
 
@@ -133,6 +135,8 @@ fn preset_meta_empty_label_uses_default() {
             encoders: Vec::new(),
             analog: Vec::new(),
             defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
         })
         .ok();
 
