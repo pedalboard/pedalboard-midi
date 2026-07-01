@@ -7,6 +7,41 @@ pub const LED_OUTPUTS: usize = NUM_LEDS + NUM_LED_RINGS * LEDS_PER_RING;
 
 pub type LedData = [RGB8; LED_OUTPUTS];
 
+/// Map preset index to Mode LED color for bank indication.
+pub fn preset_color(index: u8) -> RGB8 {
+    const COLORS: [RGB8; 8] = [
+        RGB8 { r: 0, g: 255, b: 0 }, // 0: green
+        RGB8 { r: 0, g: 0, b: 255 }, // 1: blue
+        RGB8 { r: 255, g: 0, b: 0 }, // 2: red
+        RGB8 {
+            r: 255,
+            g: 255,
+            b: 0,
+        }, // 3: yellow
+        RGB8 {
+            r: 0,
+            g: 255,
+            b: 255,
+        }, // 4: cyan
+        RGB8 {
+            r: 255,
+            g: 0,
+            b: 255,
+        }, // 5: magenta
+        RGB8 {
+            r: 255,
+            g: 128,
+            b: 0,
+        }, // 6: orange
+        RGB8 {
+            r: 255,
+            g: 255,
+            b: 255,
+        }, // 7: white
+    ];
+    COLORS[(index as usize) % COLORS.len()]
+}
+
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub enum Led {

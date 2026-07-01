@@ -33,7 +33,7 @@ mod app {
     use embedded_hal::digital::OutputPin;
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
-    use pedalboard_midi::leds::LedEvent;
+    use pedalboard_midi::leds::{Led, LedEvent};
     use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
     use rtic_sync::make_channel;
@@ -480,6 +480,12 @@ mod app {
                     }
                 }
             });
+            led_sender
+                .try_send(LedEvent::SetSingle(
+                    Led::Mode,
+                    Some(pedalboard_midi::leds::preset_color(preset_idx)),
+                ))
+                .ok();
         }
 
         loop {
@@ -587,6 +593,12 @@ mod app {
                     let led_dirty = result.led_dirty || !result.system.is_empty();
                     if !result.system.is_empty() {
                         preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                        led_sender
+                            .try_send(LedEvent::SetSingle(
+                                Led::Mode,
+                                Some(pedalboard_midi::leds::preset_color(preset_idx)),
+                            ))
+                            .ok();
                     }
                     if !pe_midi_steps.is_empty() || led_dirty {
                         // Render LEDs from PE state (bypass OpenDeck LED engine)
