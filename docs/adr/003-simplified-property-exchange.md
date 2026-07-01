@@ -104,10 +104,19 @@ safe (0x00–0x7F). Only the mcoded7-encoded body section can represent 8-bit da
 
 ## When to revisit
 
-DAW integration is the most likely trigger for full MIDI-CI compliance. If DAWs
-like Bitwig, Reaper, or Logic add MIDI-CI PE support for auto-discovering
-controller presets and parameter mappings, implementing the spec would provide
-real value — zero-config studio setup without manual MIDI learn.
+Two concrete triggers for evolving the protocol:
+
+**1. DAW integration.** If DAWs like Bitwig, Reaper, or Logic add MIDI-CI PE
+support for auto-discovering controller presets and parameter mappings,
+implementing the spec would provide real value — zero-config studio setup
+without manual MIDI learn.
+
+**2. Sushi (ELK Audio OS) integration.** The CM5 runs Sushi for audio processing.
+The pedalboard needs to control Sushi — switch audio presets, map encoders to
+plugin parameters, sync state between MIDI and audio layers. The bridge sits
+between both and could translate PE resources to Sushi's gRPC API. This may
+drive extension of the resource scheme (e.g. resources for available plugins,
+parameter lists, audio preset recall) without requiring full MIDI-CI compliance.
 
 Migration path: wrap existing byte resource IDs in JSON headers at the protocol
 crate level. Firmware internal logic (persist, apply config) stays unchanged —
