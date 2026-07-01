@@ -35,6 +35,7 @@ mod app {
     use embedded_hal_bus::util::AtomicCell;
     use pedalboard_midi::leds::{Led, LedEvent};
     use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
+    use pedalboard_midi::system_status::SystemStatus;
     use rtic_sync::channel::{Receiver, Sender, TrySendError};
     use rtic_sync::make_channel;
 
@@ -150,6 +151,7 @@ mod app {
     const LED_CAPACITY: usize = 4;
     const DIN_THRU_CAPACITY: usize = 8;
     const PERSIST_CAPACITY: usize = pedalboard_midi::opendeck_handler::PERSIST_CAPACITY;
+    const SYSTEM_STATUS_CAPACITY: usize = 1;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -318,6 +320,8 @@ mod app {
             pedalboard_midi::opendeck_handler::PersistCommand,
             PERSIST_CAPACITY
         );
+        let (system_status_sender, system_status_receiver) =
+            make_channel!(SystemStatus, SYSTEM_STATUS_CAPACITY);
 
         blink::spawn().unwrap();
         led_out::spawn(led_receiver).unwrap();
@@ -329,8 +333,13 @@ mod app {
             persist_sender.clone(),
         )
         .unwrap();
-        display_out::spawn(display_receiver, display_event_receiver).unwrap();
-        persist::spawn(persist_receiver).unwrap();
+        display_out::spawn(
+            display_receiver,
+            display_event_receiver,
+            system_status_receiver,
+        )
+        .unwrap();
+        persist::spawn(persist_receiver, system_status_sender).unwrap();
         midi_clock::spawn(
             usb_sender.clone(),
             din_thru_sender.clone(),
@@ -1022,6 +1031,7 @@ mod app {
             pedalboard_midi::opendeck_handler::PersistCommand,
             PERSIST_CAPACITY,
         >,
+        mut status_sender: Sender<'static, SystemStatus, SYSTEM_STATUS_CAPACITY>,
     ) {
         let eeprom = ctx.local.eeprom_i2c;
         info!("config persistence: loading from flash");
@@ -1163,6 +1173,8 @@ mod app {
                         }
                     }
                     PersistCommand::EraseAll => {
+                        status_sender.try_send(SystemStatus::FactoryReset).ok();
+                        Mono::delay(200.millis()).await;
                         store.erase_all().await;
                         // Clear EEPROM runtime state
                         let buf = pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
@@ -1179,9 +1191,13 @@ mod app {
                         cortex_m::peripheral::SCB::sys_reset();
                     }
                     PersistCommand::Reboot => {
+                        status_sender.try_send(SystemStatus::Rebooting).ok();
+                        Mono::delay(1000.millis()).await;
                         cortex_m::peripheral::SCB::sys_reset();
                     }
                     PersistCommand::Bootloader => {
+                        status_sender.try_send(SystemStatus::Bootloader).ok();
+                        Mono::delay(1000.millis()).await;
                         rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
                     }
                 }
@@ -1258,6 +1274,7 @@ mod app {
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
         mut event_receiver: Receiver<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
+        mut system_status_receiver: Receiver<'static, SystemStatus, SYSTEM_STATUS_CAPACITY>,
     ) {
         use crate::hmi::display::DisplayLocation;
         use heapless::String;
@@ -1288,6 +1305,15 @@ mod app {
 
         loop {
             let mut show_overlay = false;
+
+            // System status takes priority — render and stop processing
+            if let Ok(status) = system_status_receiver.try_recv() {
+                displays.draw_system_status(status);
+                // Hold display until reset occurs (persist task will reset after delay)
+                loop {
+                    Mono::delay(100.millis()).await;
+                }
+            }
 
             // Check if SysEx session switched mode
             let sysex_active = ctx.shared.opendeck.lock(|od| od.config.sysex_enabled());

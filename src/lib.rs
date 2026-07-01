@@ -38,4 +38,5 @@ pub mod opendeck_handler;
 pub mod pe_handler;
 #[cfg(target_arch = "arm")]
 pub mod storage;
+pub mod system_status;
 pub mod views;

@@ -136,6 +136,31 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             display.flush().ok();
         }
     }
+
+    pub fn draw_system_status(&mut self, status: pedalboard_midi::system_status::SystemStatus) {
+        let label = status.label();
+        let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+        let textbox_style = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Center)
+            .vertical_alignment(VerticalAlignment::Middle)
+            .build();
+        let bounds = Rectangle::new(Point::zero(), Size::new(128, 128));
+
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            TextBox::with_textbox_style(label, bounds, character_style, textbox_style)
+                .draw(display)
+                .ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            TextBox::with_textbox_style(label, bounds, character_style, textbox_style)
+                .draw(display)
+                .ok();
+            display.flush().ok();
+        }
+    }
 }
 
 struct Display<I2C> {
