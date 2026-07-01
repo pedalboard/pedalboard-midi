@@ -1,5 +1,5 @@
 
-.PHONY: help clean run build lint attach flash-probe flash-bridge uf2 deploy release log-midi device reboot
+.PHONY: help clean run build lint attach flash flash-probe uf2 monitor reboot deploy release
 
 .DEFAULT_GOAL := help
 
@@ -24,29 +24,19 @@ lint: ## lint source code
 attach: ## attach to the running program
 	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
-flash: uf2 ## flash firmware via bridge DFU (over network)
-	@echo "Entering bootloader..."
-	cd ../pedalboard-cli && cargo run -q -- bootloader
-	@echo "Mounting UF2 drive..."
-	ssh laenzi@cm5-dev.home "until [ -b /dev/sda1 ]; do sleep 0.5; done; sudo mkdir -p /mnt/uf2; sudo mount -o uid=1000,gid=1000 /dev/sda1 /mnt/uf2"
-	scp target/thumbv6m-none-eabi/release/pedalboard-midi.uf2 laenzi@cm5-dev.home:/mnt/uf2/
-	ssh laenzi@cm5-dev.home "sync"
-	@echo "Flashed. Bridge will auto-reconnect."
+flash: uf2 ## flash firmware via CLI (bootloader + HTTP upload to bridge)
+	cd ../pedalboard-cli && cargo run -q $(PROTOCOL_PATCH) -- flash \
+		../pedalboard-midi/target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 
-flash-probe: build ## flash via debug probe (SWD, development only)
-	probe-rs download --chip RP2040 --protocol swd target/thumbv6m-none-eabi/release/pedalboard-midi
-	probe-rs reset --chip RP2040 --protocol swd
+flash-probe: build ## flash via debug probe on CM5 (SWD)
+	scp target/thumbv6m-none-eabi/release/pedalboard-midi laenzi@cm5-dev.home:/tmp/
+	ssh laenzi@cm5-dev.home "probe-rs download --chip RP2040 --protocol swd /tmp/pedalboard-midi"
 
-device:
-	$(eval DEVICE := $(shell amidi -l | grep pedalboard |  awk '{ print $$2 }'))
+monitor: ## monitor MIDI output in real-time
+	cd ../pedalboard-cli && cargo run -q $(PROTOCOL_PATCH) -- monitor
 
-reboot: device ## reboot the RP2040
-	-aconnect -d 128:1 16:0
-	amidi -S 'F0 00 53 43 00 00 7F F7' -p "$(DEVICE)"
-	-aconnect 128:1 16:0
-
-log-midi: device ## log the midi traffic coming from USB
-	@amidi -p "$(DEVICE)" -d
+reboot: ## reboot the device
+	cd ../pedalboard-cli && cargo run -q $(PROTOCOL_PATCH) -- reboot
 
 uf2: ## build uf2
 	cargo build --release $(PATCHES)
