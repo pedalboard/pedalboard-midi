@@ -667,11 +667,13 @@ mod app {
                 led_sender.try_send(evt).ok();
             }
             // Send MIDI outside the lock
+            let mut midi_sent = false;
             if pe_active {
                 use pedalboard_midi::pe_handler::MidiStep;
                 for step in &pe_midi_steps {
                     match step {
                         MidiStep::Send(raw, len) => {
+                            midi_sent = true;
                             if din_enabled {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
@@ -692,6 +694,7 @@ mod app {
                 }
             }
             for (raw, len) in &all_sent {
+                midi_sent = true;
                 // DIN MIDI out (only if enabled)
                 if din_enabled {
                     if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
@@ -711,6 +714,16 @@ mod app {
                 if let Ok(packet) = packet {
                     sender.try_send(packet).ok();
                 }
+            }
+            // Flash Mon LED for outgoing MIDI activity
+            if midi_sent {
+                led_sender
+                    .try_send(LedEvent::Flash(
+                        Led::Mon,
+                        smart_leds::RGB8::new(0, 64, 0),
+                        5,
+                    ))
+                    .ok();
             }
             // Send component info SysEx (chunked into 3-byte USB MIDI packets)
             if let Some((ci_buf, ci_len)) = component_info_buf {
