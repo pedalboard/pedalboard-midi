@@ -842,6 +842,32 @@ mod app {
                                     );
 
                                 if data.resource
+                                    == pedalboard_protocol::config::SYSTEM_COMMAND_RESOURCE
+                                {
+                                    // System command
+                                    if dec_len > 0 {
+                                        if let Some(cmd) =
+                                            pedalboard_protocol::config::SystemCommand::from_byte(
+                                                decoded[0],
+                                            )
+                                        {
+                                            use pedalboard_midi::opendeck_handler::PersistCommand;
+                                            debug!("PE System command: {}", cmd as u8);
+                                            let persist_cmd = match cmd {
+                                                pedalboard_protocol::config::SystemCommand::Reboot => {
+                                                    PersistCommand::Reboot
+                                                }
+                                                pedalboard_protocol::config::SystemCommand::Bootloader => {
+                                                    PersistCommand::Bootloader
+                                                }
+                                                pedalboard_protocol::config::SystemCommand::FactoryReset => {
+                                                    PersistCommand::EraseAll
+                                                }
+                                            };
+                                            ctx.local.persist_sender.try_send(persist_cmd).ok();
+                                        }
+                                    }
+                                } else if data.resource
                                     == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
                                 {
                                     // Global config — save via persist task (applied on load)
