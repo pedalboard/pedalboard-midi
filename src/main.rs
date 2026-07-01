@@ -396,16 +396,16 @@ mod app {
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck, global_config])]
     fn midi_in(mut ctx: midi_in::Context) {
         use midi2::prelude::*;
 
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
+                let thru = ctx.shared.global_config.lock(|gc| gc.din_to_usb_thru);
                 let din_to_usb = ctx.shared.opendeck.lock(|opendeck| {
                     let mut buf = [0x00u8; 3];
                     m.render_slice(&mut buf);
-                    let thru = opendeck.din_to_usb_thru();
                     if let Ok(m) = BytesMessage::try_from(&buf[..]) {
                         opendeck.handle_midi_input(&m);
                     }
@@ -750,7 +750,7 @@ mod app {
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck,pe_config]
+        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -783,11 +783,12 @@ mod app {
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
                 if let Ok(m) = midi2::BytesMessage::try_from(packet.payload_bytes()) {
-                    let (usb_to_din, usb_to_usb) = ctx.shared.opendeck.lock(|opendeck| {
-                        let to_din = opendeck.usb_to_din_thru();
-                        let to_usb = opendeck.usb_to_usb_thru();
+                    let (usb_to_din, usb_to_usb) = ctx
+                        .shared
+                        .global_config
+                        .lock(|gc| (gc.usb_to_din_thru, gc.usb_to_usb_thru));
+                    ctx.shared.opendeck.lock(|opendeck| {
                         opendeck.handle_midi_input(&m);
-                        (to_din, to_usb)
                     });
                     // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
                     ctx.local
