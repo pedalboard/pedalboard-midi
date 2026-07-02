@@ -251,9 +251,9 @@ mod app {
         // ADC for analog input
         let adc = ctx.local.adc.write(Adc::new(ctx.device.ADC, &mut resets));
 
-        let exp_a_pin = AdcPin::new(pins.gpio27.into_floating_input()).unwrap();
-        let exp_b_pin = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
-        let exp = ExpressionPedals::new_direct(adc, exp_a_pin, exp_b_pin);
+        let exp2_pin = AdcPin::new(pins.gpio27.into_floating_input()).unwrap();
+        let exp1_pin = AdcPin::new(pins.gpio28.into_floating_input()).unwrap();
+        let exp = ExpressionPedals::new_direct(adc, exp2_pin, exp1_pin);
         let inputs = Inputs::new(vol, gain, buttons, exp);
 
         // Configure PIO for Ws2812 LEDs

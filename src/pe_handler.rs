@@ -325,13 +325,11 @@ impl PeHandler {
                     self.apply_state(&state);
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
-                InputEvent::ExpressionPedalA(raw_adc) => {
-                    // PedalA (GPIO27) = Exp2 in YAML (analog index 0)
+                InputEvent::ExpressionPedal2(raw_adc) => {
                     let r = engine::process_analog(preset, 0, *raw_adc, cal.exp2_min, cal.exp2_max);
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
-                InputEvent::ExpressionPedalB(raw_adc) => {
-                    // PedalB (GPIO28) = Exp1 in YAML (analog index 1)
+                InputEvent::ExpressionPedal1(raw_adc) => {
                     let r = engine::process_analog(preset, 1, *raw_adc, cal.exp1_min, cal.exp1_max);
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }

@@ -74,8 +74,8 @@ impl<P: InputPin> Button<P> {
 
 pub struct ExpressionPedals {
     sample_rate_reduction: u8,
-    exp_a: ExpressionPedal,
-    exp_b: ExpressionPedal,
+    exp2: ExpressionPedal,
+    exp1: ExpressionPedal,
     adc: &'static mut rp2040_hal::adc::Adc,
     pin_a: AdcPin<
         rp2040_hal::gpio::Pin<
@@ -113,8 +113,8 @@ impl ExpressionPedals {
     ) -> Self {
         ExpressionPedals {
             sample_rate_reduction: 0,
-            exp_a: ExpressionPedal::new(),
-            exp_b: ExpressionPedal::new(),
+            exp2: ExpressionPedal::new(),
+            exp1: ExpressionPedal::new(),
             adc,
             pin_a,
             pin_b,
@@ -129,7 +129,7 @@ impl ExpressionPedals {
 
         let val_a: u16 = self.adc.read(&mut self.pin_a).unwrap_or(0);
         let val_b: u16 = self.adc.read(&mut self.pin_b).unwrap_or(0);
-        (self.exp_a.update(val_a), self.exp_b.update(val_b))
+        (self.exp2.update(val_a), self.exp1.update(val_b))
     }
 }
 
@@ -239,7 +239,7 @@ where
 
     pub fn update(&mut self) -> heapless::Vec<InputEvent, 14> {
         let mut events = heapless::Vec::new();
-        let (exp_a, exp_b) = self.exp.update();
+        let (exp2, exp1) = self.exp.update();
 
         if let Some(e) = self.buttons.a.update().map(InputEvent::ButtonA) {
             events.push(e).ok();
@@ -265,10 +265,10 @@ where
         if let Some(e) = self.gain_rotary.button.update().map(InputEvent::GainButton) {
             events.push(e).ok();
         }
-        if let Some(e) = exp_a.map(InputEvent::ExpressionPedalA) {
+        if let Some(e) = exp2.map(InputEvent::ExpressionPedal2) {
             events.push(e).ok();
         }
-        if let Some(e) = exp_b.map(InputEvent::ExpressionPedalB) {
+        if let Some(e) = exp1.map(InputEvent::ExpressionPedal1) {
             events.push(e).ok();
         }
         events

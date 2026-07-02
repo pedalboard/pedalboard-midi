@@ -105,8 +105,8 @@ impl OpenDeck {
             InputEvent::ButtonD(a) => self.config.handle_button(5, a.into()),
             InputEvent::ButtonE(a) => self.config.handle_button(6, a.into()),
             InputEvent::ButtonF(a) => self.config.handle_button(7, a.into()),
-            InputEvent::ExpressionPedalA(value) => self.config.handle_analog(0, value),
-            InputEvent::ExpressionPedalB(value) => self.config.handle_analog(1, value),
+            InputEvent::ExpressionPedal2(value) => self.config.handle_analog(0, value),
+            InputEvent::ExpressionPedal1(value) => self.config.handle_analog(1, value),
         }
     }
 
@@ -131,8 +131,8 @@ impl OpenDeck {
             InputEvent::ButtonD(_) => (BlockId::Button, 5),
             InputEvent::ButtonE(_) => (BlockId::Button, 6),
             InputEvent::ButtonF(_) => (BlockId::Button, 7),
-            InputEvent::ExpressionPedalA(_) => (BlockId::Analog, 0),
-            InputEvent::ExpressionPedalB(_) => (BlockId::Analog, 1),
+            InputEvent::ExpressionPedal2(_) => (BlockId::Analog, 0),
+            InputEvent::ExpressionPedal1(_) => (BlockId::Analog, 1),
         };
         let renderer = OpenDeckRenderer::new(ValueSize::TwoBytes, buf);
         if let Ok(Some(sysex)) = renderer.render_component_info(block, index) {
@@ -402,7 +402,7 @@ mod tests {
     fn test_expression_pedal_produces_cc() {
         let mut od = test_config();
         let mut buf = [0u8; 6];
-        let mut messages = od.handle_human_input(InputEvent::ExpressionPedalA(2048));
+        let mut messages = od.handle_human_input(InputEvent::ExpressionPedal2(2048));
         let result = messages.next(&mut buf);
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
