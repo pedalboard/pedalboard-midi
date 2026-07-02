@@ -30,12 +30,12 @@ fn make_test_preset() -> Preset {
             mode: ButtonMode::default(),
             on_press: {
                 let mut v = Vec::new();
-                v.push(Action::note_on(60, 1)).ok();
+                v.push(Action::note_on(60, 1).unwrap()).ok();
                 v
             },
             on_release: {
                 let mut v = Vec::new();
-                v.push(Action::note_off(60, 1)).ok();
+                v.push(Action::note_off(60, 1).unwrap()).ok();
                 v
             },
             on_long_press: Vec::new(),
@@ -51,7 +51,7 @@ fn make_test_preset() -> Preset {
             mode: ButtonMode::default(),
             on_press: {
                 let mut v = Vec::new();
-                v.push(Action::cc(10, 127, 1)).ok();
+                v.push(Action::cc(10, 127, 1).unwrap()).ok();
                 v
             },
             on_release: Vec::new(),
@@ -72,7 +72,7 @@ fn make_test_preset() -> Preset {
             mode: ButtonMode::default(),
             on_press: {
                 let mut v = Vec::new();
-                v.push(Action::cc(11, 127, 1)).ok();
+                v.push(Action::cc(11, 127, 1).unwrap()).ok();
                 v
             },
             on_release: Vec::new(),
@@ -222,9 +222,9 @@ fn action_sequence_with_delay() {
             mode: ButtonMode::default(),
             on_press: {
                 let mut v = Vec::new();
-                v.push(Action::cc(1, 127, 1)).ok();
+                v.push(Action::cc(1, 127, 1).unwrap()).ok();
                 v.push(Action::Delay(100)).ok();
-                v.push(Action::cc(1, 0, 1)).ok();
+                v.push(Action::cc(1, 0, 1).unwrap()).ok();
                 v
             },
             on_release: Vec::new(),

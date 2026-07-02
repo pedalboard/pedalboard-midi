@@ -516,9 +516,9 @@ mod tests {
     fn make_test_preset() -> Preset {
         let mut buttons: Vec<ButtonConfig, MAX_BUTTONS> = Vec::new();
         let mut on_press: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_press.push(Action::note_on(60, 1)).ok();
+        on_press.push(Action::note_on(60, 1).unwrap()).ok();
         let mut on_release: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_release.push(Action::note_off(60, 1)).ok();
+        on_release.push(Action::note_off(60, 1).unwrap()).ok();
         buttons
             .push(ButtonConfig {
                 label: Label::new(),
@@ -532,9 +532,11 @@ mod tests {
             .ok();
 
         let mut on_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_press_b.push(Action::cc(10, 127, 1)).ok();
+        on_press_b.push(Action::cc(10, 127, 1).unwrap()).ok();
         let mut on_long_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_long_press_b.push(Action::program_change(5, 1)).ok();
+        on_long_press_b
+            .push(Action::program_change(5, 1).unwrap())
+            .ok();
         buttons
             .push(ButtonConfig {
                 label: Label::new(),
@@ -761,7 +763,7 @@ mod tests {
         let mut buttons_p1: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
         // A: Toggle
         let mut on_press_a: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_press_a.push(Action::cc(0, 127, 1)).ok();
+        on_press_a.push(Action::cc(0, 127, 1).unwrap()).ok();
         buttons_p1
             .push(ButtonConfig {
                 label: Label::new(),
@@ -900,7 +902,7 @@ mod tests {
         }
         // D (3): Toggle + on_long_press(prev)
         let mut on_press_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_press_d.push(Action::cc(0, 127, 3)).ok();
+        on_press_d.push(Action::cc(0, 127, 3).unwrap()).ok();
         let mut on_long_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
         on_long_d.push(Action::PresetPrev).ok();
         buttons_p1
