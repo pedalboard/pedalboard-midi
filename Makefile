@@ -18,6 +18,9 @@ PATCHES := $(OPENDECK_PATCH) $(PROTOCOL_PATCH)
 build: ## build
 	cargo build --release $(PATCHES)
 
+build-no-opendeck: ## build without OpenDeck (PE-only)
+	cargo build --release --no-default-features $(PROTOCOL_PATCH)
+
 lint: ## lint source code
 	cargo clippy --all-features $(PATCHES)
 

@@ -1,6 +1,7 @@
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Animation as RingAnim, Modifier, Renderer, RingAnimation};
 use crate::leds::{Led, LedData, LedRings, Leds};
+use crate::persist::{PersistCommand, PERSIST_CAPACITY};
 use core::cell::RefCell;
 use midi2::BytesMessage;
 use opendeck::button::handler::Action;
@@ -11,19 +12,12 @@ use opendeck::led::ControlType;
 use rtic_sync::channel::Sender;
 use smart_leds::RGB8;
 
-pub const PERSIST_CAPACITY: usize = 32;
-
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum PersistCommand {
-    Save(u8, u8, u8, u16),
-    SavePreset(u8, heapless::Vec<u8, { crate::MAX_PRESET_SIZE }>),
-    SaveActivePreset(u8),
-    SaveState(heapless::Vec<u8, 128>),
-    EraseAll,
-    Reboot,
-    Bootloader,
-}
+/// Result of `OpenDeck::process_events`: (MIDI messages, ring animations, component info SysEx).
+pub type ProcessEventsResult = (
+    heapless::Vec<([u8; 6], usize), 24>,
+    [RingAnimation; 8],
+    Option<([u8; 16], usize)>,
+);
 
 pub struct PedalboardHandler {
     persist_sender: RefCell<Sender<'static, PersistCommand, PERSIST_CAPACITY>>,
@@ -140,6 +134,38 @@ impl OpenDeck {
         } else {
             None
         }
+    }
+
+    /// Process a batch of input events: generate MIDI, update LEDs, emit component info.
+    ///
+    /// Returns (midi_messages, ring_animations, component_info_sysex).
+    pub fn process_events(&mut self, preset_idx: u8, events: &[InputEvent]) -> ProcessEventsResult {
+        use midi2::Data;
+        self.config.set_active_preset(preset_idx as usize);
+        let mut all_sent: heapless::Vec<([u8; 6], usize), 24> = heapless::Vec::new();
+        let mut component_info_buf: Option<([u8; 16], usize)> = None;
+        for event in events {
+            let mut ci_buf = [0u8; 16];
+            if let Some(len) = self.component_info(event, &mut ci_buf) {
+                component_info_buf = Some((ci_buf, len));
+            }
+            let mut messages = self.handle_human_input(*event);
+            let mut buf = [0x00u8; 6];
+            while let Ok(Some(m)) = messages.next(&mut buf) {
+                let data = m.data();
+                let len = data.len();
+                if len > 0 && len <= 6 {
+                    let mut raw = [0u8; 6];
+                    raw[..len].copy_from_slice(data);
+                    all_sent.push((raw, len)).ok();
+                }
+            }
+        }
+        for (raw, len) in &all_sent {
+            self.notify_local_midi(&raw[..*len]);
+        }
+        let anims = self.ring_animations();
+        (all_sent, anims, component_info_buf)
     }
 
     /// Process local MIDI and update LED state.

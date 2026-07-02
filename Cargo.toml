@@ -47,7 +47,7 @@ embedded-midi = { git = "https://github.com/rust-midi/embedded-midi.git", branch
 usbd-midi = { version = "0.5.1" }
 midi-types = { version = "0.2.0", features = ["defmt"] }
 # midi crates
-opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main" }
+opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", optional = true }
 pedalboard-protocol = { git = "https://github.com/pedalboard/pedalboard-protocol", branch = "main" }
 postcard = { version = "1.1.1", default-features = false }
 midi2 = { version = "0.11", default-features = false, features = [
@@ -72,6 +72,8 @@ tinybmp = "0.7.0"
 [dev-dependencies]
 
 [features]
+default = ["opendeck"]
+opendeck = ["dep:opendeck"]
 
 # cargo build/run
 [profile.dev]
