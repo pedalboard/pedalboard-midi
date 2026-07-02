@@ -104,6 +104,7 @@ fn make_test_preset() -> Preset {
         defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
     }
 }
 
@@ -244,6 +245,7 @@ fn action_sequence_with_delay() {
         defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
     };
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();

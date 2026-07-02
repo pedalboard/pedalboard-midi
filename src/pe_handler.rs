@@ -345,6 +345,49 @@ impl PeHandler {
         }
     }
 
+    /// Process incoming MIDI against preset triggers. Returns MIDI steps + system actions.
+    pub fn process_incoming_midi(&mut self, preset: &Preset, raw: &[u8]) -> HandleResult {
+        use pedalboard_protocol::engine::process_triggers;
+
+        let mut midi = heapless::Vec::new();
+        let mut system = heapless::Vec::new();
+        let mut led_dirty = false;
+
+        if raw.len() >= 2 {
+            let mut state = pedalboard_protocol::state::PresetState {
+                button_active: self.button_active,
+                encoder_values: self.encoder_values,
+                cycle_index: self.cycle_index,
+            };
+            let data2 = if raw.len() >= 3 { raw[2] } else { 0 };
+            let result = process_triggers(&mut state, preset, raw[0], raw[1], data2);
+            self.button_active = state.button_active;
+            self.cycle_index = state.cycle_index;
+
+            for step in &result.midi {
+                let _ = match step {
+                    pedalboard_protocol::engine::ActionStep::Send(msg) => {
+                        midi.push(MidiStep::Send(msg.data, msg.len))
+                    }
+                    pedalboard_protocol::engine::ActionStep::Delay(ms) => {
+                        midi.push(MidiStep::Delay(*ms))
+                    }
+                };
+            }
+            for s in &result.system {
+                system.push(*s).ok();
+            }
+            led_dirty = result.led_dirty;
+        }
+
+        HandleResult {
+            midi,
+            system,
+            display: heapless::Vec::new(),
+            led_dirty,
+        }
+    }
+
     /// Compute LED animations for all 8 rings based on current state + preset config.
     pub fn led_state(&self, preset: &Preset) -> LedAnimations {
         let mut anims = [RingAnimation::off(); 8];
@@ -604,6 +647,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         }
     }
 
@@ -834,6 +878,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         };
 
         // P2: B also has long_press (to switch back)
@@ -871,6 +916,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         };
 
         let mut handler = PeHandler::new();
@@ -993,6 +1039,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         };
 
         // P2: all momentary, D(3) has on_long_press(prev)
@@ -1024,6 +1071,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         };
 
         let mut handler = PeHandler::new();
@@ -1233,6 +1281,7 @@ mod tests {
             defaults: Default::default(),
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
         }
     }
 

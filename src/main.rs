@@ -629,6 +629,11 @@ mod app {
                                         *active_preset - 1
                                     };
                                 }
+                                SystemAction::PresetSelect(idx) => {
+                                    if *idx < active_count {
+                                        *active_preset = *idx;
+                                    }
+                                }
                             }
                         });
                     }
@@ -1611,6 +1616,14 @@ mod app {
                                         "<< Prev"
                                     } else {
                                         presets[prev].name.as_str()
+                                    }
+                                }
+                                SystemAction::PresetSelect(idx) => {
+                                    let i = *idx as usize;
+                                    if i < presets.len() && !presets[i].name.is_empty() {
+                                        presets[i].name.as_str()
+                                    } else {
+                                        "Select"
                                     }
                                 }
                             };
