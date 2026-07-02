@@ -557,9 +557,17 @@ mod app {
                 // PE mode: only lock pe_config when needed
                 let need_tick = !events.is_empty() || pe.any_active();
                 if need_tick {
+                    let cal = ctx.shared.global_config.lock(|gc| {
+                        pedalboard_midi::pe_handler::AdcCalibration {
+                            exp1_min: gc.exp1_min,
+                            exp1_max: gc.exp1_max,
+                            exp2_min: gc.exp2_min,
+                            exp2_max: gc.exp2_max,
+                        }
+                    });
                     let result = ctx.shared.pe_config.lock(|cfg| {
                         let preset = &cfg.presets[preset_idx as usize];
-                        pe.handle_events(preset, &events)
+                        pe.handle_events(preset, &events, &cal)
                     });
                     for step in &result.midi {
                         pe_midi_steps.push(step.clone()).ok();

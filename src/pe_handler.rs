@@ -16,8 +16,25 @@ use pedalboard_protocol::state::{PresetState, PresetStateStore};
 use smart_leds::RGB8;
 
 const NUM_BUTTONS: usize = 6;
-/// ADC upper trim — hardware doesn't reach full 4095.
-const ADC_MAX_TRIMMED: u16 = 3750;
+
+/// ADC calibration values per expression pedal (loaded from GlobalConfig).
+pub struct AdcCalibration {
+    pub exp1_min: u16,
+    pub exp1_max: u16,
+    pub exp2_min: u16,
+    pub exp2_max: u16,
+}
+
+impl Default for AdcCalibration {
+    fn default() -> Self {
+        Self {
+            exp1_min: 0,
+            exp1_max: 3750,
+            exp2_min: 0,
+            exp2_max: 3750,
+        }
+    }
+}
 
 // Re-export types used by main.rs
 pub use pedalboard_protocol::engine::{ActionStep, DisplayEvent, DisplaySide, SystemAction};
@@ -169,7 +186,12 @@ impl PeHandler {
     }
 
     /// Process input events against a PE preset. Returns MIDI messages and system actions.
-    pub fn handle_events(&mut self, preset: &Preset, events: &[InputEvent]) -> HandleResult {
+    pub fn handle_events(
+        &mut self,
+        preset: &Preset,
+        events: &[InputEvent],
+        cal: &AdcCalibration,
+    ) -> HandleResult {
         let mut midi = heapless::Vec::new();
         let mut system = heapless::Vec::new();
         let mut display = heapless::Vec::new();
@@ -304,13 +326,11 @@ impl PeHandler {
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 InputEvent::ExpressionPedalA(raw_adc) => {
-                    let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
-                    let r = engine::process_analog(preset, 0, adc, ADC_MAX_TRIMMED);
+                    let r = engine::process_analog(preset, 0, *raw_adc, cal.exp1_min, cal.exp1_max);
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 InputEvent::ExpressionPedalB(raw_adc) => {
-                    let adc = (*raw_adc).min(ADC_MAX_TRIMMED);
-                    let r = engine::process_analog(preset, 1, adc, ADC_MAX_TRIMMED);
+                    let r = engine::process_analog(preset, 1, *raw_adc, cal.exp2_min, cal.exp2_max);
                     self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 _ => {}
@@ -576,7 +596,11 @@ mod tests {
     fn on_press_fires_immediately_without_long_press() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert_eq!(r.midi.len(), 1);
         assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
     }
@@ -585,7 +609,11 @@ mod tests {
     fn on_release_fires_on_deactivate() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert_eq!(r.midi.len(), 1);
         assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
     }
@@ -594,7 +622,11 @@ mod tests {
     fn long_press_button_defers_on_press() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(r.midi.is_empty());
     }
 
@@ -602,11 +634,19 @@ mod tests {
     fn long_press_short_release_fires_on_press() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..100 {
-            handler.handle_events(&preset, &[]);
+            handler.handle_events(&preset, &[], &AdcCalibration::default());
         }
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert_eq!(r.midi.len(), 1);
         assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
     }
@@ -615,10 +655,14 @@ mod tests {
     fn long_press_fires_on_long_press() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         let mut found = false;
         for _ in 0..501 {
-            let r = handler.handle_events(&preset, &[]);
+            let r = handler.handle_events(&preset, &[], &AdcCalibration::default());
             if !r.midi.is_empty() {
                 assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if d[..2] == [0xC0, 5]));
                 found = true;
@@ -632,11 +676,19 @@ mod tests {
     fn long_press_suppresses_on_press_on_release() {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset, &[]);
+            handler.handle_events(&preset, &[], &AdcCalibration::default());
         }
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert!(r.midi.is_empty());
     }
 
@@ -647,16 +699,24 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // Press and release quickly (short press)
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(handler.button_active[1]); // LED on while held
 
         // Tick a few times (not enough for long press)
         for _ in 0..100 {
-            handler.handle_events(&preset, &[]);
+            handler.handle_events(&preset, &[], &AdcCalibration::default());
         }
 
         // Release — should fire on_press AND clear LED
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert!(!handler.button_active[1]); // LED must be off after release
     }
 
@@ -668,12 +728,16 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // Hold button B
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(handler.button_active[1]); // visual feedback while held
 
         // Tick past threshold — long press fires
         for _ in 0..501 {
-            handler.handle_events(&preset, &[]);
+            handler.handle_events(&preset, &[], &AdcCalibration::default());
         }
 
         // Now simulate what poll_input does: switch_preset
@@ -691,9 +755,13 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // Hold button B and trigger long-press to switch to preset 1
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset, &[]);
+            handler.handle_events(&preset, &[], &AdcCalibration::default());
         }
         handler.switch_preset(1, &preset, &preset);
 
@@ -795,22 +863,38 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // 1. Short-press A on P1 (toggle ON)
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonA(Edge::Activate)]);
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonA(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonA(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert!(handler.button_active[0]); // toggled ON
 
         // 2. Long-press B to switch to P2
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset_p1, &[]);
+            handler.handle_events(&preset_p1, &[], &AdcCalibration::default());
         }
         // Simulate poll_input: switch_preset
         handler.switch_preset(1, &preset_p1, &preset_p2);
 
         // 3. Long-press B to switch back to P1
-        handler.handle_events(&preset_p2, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset_p2,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset_p2, &[]);
+            handler.handle_events(&preset_p2, &[], &AdcCalibration::default());
         }
         handler.switch_preset(0, &preset_p2, &preset_p1);
 
@@ -933,33 +1017,53 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // 1. Short-press D on P1 (toggle ON). D has on_long_press so it defers.
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Activate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonD(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..50 {
-            handler.handle_events(&preset_p1, &[]);
+            handler.handle_events(&preset_p1, &[], &AdcCalibration::default());
         }
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonD(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         assert!(
             handler.button_active[3],
             "D should be toggled ON after short press"
         );
 
         // 2. Long-press F on P1 (switch to P2)
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonF(Edge::Activate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonF(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset_p1, &[]);
+            handler.handle_events(&preset_p1, &[], &AdcCalibration::default());
         }
         handler.switch_preset(1, &preset_p1, &preset_p2);
 
         // 3. Long-press D on P2 (switch back to P1)
-        handler.handle_events(&preset_p2, &[InputEvent::ButtonD(Edge::Activate)]);
+        handler.handle_events(
+            &preset_p2,
+            &[InputEvent::ButtonD(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         for _ in 0..501 {
-            handler.handle_events(&preset_p2, &[]);
+            handler.handle_events(&preset_p2, &[], &AdcCalibration::default());
         }
         handler.switch_preset(0, &preset_p2, &preset_p1);
 
         // Stale Deactivate arrives from the button D release on P2
         // (user releases D after the switch — this must NOT toggle D on P1)
-        handler.handle_events(&preset_p1, &[InputEvent::ButtonD(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset_p1,
+            &[InputEvent::ButtonD(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
 
         // D on P1 should still be toggled ON
         assert!(
@@ -973,7 +1077,11 @@ mod tests {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
         handler.encoder_values[0] = 64;
-        let r = handler.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::Vol(Pulse::Clockwise)],
+            &AdcCalibration::default(),
+        );
         assert_eq!(r.midi.len(), 1);
         assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
     }
@@ -983,7 +1091,11 @@ mod tests {
         let preset = make_test_preset();
         let mut handler = PeHandler::new();
         handler.encoder_values[0] = 64;
-        let r = handler.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::Vol(Pulse::Clockwise)],
+            &AdcCalibration::default(),
+        );
         assert_eq!(r.display.len(), 1);
         match &r.display[0] {
             DisplayEvent::EncoderOverlay { side, label, value } => {
@@ -1004,7 +1116,11 @@ mod tests {
         let mut handler = PeHandler::new();
 
         // Toggle button B on
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(handler.button_active[1]);
 
         // Switch to preset 1 — fresh state
@@ -1035,7 +1151,11 @@ mod tests {
     fn led_state_updates_after_switch() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(
             matches!(handler.led_state(&preset)[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
         );
@@ -1138,7 +1258,11 @@ mod tests {
     fn led_state_momentary_on_while_pressed() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         let leds = handler.led_state(&preset);
         assert!(
             matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 255, 0))
@@ -1149,8 +1273,16 @@ mod tests {
     fn led_state_momentary_off_after_release() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
-        handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         let leds = handler.led_state(&preset);
         assert!(
             matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), modifier: Modifier::Glow } if c == Rgb::new(0, 255, 0))
@@ -1161,19 +1293,31 @@ mod tests {
     fn led_state_toggle_alternates() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         let leds = handler.led_state(&preset);
         assert!(
             matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
         );
 
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Deactivate)],
+            &AdcCalibration::default(),
+        );
         let leds = handler.led_state(&preset);
         assert!(
             matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
         );
 
-        handler.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)]);
+        handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonB(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         let leds = handler.led_state(&preset);
         assert!(
             matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
@@ -1207,7 +1351,11 @@ mod tests {
     fn led_dirty_on_button_press() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)]);
+        let r = handler.handle_events(
+            &preset,
+            &[InputEvent::ButtonA(Edge::Activate)],
+            &AdcCalibration::default(),
+        );
         assert!(r.led_dirty);
     }
 
@@ -1215,7 +1363,7 @@ mod tests {
     fn led_not_dirty_when_idle() {
         let preset = make_led_preset();
         let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[]);
+        let r = handler.handle_events(&preset, &[], &AdcCalibration::default());
         assert!(!r.led_dirty);
     }
 }
