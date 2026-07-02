@@ -419,16 +419,29 @@ mod app {
                     let preset_idx = ctx.shared.active_preset.lock(|p| *p);
                     ctx.shared.pe_config.lock(|cfg| {
                         if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                            if let Some((btn_idx, fill)) =
-                                pedalboard_protocol::engine::process_incoming_cc(
-                                    preset, channel, cc, value,
-                                )
-                            {
+                            if let Some(result) = pedalboard_protocol::engine::process_incoming_cc(
+                                preset, channel, cc, value,
+                            ) {
                                 use pedalboard_midi::leds::LedEvent;
-                                ctx.local
-                                    .led_sender_midi
-                                    .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
-                                    .ok();
+                                use pedalboard_protocol::engine::ReactiveResult;
+                                let evt = match result {
+                                    ReactiveResult::Heatmap(idx, fill) => {
+                                        LedEvent::SetReactiveRing(idx, fill)
+                                    }
+                                    ReactiveResult::Trigger(idx, active) => {
+                                        let anim = if active {
+                                            Some(
+                                                pedalboard_midi::pe_handler::button_ring_animation(
+                                                    preset, idx,
+                                                ),
+                                            )
+                                        } else {
+                                            None
+                                        };
+                                        LedEvent::SetReactiveTrigger(idx, anim)
+                                    }
+                                };
+                                ctx.local.led_sender_midi.try_send(evt).ok();
                             }
                         }
                     });
@@ -710,19 +723,31 @@ mod app {
                             if let Ok(packet) = packet {
                                 sender.try_send(packet).ok();
                             }
-                            // Reactive LED: locally-generated CC also triggers heatmap
+                            // Reactive LED: locally-generated CC also triggers reactive rings
                             if *len >= 3 && (raw[0] & 0xF0) == 0xB0 {
                                 let channel = (raw[0] & 0x0F) + 1;
                                 ctx.shared.pe_config.lock(|cfg| {
                                     if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                                        if let Some((btn_idx, fill)) =
+                                        if let Some(result) =
                                             pedalboard_protocol::engine::process_incoming_cc(
                                                 preset, channel, raw[1], raw[2],
                                             )
                                         {
-                                            led_sender
-                                                .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
-                                                .ok();
+                                            use pedalboard_protocol::engine::ReactiveResult;
+                                            let evt = match result {
+                                                ReactiveResult::Heatmap(idx, fill) => {
+                                                    LedEvent::SetReactiveRing(idx, fill)
+                                                }
+                                                ReactiveResult::Trigger(idx, active) => {
+                                                    let anim = if active {
+                                                        Some(pedalboard_midi::pe_handler::button_ring_animation(preset, idx))
+                                                    } else {
+                                                        None
+                                                    };
+                                                    LedEvent::SetReactiveTrigger(idx, anim)
+                                                }
+                                            };
+                                            led_sender.try_send(evt).ok();
                                         }
                                     }
                                 });
@@ -833,15 +858,26 @@ mod app {
                         let preset_idx = ctx.shared.active_preset.lock(|p| *p);
                         ctx.shared.pe_config.lock(|cfg| {
                             if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                                if let Some((btn_idx, fill)) =
+                                if let Some(result) =
                                     pedalboard_protocol::engine::process_incoming_cc(
                                         preset, channel, cc, value,
                                     )
                                 {
-                                    ctx.local
-                                        .led_sender_usb
-                                        .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
-                                        .ok();
+                                    use pedalboard_protocol::engine::ReactiveResult;
+                                    let evt = match result {
+                                        ReactiveResult::Heatmap(idx, fill) => {
+                                            LedEvent::SetReactiveRing(idx, fill)
+                                        }
+                                        ReactiveResult::Trigger(idx, active) => {
+                                            let anim = if active {
+                                                Some(pedalboard_midi::pe_handler::button_ring_animation(preset, idx))
+                                            } else {
+                                                None
+                                            };
+                                            LedEvent::SetReactiveTrigger(idx, anim)
+                                        }
+                                    };
+                                    ctx.local.led_sender_usb.try_send(evt).ok();
                                 }
                             }
                         });

@@ -77,6 +77,8 @@ pub enum LedEvent {
     BpmTick,
     /// Reactive LED: set heatmap on button ring (index 0-5, fill 0-12).
     SetReactiveRing(usize, u8),
+    /// Reactive LED trigger: set button ring on (with animation) or off.
+    SetReactiveTrigger(usize, Option<RingAnimation>),
 }
 
 pub struct Leds {
@@ -158,6 +160,21 @@ impl Leds {
                         renderer: Renderer::Heatmap(fill),
                         modifier: Modifier::Solid,
                     });
+                }
+            }
+            LedEvent::SetReactiveTrigger(btn_idx, anim) => {
+                const BUTTON_RINGS: [LedRings; 6] = [
+                    LedRings::A,
+                    LedRings::B,
+                    LedRings::C,
+                    LedRings::D,
+                    LedRings::E,
+                    LedRings::F,
+                ];
+                if btn_idx < BUTTON_RINGS.len() {
+                    let ring_idx = BUTTON_RINGS[btn_idx] as usize;
+                    self.reactive[ring_idx] = true;
+                    self.ledrings[ring_idx].set(anim.unwrap_or(RingAnimation::off()));
                 }
             }
         }

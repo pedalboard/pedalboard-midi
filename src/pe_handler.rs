@@ -483,6 +483,34 @@ fn color_to_rgb(c: &Color) -> RGB8 {
     }
 }
 
+/// Build the "on" ring animation for a button from its preset config.
+/// Used by reactive trigger mode to show the button's configured color+animation.
+pub fn button_ring_animation(preset: &Preset, btn_idx: usize) -> RingAnimation {
+    use pedalboard_protocol::config::{LedAnimation, LedRenderer};
+    let Some(btn) = preset.buttons.get(btn_idx) else {
+        return RingAnimation::off();
+    };
+    let on_color = color_to_rgb(&btn.color.on);
+    if on_color == RGB8::default() {
+        return RingAnimation::off();
+    }
+    let modifier = match btn.color.animation {
+        LedAnimation::Solid => Modifier::Solid,
+        LedAnimation::Blink => Modifier::Blink,
+        LedAnimation::Pulse => Modifier::Pulse,
+        LedAnimation::Rotate => Modifier::Rotate,
+        LedAnimation::ColorCycle => Modifier::ColorCycle,
+    };
+    let rgb = rgb8_to_rgb(on_color);
+    let renderer = match btn.color.renderer {
+        LedRenderer::Solid => Renderer::Solid(rgb),
+        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
+        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
+        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
+    };
+    RingAnimation { renderer, modifier }
+}
+
 fn pulse_to_dir(pulse: Pulse) -> EncoderDirection {
     match pulse {
         Pulse::Clockwise => EncoderDirection::Clockwise,
