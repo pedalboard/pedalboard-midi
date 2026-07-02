@@ -153,7 +153,7 @@ mod app {
         persist_sender: Sender<'static, pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY>,
         eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
-    const USB_OUT_CAPACITY: usize = 96;
+    const USB_OUT_CAPACITY: usize = 128;
     const _: () = assert!(
         USB_OUT_CAPACITY >= pedalboard_midi::MIN_USB_OUT_CAPACITY,
         "USB_OUT_CAPACITY too small for MAX_PRESET_SIZE PE replies"
@@ -395,7 +395,7 @@ mod app {
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck, global_config])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck, global_config, pe_config, active_preset])]
     fn midi_in(mut ctx: midi_in::Context) {
         #[cfg(feature = "opendeck")]
         use midi2::prelude::*;
@@ -411,6 +411,28 @@ mod app {
                         opendeck.handle_midi_input(&m);
                     }
                 });
+                // Reactive LED: check incoming CC against active preset's listen_cc bindings
+                if (buf[0] & 0xF0) == 0xB0 {
+                    let channel = (buf[0] & 0x0F) + 1;
+                    let cc = buf[1];
+                    let value = buf[2];
+                    let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                    ctx.shared.pe_config.lock(|cfg| {
+                        if let Some(preset) = cfg.presets.get(preset_idx as usize) {
+                            if let Some((btn_idx, fill)) =
+                                pedalboard_protocol::engine::process_incoming_cc(
+                                    preset, channel, cc, value,
+                                )
+                            {
+                                use pedalboard_midi::leds::LedEvent;
+                                ctx.local
+                                    .led_sender_midi
+                                    .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
+                                    .ok();
+                            }
+                        }
+                    });
+                }
                 let din_to_usb = if thru { Some(buf) } else { None };
                 // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
                 ctx.local
@@ -742,8 +764,8 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 256>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config]
+        local = [ buf: Vec::<u8, 350>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
+        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config,active_preset]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -785,6 +807,28 @@ mod app {
                     ctx.shared.opendeck.lock(|opendeck| {
                         opendeck.handle_midi_input(&m);
                     });
+                    // Reactive LED: check incoming CC against active preset's listen_cc bindings
+                    let raw = packet.payload_bytes();
+                    if raw.len() >= 3 && (raw[0] & 0xF0) == 0xB0 {
+                        let channel = (raw[0] & 0x0F) + 1;
+                        let cc = raw[1];
+                        let value = raw[2];
+                        let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                        ctx.shared.pe_config.lock(|cfg| {
+                            if let Some(preset) = cfg.presets.get(preset_idx as usize) {
+                                if let Some((btn_idx, fill)) =
+                                    pedalboard_protocol::engine::process_incoming_cc(
+                                        preset, channel, cc, value,
+                                    )
+                                {
+                                    ctx.local
+                                        .led_sender_usb
+                                        .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
+                                        .ok();
+                                }
+                            }
+                        });
+                    }
                     // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
                     ctx.local
                         .led_sender_usb

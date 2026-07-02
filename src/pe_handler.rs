@@ -528,6 +528,7 @@ mod tests {
                 on_release,
                 on_long_press: Vec::new(),
                 cycle_values: Vec::new(),
+                listen_cc: None,
             })
             .ok();
 
@@ -546,6 +547,7 @@ mod tests {
                 on_release: Vec::new(),
                 on_long_press: on_long_press_b,
                 cycle_values: Vec::new(),
+                listen_cc: None,
             })
             .ok();
 
@@ -773,6 +775,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         // B: Momentary + long_press = next_preset
@@ -787,6 +790,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: on_long_b.clone(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
 
@@ -811,6 +815,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         buttons_p2
@@ -822,6 +827,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: on_long_b,
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
 
@@ -897,6 +903,7 @@ mod tests {
                     on_release: heapless::Vec::new(),
                     on_long_press: heapless::Vec::new(),
                     cycle_values: heapless::Vec::new(),
+                    listen_cc: None,
                 })
                 .ok();
         }
@@ -914,6 +921,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: on_long_d,
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         // E (4): empty
@@ -926,6 +934,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         // F (5): Radio(1) + on_long_press(next)
@@ -940,6 +949,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: on_long_f,
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
 
@@ -969,6 +979,7 @@ mod tests {
                     on_release: heapless::Vec::new(),
                     on_long_press: lp,
                     cycle_values: heapless::Vec::new(),
+                    listen_cc: None,
                 })
                 .ok();
         }
@@ -1161,6 +1172,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         buttons
@@ -1178,6 +1190,7 @@ mod tests {
                 on_release: heapless::Vec::new(),
                 on_long_press: heapless::Vec::new(),
                 cycle_values: heapless::Vec::new(),
+                listen_cc: None,
             })
             .ok();
         Preset {

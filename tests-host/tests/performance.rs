@@ -88,6 +88,7 @@ fn preset_meta_uses_config_name_and_labels() {
             on_release: Vec::new(),
             on_long_press: Vec::new(),
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
     presets
@@ -126,6 +127,7 @@ fn preset_meta_empty_label_uses_default() {
             on_release: Vec::new(),
             on_long_press: Vec::new(),
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
     presets

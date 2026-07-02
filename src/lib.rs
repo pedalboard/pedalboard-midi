@@ -21,8 +21,8 @@
 /// - `USB_OUT_CAPACITY` (the static assert will catch this)
 pub const MAX_PRESET_SIZE: usize = 256;
 
-/// Maximum PE GET reply message size (capped by protocol Vec<u8, 256>).
-pub const MAX_PE_REPLY_SIZE: usize = 256;
+/// Maximum PE GET reply message size (capped by protocol Vec<u8, 350>).
+pub const MAX_PE_REPLY_SIZE: usize = 350;
 
 /// Minimum USB out channel capacity needed to send a full PE reply (3 bytes per packet).
 pub const MIN_USB_OUT_CAPACITY: usize = MAX_PE_REPLY_SIZE / 3 + 1;

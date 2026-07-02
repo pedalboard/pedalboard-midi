@@ -75,6 +75,8 @@ pub enum LedEvent {
     Flash(Led, RGB8, u8),
     /// MIDI clock tick (24ppqn). When received, animations sync to BPM.
     BpmTick,
+    /// Reactive LED: set heatmap on button ring (index 0-5, fill 0-12).
+    SetReactiveRing(usize, u8),
 }
 
 pub struct Leds {
@@ -132,6 +134,23 @@ impl Leds {
             LedEvent::BpmTick => {
                 self.bpm_active = true;
                 self.bpm_tick = self.bpm_tick.wrapping_add(1);
+            }
+            LedEvent::SetReactiveRing(btn_idx, fill) => {
+                use crate::ledring::{Modifier, Renderer, RingAnimation};
+                const BUTTON_RINGS: [LedRings; 6] = [
+                    LedRings::A,
+                    LedRings::B,
+                    LedRings::C,
+                    LedRings::D,
+                    LedRings::E,
+                    LedRings::F,
+                ];
+                if btn_idx < BUTTON_RINGS.len() {
+                    self.ledrings[BUTTON_RINGS[btn_idx] as usize].set(RingAnimation {
+                        renderer: Renderer::Heatmap(fill),
+                        modifier: Modifier::Solid,
+                    });
+                }
             }
         }
     }

@@ -40,6 +40,7 @@ fn make_test_preset() -> Preset {
             },
             on_long_press: Vec::new(),
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
 
@@ -61,6 +62,7 @@ fn make_test_preset() -> Preset {
                 v
             },
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
 
@@ -82,6 +84,7 @@ fn make_test_preset() -> Preset {
                 v
             },
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
 
@@ -230,6 +233,7 @@ fn action_sequence_with_delay() {
             on_release: Vec::new(),
             on_long_press: Vec::new(),
             cycle_values: Vec::new(),
+                listen_cc: None,
         })
         .ok();
     let preset = Preset {
