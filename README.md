@@ -18,6 +18,19 @@ See [docs/architecture.md](docs/architecture.md) for task structure, priority le
 
 For the full multi-module system overview (CLI → Bridge → Firmware), see the [Software Architecture](https://github.com/pedalboard/.github/blob/main/docs/software-architecture.md) doc.
 
+## Configuration
+
+Use [pedalboard-cli](https://github.com/pedalboard/pedalboard-cli) to configure the device:
+
+```bash
+pedalboard-cli upload setlist.yaml   # upload presets + global config
+pedalboard-cli read 0                # read back a preset
+pedalboard-cli monitor               # real-time MIDI output
+pedalboard-cli flash firmware.uf2    # flash new firmware
+```
+
+Configuration is defined as YAML setlists — version-controlled, diffable, one file per rig.
+
 ## Building
 
 ```bash
