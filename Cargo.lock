@@ -13,9 +13,9 @@ dependencies = [
 
 [[package]]
 name = "arrayvec"
-version = "0.7.7"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f02882884d3e1bc524fb12c79f107f6ad0e1cfd498c536ffb494301740995dfe"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "ascii-canvas"
@@ -1042,7 +1042,7 @@ dependencies = [
 [[package]]
 name = "pedalboard-protocol"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#6e4f006aedb57bd09f69f798f89fb30bc2c0c4d5"
+source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#b4925a8423b1b3bda8cdead9717c27360485af57"
 dependencies = [
  "heapless 0.9.3",
  "postcard",
