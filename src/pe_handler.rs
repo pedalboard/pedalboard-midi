@@ -351,6 +351,10 @@ impl PeHandler {
 
         for (i, anim) in anims.iter_mut().enumerate().take(NUM_BUTTONS) {
             if let Some(btn) = preset.buttons.get(i) {
+                // Reactive LED buttons are controlled by incoming MIDI, not button state
+                if btn.listen_cc.is_some() {
+                    continue;
+                }
                 let on_color = color_to_rgb(&btn.color.on);
                 if on_color == RGB8::default() {
                     *anim = RingAnimation::off();

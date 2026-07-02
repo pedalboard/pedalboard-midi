@@ -83,6 +83,8 @@ pub struct Leds {
     singles: [Option<RGB8>; NUM_LEDS],
     ledrings: [LedRing; NUM_LED_RINGS],
     flash_ticks: [u8; NUM_LEDS],
+    /// Rings controlled by reactive LED (SetReactiveRing) — skipped by SetAllRings.
+    reactive: [bool; NUM_LED_RINGS],
     pub buffer: LedData,
     tick: u16,
     bpm_tick: u16,
@@ -95,6 +97,7 @@ impl Leds {
             singles: [None; NUM_LEDS],
             ledrings: [LedRing::new(8); NUM_LED_RINGS],
             flash_ticks: [0; NUM_LEDS],
+            reactive: [false; NUM_LED_RINGS],
             buffer: [RGB8 { r: 0, g: 0, b: 0 }; LED_OUTPUTS],
             tick: 0,
             bpm_tick: 0,
@@ -120,7 +123,10 @@ impl Leds {
                     LedRings::Gain,
                 ];
                 for (i, anim) in anims.iter().enumerate() {
-                    self.ledrings[RING_ORDER[i] as usize].set(*anim);
+                    let ring_idx = RING_ORDER[i] as usize;
+                    if !self.reactive[ring_idx] {
+                        self.ledrings[ring_idx].set(*anim);
+                    }
                 }
             }
             LedEvent::SetSingle(led, color) => {
@@ -146,7 +152,9 @@ impl Leds {
                     LedRings::F,
                 ];
                 if btn_idx < BUTTON_RINGS.len() {
-                    self.ledrings[BUTTON_RINGS[btn_idx] as usize].set(RingAnimation {
+                    let ring_idx = BUTTON_RINGS[btn_idx] as usize;
+                    self.reactive[ring_idx] = true;
+                    self.ledrings[ring_idx].set(RingAnimation {
                         renderer: Renderer::Heatmap(fill),
                         modifier: Modifier::Solid,
                     });

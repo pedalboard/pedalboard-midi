@@ -710,6 +710,23 @@ mod app {
                             if let Ok(packet) = packet {
                                 sender.try_send(packet).ok();
                             }
+                            // Reactive LED: locally-generated CC also triggers heatmap
+                            if *len >= 3 && (raw[0] & 0xF0) == 0xB0 {
+                                let channel = (raw[0] & 0x0F) + 1;
+                                ctx.shared.pe_config.lock(|cfg| {
+                                    if let Some(preset) = cfg.presets.get(preset_idx as usize) {
+                                        if let Some((btn_idx, fill)) =
+                                            pedalboard_protocol::engine::process_incoming_cc(
+                                                preset, channel, raw[1], raw[2],
+                                            )
+                                        {
+                                            led_sender
+                                                .try_send(LedEvent::SetReactiveRing(btn_idx, fill))
+                                                .ok();
+                                        }
+                                    }
+                                });
+                            }
                         }
                         MidiStep::Delay(ms) => {
                             Mono::delay(fugit::ExtU32::millis(*ms as u32).into()).await;
