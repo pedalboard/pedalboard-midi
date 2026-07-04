@@ -161,6 +161,28 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
             display.flush().ok();
         }
     }
+
+    /// Show a brief informational message on both displays.
+    pub fn draw_message(&mut self, text: &str) {
+        let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+        let textbox_style = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Center)
+            .vertical_alignment(VerticalAlignment::Middle)
+            .build();
+        let bounds = Rectangle::new(Point::zero(), Size::new(128, 128));
+
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            TextBox::with_textbox_style(text, bounds, character_style, textbox_style)
+                .draw(display)
+                .ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            display.flush().ok();
+        }
+    }
 }
 
 struct Display<I2C> {
