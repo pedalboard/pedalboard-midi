@@ -1630,7 +1630,7 @@ mod app {
         // If no presets have names, flash likely has stale/missing data — show hint
         let has_presets = presets.iter().any(|p| !p.name.is_empty());
         if !has_presets {
-            displays.draw_message("Re-upload\nsetlist");
+            displays.draw_message("No presets\n\nUpload via\nCLI");
             Mono::delay(3000.millis()).await;
         }
 
