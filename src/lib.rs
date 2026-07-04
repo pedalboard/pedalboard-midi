@@ -21,6 +21,15 @@
 /// - `USB_OUT_CAPACITY` (the static assert will catch this)
 pub const MAX_PRESET_SIZE: usize = 256;
 
+/// Flash format version byte prepended to every stored preset/config blob.
+///
+/// Bump when the postcard-serialized layout of `Preset` or `GlobalConfig` changes
+/// (reordering, removing, or changing field types). Adding a new `#[serde(default)]`
+/// field at the end does NOT require a bump (postcard tolerates trailing data).
+///
+/// See: `dotgithub/docs/adr-versioning.md`
+pub const FLASH_FORMAT_VERSION: u8 = pedalboard_protocol::config::PRESET_SCHEMA_VERSION;
+
 /// Maximum PE GET reply message size (capped by protocol Vec<u8, 350>).
 pub const MAX_PE_REPLY_SIZE: usize = 350;
 

@@ -1115,6 +1115,7 @@ mod app {
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
+                                    pedalboard_protocol::property_exchange::PeStatus::Ok,
                                 );
                                 for chunk in reply.chunks(3) {
                                     if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
@@ -1169,11 +1170,17 @@ mod app {
                                     },
                                     None => &[],
                                 };
+                                let get_status = if reply_body.is_empty() {
+                                    pedalboard_protocol::property_exchange::PeStatus::NotFound
+                                } else {
+                                    pedalboard_protocol::property_exchange::PeStatus::Ok
+                                };
                                 let reply = pedalboard_protocol::property_exchange::build_get_reply(
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
                                     resource,
+                                    get_status,
                                     reply_body,
                                 );
                                 for chunk in reply.chunks(3) {
@@ -1344,8 +1351,22 @@ mod app {
             let mut preset_count = 0u8;
             store
                 .load_all_presets(|idx, data| {
+                    // Check flash format version prefix
+                    if data.is_empty() {
+                        return;
+                    }
+                    if data[0] != pedalboard_midi::FLASH_FORMAT_VERSION {
+                        warn!(
+                            "preset {}: flash format v{}, firmware expects v{} — skipped",
+                            idx,
+                            data[0],
+                            pedalboard_midi::FLASH_FORMAT_VERSION
+                        );
+                        return;
+                    }
+                    let payload = &data[1..]; // strip version byte
                     if let Ok(preset) =
-                        postcard::from_bytes::<pedalboard_protocol::config::Preset>(data)
+                        postcard::from_bytes::<pedalboard_protocol::config::Preset>(payload)
                     {
                         ctx.shared.pe_config.lock(|cfg| {
                             let i = idx as usize;
@@ -1373,8 +1394,16 @@ mod app {
                 )
                 .await
             {
-                if let Ok(gc) =
-                    postcard::from_bytes::<pedalboard_protocol::config::GlobalConfig>(data)
+                if data.is_empty() || data[0] != pedalboard_midi::FLASH_FORMAT_VERSION {
+                    if !data.is_empty() {
+                        warn!(
+                            "global config: flash format v{}, firmware expects v{} — skipped",
+                            data[0],
+                            pedalboard_midi::FLASH_FORMAT_VERSION
+                        );
+                    }
+                } else if let Ok(gc) =
+                    postcard::from_bytes::<pedalboard_protocol::config::GlobalConfig>(&data[1..])
                 {
                     info!("global config loaded from flash");
                     ctx.shared.global_config.lock(|g| *g = gc);
@@ -1390,6 +1419,14 @@ mod app {
                         store.save(block, section, index, value).await;
                     }
                     PersistCommand::SavePreset(preset_index, data) => {
+                        // Prepend flash format version byte before storing
+                        let mut versioned: heapless::Vec<
+                            u8,
+                            { pedalboard_midi::MAX_PRESET_SIZE + 1 },
+                        > = heapless::Vec::new();
+                        versioned.push(pedalboard_midi::FLASH_FORMAT_VERSION).ok();
+                        versioned.extend_from_slice(&data).ok();
+
                         if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
                             // Global config — apply and save to flash
                             if let Ok(gc) = postcard::from_bytes::<
@@ -1399,7 +1436,7 @@ mod app {
                                 info!("global config applied and saved");
                                 ctx.shared.global_config.lock(|g| *g = gc);
                             }
-                            store.save_preset(preset_index, &data).await;
+                            store.save_preset(preset_index, &versioned).await;
                         } else if let Ok(preset) =
                             postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
                         {
@@ -1418,7 +1455,7 @@ mod app {
                                 }
                                 cfg.presets[idx] = preset;
                             });
-                            store.save_preset(preset_index, &data).await;
+                            store.save_preset(preset_index, &versioned).await;
                             // Write initial state from preset defaults to EEPROM
                             let buf = ctx.shared.pe_config.lock(|cfg| {
                                 let mut state_store =
