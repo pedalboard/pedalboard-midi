@@ -1458,22 +1458,33 @@ mod app {
                             if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
                                 info!("global config cleared");
                                 ctx.shared.global_config.lock(|g| *g = Default::default());
+                                let empty_marker: heapless::Vec<
+                                    u8,
+                                    { pedalboard_midi::MAX_PRESET_SIZE + 1 },
+                                > = heapless::Vec::new();
+                                store.save_preset(preset_index, &empty_marker).await;
                             } else {
-                                info!("preset {} deleted", preset_index);
-                                ctx.shared.pe_config.lock(|cfg| {
+                                // Only write to flash if the slot was actually occupied
+                                let was_occupied = ctx.shared.pe_config.lock(|cfg| {
                                     let idx = preset_index as usize;
-                                    if idx < cfg.presets.len() {
+                                    if idx < cfg.presets.len() && !cfg.presets[idx].name.is_empty()
+                                    {
                                         cfg.presets[idx] =
                                             pedalboard_protocol::config::Preset::default();
+                                        true
+                                    } else {
+                                        false
                                     }
                                 });
+                                if was_occupied {
+                                    info!("preset {} deleted", preset_index);
+                                    let empty_marker: heapless::Vec<
+                                        u8,
+                                        { pedalboard_midi::MAX_PRESET_SIZE + 1 },
+                                    > = heapless::Vec::new();
+                                    store.save_preset(preset_index, &empty_marker).await;
+                                }
                             }
-                            // Store empty marker in flash (version byte only = deleted)
-                            let empty_marker: heapless::Vec<
-                                u8,
-                                { pedalboard_midi::MAX_PRESET_SIZE + 1 },
-                            > = heapless::Vec::new();
-                            store.save_preset(preset_index, &empty_marker).await;
                         } else if preset_index
                             == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
                         {
