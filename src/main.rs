@@ -150,6 +150,9 @@ mod app {
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
+        trigger_sender_din: Sender<'static, [u8; 3], TRIGGER_CAPACITY>,
+        trigger_sender_usb: Sender<'static, [u8; 3], TRIGGER_CAPACITY>,
+        trigger_receiver: Receiver<'static, [u8; 3], TRIGGER_CAPACITY>,
         persist_sender: Sender<'static, pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY>,
         eeprom_i2c: AtomicDevice<'static, I2CBus>,
     }
@@ -162,6 +165,7 @@ mod app {
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 4;
     const DIN_THRU_CAPACITY: usize = 8;
+    const TRIGGER_CAPACITY: usize = 8;
     const SYSTEM_STATUS_CAPACITY: usize = 1;
 
     #[init(local = [
@@ -318,6 +322,7 @@ mod app {
 
         let (led_sender, led_receiver) = make_channel!(LedEvent, LED_CAPACITY);
         let (din_thru_sender, din_thru_receiver) = make_channel!([u8; 3], DIN_THRU_CAPACITY);
+        let (trigger_sender, trigger_receiver) = make_channel!([u8; 3], TRIGGER_CAPACITY);
         let (persist_sender, persist_receiver) =
             make_channel!(pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY);
         let (system_status_sender, system_status_receiver) =
@@ -389,13 +394,16 @@ mod app {
                 usb_sender_usb_thru: usb_sender.clone(),
                 din_thru_receiver,
                 din_thru_sender,
+                trigger_sender_din: trigger_sender.clone(),
+                trigger_sender_usb: trigger_sender.clone(),
+                trigger_receiver,
                 persist_sender,
                 eeprom_i2c: AtomicDevice::new(i2c_bus),
             },
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru], shared = [opendeck, global_config, pe_config, active_preset])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru, trigger_sender_din], shared = [opendeck, global_config, pe_config, active_preset])]
     fn midi_in(mut ctx: midi_in::Context) {
         #[cfg(feature = "opendeck")]
         use midi2::prelude::*;
@@ -446,6 +454,8 @@ mod app {
                         }
                     });
                 }
+                // Forward to trigger processor in poll_input
+                ctx.local.trigger_sender_din.try_send(buf).ok();
                 let din_to_usb = if thru { Some(buf) } else { None };
                 // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
                 ctx.local
@@ -469,7 +479,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -559,6 +569,92 @@ mod app {
             while let Ok(raw) = din_thru_receiver.try_recv() {
                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw) {
                     uart_midi_out.write(&mm).ok();
+                }
+            }
+
+            // Process incoming MIDI triggers
+            while let Ok(raw) = ctx.local.trigger_receiver.try_recv() {
+                let trigger_preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                let trigger_result = ctx.shared.pe_config.lock(|cfg| {
+                    if let Some(preset) = cfg.presets.get(trigger_preset_idx as usize) {
+                        if !preset.triggers.is_empty() {
+                            Some(pe.process_incoming_midi(preset, &raw))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                });
+                if let Some(result) = trigger_result {
+                    for step in &result.midi {
+                        use pedalboard_midi::pe_handler::MidiStep;
+                        match step {
+                            MidiStep::Send(raw, len) => {
+                                let din_on = ctx.shared.global_config.lock(|gc| gc.din_enabled);
+                                if din_on {
+                                    if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
+                                        uart_midi_out.write(&mm).ok();
+                                    }
+                                }
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    &raw[..*len],
+                                );
+                                if let Ok(packet) = packet {
+                                    sender.try_send(packet).ok();
+                                }
+                            }
+                            MidiStep::Delay(_) => {}
+                        }
+                    }
+                    for action in &result.system {
+                        use pedalboard_protocol::engine::SystemAction;
+                        ctx.shared.active_preset.lock(|active_preset| {
+                            let active_count = ctx
+                                .shared
+                                .pe_config
+                                .lock(|cfg| {
+                                    cfg.presets.iter().filter(|p| !p.name.is_empty()).count() as u8
+                                })
+                                .max(1);
+                            match action {
+                                SystemAction::PresetNext => {
+                                    *active_preset = (*active_preset + 1) % active_count;
+                                }
+                                SystemAction::PresetPrev => {
+                                    *active_preset = if *active_preset == 0 {
+                                        active_count - 1
+                                    } else {
+                                        *active_preset - 1
+                                    };
+                                }
+                                SystemAction::PresetSelect(idx) => {
+                                    if *idx < active_count {
+                                        *active_preset = *idx;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    if result.led_dirty || !result.system.is_empty() {
+                        let new_idx = ctx.shared.active_preset.lock(|p| *p);
+                        ctx.shared.pe_config.lock(|cfg| {
+                            if let Some(preset) = cfg.presets.get(new_idx as usize) {
+                                let anims = pe.led_state(preset);
+                                led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
+                            }
+                        });
+                        if !result.system.is_empty() {
+                            let new_idx = ctx.shared.active_preset.lock(|p| *p);
+                            led_sender
+                                .try_send(LedEvent::SetSingle(
+                                    Led::Mode,
+                                    Some(pedalboard_midi::leds::preset_color(new_idx)),
+                                ))
+                                .ok();
+                        }
+                    }
                 }
             }
 
@@ -811,7 +907,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 350>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, persist_sender],
+        local = [ buf: Vec::<u8, 350>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, trigger_sender_usb, persist_sender],
         shared =[usb_midi,usb_dev,opendeck,pe_config,global_config,active_preset]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
@@ -886,6 +982,15 @@ mod app {
                                 }
                             }
                         });
+                    }
+                    // Forward to trigger processor in poll_input
+                    {
+                        let raw = packet.payload_bytes();
+                        if raw.len() >= 3 {
+                            let mut arr = [0u8; 3];
+                            arr.copy_from_slice(&raw[..3]);
+                            ctx.local.trigger_sender_usb.try_send(arr).ok();
+                        }
                     }
                     // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
                     ctx.local
