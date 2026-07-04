@@ -39,11 +39,16 @@ impl Default for AdcCalibration {
 // Re-export types used by main.rs
 pub use pedalboard_protocol::engine::{ActionStep, DisplayEvent, DisplaySide, SystemAction};
 
-/// A step in an action sequence: either raw MIDI bytes to send, or a delay.
+/// A step in an action sequence: raw MIDI bytes, a delay, or an LED change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MidiStep {
     Send([u8; 3], usize),
     Delay(u16),
+    SetLed {
+        btn_idx: usize,
+        color: pedalboard_protocol::config::Color,
+        animation: pedalboard_protocol::config::LedAnimation,
+    },
 }
 
 /// Result of processing events: MIDI steps + system actions + display + LED dirty flag.
@@ -252,7 +257,14 @@ impl PeHandler {
                         let mut state = self.working_state();
                         let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
                         self.apply_state(&state);
-                        self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                        self.merge_result(
+                            &r,
+                            i,
+                            &mut midi,
+                            &mut system,
+                            &mut display,
+                            &mut led_dirty,
+                        );
                         // For momentary: also release (button is no longer held)
                         // For toggle/radio with on_release: fire release actions
                         if let Some(btn) = preset.buttons.get(i) {
@@ -267,6 +279,7 @@ impl PeHandler {
                                 self.apply_state(&state2);
                                 self.merge_result(
                                     &r2,
+                                    i,
                                     &mut midi,
                                     &mut system,
                                     &mut display,
@@ -280,7 +293,14 @@ impl PeHandler {
                         let r =
                             engine::process_button(&mut state, preset, i, ButtonEvent::LongPress);
                         self.apply_state(&state);
-                        self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                        self.merge_result(
+                            &r,
+                            i,
+                            &mut midi,
+                            &mut system,
+                            &mut display,
+                            &mut led_dirty,
+                        );
                     }
                     None => {}
                 }
@@ -291,13 +311,27 @@ impl PeHandler {
                         let mut state = self.working_state();
                         let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
                         self.apply_state(&state);
-                        self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                        self.merge_result(
+                            &r,
+                            i,
+                            &mut midi,
+                            &mut system,
+                            &mut display,
+                            &mut led_dirty,
+                        );
                     }
                     Some(Edge::Deactivate) => {
                         let mut state = self.working_state();
                         let r = engine::process_button(&mut state, preset, i, ButtonEvent::Release);
                         self.apply_state(&state);
-                        self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                        self.merge_result(
+                            &r,
+                            i,
+                            &mut midi,
+                            &mut system,
+                            &mut display,
+                            &mut led_dirty,
+                        );
                     }
                     None => {}
                 }
@@ -314,7 +348,7 @@ impl PeHandler {
                     let r =
                         engine::process_encoder(&mut state, preset, 0, pulse_to_dir(*pulse), steps);
                     self.apply_state(&state);
-                    self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 InputEvent::Gain(pulse) => {
                     let steps = accel_steps(self.last_encoder_tick[1]);
@@ -323,15 +357,15 @@ impl PeHandler {
                     let r =
                         engine::process_encoder(&mut state, preset, 1, pulse_to_dir(*pulse), steps);
                     self.apply_state(&state);
-                    self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 InputEvent::ExpressionPedal2(raw_adc) => {
                     let r = engine::process_analog(preset, 0, *raw_adc, cal.exp2_min, cal.exp2_max);
-                    self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 InputEvent::ExpressionPedal1(raw_adc) => {
                     let r = engine::process_analog(preset, 1, *raw_adc, cal.exp1_min, cal.exp1_max);
-                    self.merge_result(&r, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
                 }
                 _ => {}
             }
@@ -372,6 +406,12 @@ impl PeHandler {
                     pedalboard_protocol::engine::ActionStep::Delay(ms) => {
                         midi.push(MidiStep::Delay(*ms))
                     }
+                    pedalboard_protocol::engine::ActionStep::SetLed { color, animation } => midi
+                        .push(MidiStep::SetLed {
+                            btn_idx: 0,
+                            color: *color,
+                            animation: *animation,
+                        }),
                 };
             }
             for s in &result.system {
@@ -470,6 +510,7 @@ impl PeHandler {
     fn merge_result(
         &self,
         r: &engine::EngineResult,
+        btn_idx: usize,
         midi: &mut heapless::Vec<MidiStep, 8>,
         system: &mut heapless::Vec<SystemAction, 2>,
         display: &mut heapless::Vec<DisplayEvent, 2>,
@@ -483,6 +524,14 @@ impl PeHandler {
                 }
                 ActionStep::Delay(ms) => {
                     midi.push(MidiStep::Delay(*ms)).ok();
+                }
+                ActionStep::SetLed { color, animation } => {
+                    midi.push(MidiStep::SetLed {
+                        btn_idx,
+                        color: *color,
+                        animation: *animation,
+                    })
+                    .ok();
                 }
             }
         }
@@ -510,7 +559,7 @@ fn button_edge(events: &[InputEvent], i: usize) -> Option<Edge> {
     })
 }
 
-fn color_to_rgb(c: &Color) -> RGB8 {
+pub fn color_to_rgb(c: &Color) -> RGB8 {
     match c {
         Color::Off => RGB8::new(0, 0, 0),
         Color::Red => RGB8::new(255, 0, 0),

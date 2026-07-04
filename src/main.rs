@@ -608,6 +608,7 @@ mod app {
                                 }
                             }
                             MidiStep::Delay(_) => {}
+                            MidiStep::SetLed { .. } => {}
                         }
                     }
                     for action in &result.system {
@@ -858,6 +859,39 @@ mod app {
                         }
                         MidiStep::Delay(ms) => {
                             Mono::delay(fugit::ExtU32::millis(*ms as u32).into()).await;
+                        }
+                        MidiStep::SetLed {
+                            btn_idx,
+                            color,
+                            animation,
+                        } => {
+                            use pedalboard_midi::ledring::{Modifier, Renderer, RingAnimation};
+                            use pedalboard_midi::leds::{LedEvent, LedRings};
+                            use pedalboard_midi::pe_handler::color_to_rgb;
+                            use pedalboard_protocol::config::LedAnimation;
+
+                            let on_color = color_to_rgb(color);
+                            let rgb = pedalboard_midi::ledring::rgb8_to_rgb(on_color);
+                            let modifier = match animation {
+                                LedAnimation::Solid => Modifier::Solid,
+                                LedAnimation::Blink => Modifier::Blink,
+                                LedAnimation::Pulse => Modifier::Pulse,
+                                LedAnimation::Rotate => Modifier::Rotate,
+                                LedAnimation::ColorCycle => Modifier::ColorCycle,
+                            };
+                            let ring_anim = RingAnimation {
+                                renderer: Renderer::Solid(rgb),
+                                modifier,
+                            };
+                            let ring = match btn_idx {
+                                0 => LedRings::A,
+                                1 => LedRings::B,
+                                2 => LedRings::C,
+                                3 => LedRings::D,
+                                4 => LedRings::E,
+                                _ => LedRings::F,
+                            };
+                            led_sender.try_send(LedEvent::SetRing(ring, ring_anim)).ok();
                         }
                     }
                 }
