@@ -130,6 +130,7 @@ mod app {
         pe_config: pedalboard_protocol::config::Config,
         global_config: pedalboard_protocol::config::GlobalConfig,
         state_store: pedalboard_protocol::state::PresetStateStore,
+        presets_skipped: u8,
     }
 
     #[local]
@@ -379,6 +380,7 @@ mod app {
                 pe_config,
                 global_config: pedalboard_protocol::config::GlobalConfig::default(),
                 state_store: restored_state,
+                presets_skipped: 0,
             },
             Local {
                 uart_midi_out,
@@ -908,7 +910,7 @@ mod app {
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
         local = [ buf: Vec::<u8, 350>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, trigger_sender_usb, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config,active_preset]
+        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config,active_preset,presets_skipped]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -1151,14 +1153,37 @@ mod app {
                                 let body = if resource
                                     == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
                                 {
-                                    // Global config not readable from ISR — return empty
-                                    // (CLI should use pe-read only for presets)
-                                    None
+                                    ctx.shared.global_config.lock(|gc| {
+                                        let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
+                                        postcard::to_slice(gc, buf).ok().map(|s| s.len())
+                                    })
+                                } else if resource
+                                    == pedalboard_protocol::config::DEVICE_INFO_RESOURCE
+                                {
+                                    let info = pedalboard_protocol::config::DeviceInfo {
+                                        flash_format: pedalboard_midi::FLASH_FORMAT_VERSION,
+                                        presets_loaded: ctx.shared.pe_config.lock(|cfg| {
+                                            cfg.presets
+                                                .iter()
+                                                .filter(|p| !p.name.is_empty())
+                                                .count()
+                                                as u8
+                                        }),
+                                        presets_skipped: ctx.shared.presets_skipped.lock(|s| *s),
+                                    };
+                                    let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
+                                    postcard::to_slice(&info, buf).ok().map(|s| s.len())
                                 } else {
                                     ctx.shared.pe_config.lock(|cfg| {
                                         let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
                                         if let Some(preset) = cfg.presets.get(resource as usize) {
-                                            postcard::to_slice(preset, buf).ok().map(|s| s.len())
+                                            if preset.name.is_empty() {
+                                                None
+                                            } else {
+                                                postcard::to_slice(preset, buf)
+                                                    .ok()
+                                                    .map(|s| s.len())
+                                            }
                                         } else {
                                             None
                                         }
@@ -1300,7 +1325,7 @@ mod app {
         }
     }
 
-    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, global_config, active_preset, state_store])]
+    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, global_config, active_preset, state_store, presets_skipped])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<'static, pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY>,
@@ -1362,6 +1387,7 @@ mod app {
                             data[0],
                             pedalboard_midi::FLASH_FORMAT_VERSION
                         );
+                        ctx.shared.presets_skipped.lock(|s| *s += 1);
                         return;
                     }
                     let payload = &data[1..]; // strip version byte
@@ -1427,7 +1453,30 @@ mod app {
                         versioned.push(pedalboard_midi::FLASH_FORMAT_VERSION).ok();
                         versioned.extend_from_slice(&data).ok();
 
-                        if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
+                        if data.is_empty() {
+                            // Empty body = delete preset from flash and RAM
+                            if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
+                                info!("global config cleared");
+                                ctx.shared.global_config.lock(|g| *g = Default::default());
+                            } else {
+                                info!("preset {} deleted", preset_index);
+                                ctx.shared.pe_config.lock(|cfg| {
+                                    let idx = preset_index as usize;
+                                    if idx < cfg.presets.len() {
+                                        cfg.presets[idx] =
+                                            pedalboard_protocol::config::Preset::default();
+                                    }
+                                });
+                            }
+                            // Store empty marker in flash (version byte only = deleted)
+                            let empty_marker: heapless::Vec<
+                                u8,
+                                { pedalboard_midi::MAX_PRESET_SIZE + 1 },
+                            > = heapless::Vec::new();
+                            store.save_preset(preset_index, &empty_marker).await;
+                        } else if preset_index
+                            == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
+                        {
                             // Global config — apply and save to flash
                             if let Ok(gc) = postcard::from_bytes::<
                                 pedalboard_protocol::config::GlobalConfig,
