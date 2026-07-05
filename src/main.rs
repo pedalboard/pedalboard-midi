@@ -564,12 +564,10 @@ mod app {
         }
 
         let mut tap_tempo = pedalboard_protocol::tap_tempo::TapTempo::new();
-        let mut loop_tick_ms: u32 = 0;
 
         loop {
             // Tick encoder acceleration timer unconditionally
             pe.tick();
-            loop_tick_ms = loop_tick_ms.wrapping_add(5); // ~5ms per loop iteration
 
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -648,7 +646,8 @@ mod app {
                     // Handle tap tempo (needs access to tap_tempo state outside the lock)
                     for action in &result.system {
                         if matches!(action, pedalboard_midi::pe_handler::SystemAction::TapTempo) {
-                            if let Some(bpm) = tap_tempo.tap(loop_tick_ms) {
+                            let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                            if let Some(bpm) = tap_tempo.tap(now_ms) {
                                 ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
                             }
                         }
@@ -750,9 +749,34 @@ mod app {
                             }
                         });
                     }
-                    if !result.system.is_empty() {
-                        let new_preset = ctx.shared.active_preset.lock(|p| *p);
-                        // Switch preset state and recall MIDI to external gear
+                    // Handle tap tempo (outside lock, needs mutable tap_tempo)
+                    for action in &result.system {
+                        use pedalboard_midi::pe_handler::SystemAction;
+                        if matches!(action, SystemAction::TapTempo) {
+                            let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                            if let Some(bpm) = tap_tempo.tap(now_ms) {
+                                ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
+                                display_event_sender
+                                    .try_send(
+                                        pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
+                                            bpm,
+                                        },
+                                    )
+                                    .ok();
+                            } else {
+                                display_event_sender
+                                    .try_send(
+                                        pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
+                                            bpm: 0,
+                                        },
+                                    )
+                                    .ok();
+                            }
+                        }
+                    }
+                    let new_preset = ctx.shared.active_preset.lock(|p| *p);
+                    if new_preset != preset_idx {
+                        // Preset actually changed — switch state and recall MIDI
                         let switch_midi = ctx.shared.pe_config.lock(|cfg| {
                             let old_preset = &cfg.presets[preset_idx as usize];
                             let new_preset_cfg = &cfg.presets[new_preset as usize];
@@ -773,10 +797,11 @@ mod app {
                     for evt in result.display {
                         display_event_sender.try_send(evt).ok();
                     }
-                    // Preset switch always dirties LEDs (new colors/states)
-                    let led_dirty = result.led_dirty || !result.system.is_empty();
-                    if !result.system.is_empty() {
-                        preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                    // Update LEDs and preset index on actual switch
+                    let preset_changed = new_preset != preset_idx;
+                    let led_dirty = result.led_dirty || preset_changed;
+                    if preset_changed {
+                        preset_idx = new_preset;
                         led_sender
                             .try_send(LedEvent::SetSingle(
                                 Led::Mode,
@@ -1894,6 +1919,18 @@ mod app {
                             // Return to performance view
                             let idx = (current_preset as usize) % presets.len();
                             displays.draw_performance(&presets[idx]);
+                            show_overlay = true;
+                        }
+                        DisplayEvent::BpmOverlay { bpm } => {
+                            use core::fmt::Write;
+                            let mut buf: heapless::String<16> = heapless::String::new();
+                            if *bpm == 0 {
+                                write!(buf, "Tap...").ok();
+                            } else {
+                                write!(buf, "BPM\n\n{}", bpm).ok();
+                            }
+                            displays.draw_message(buf.as_str());
+                            overlay_ticks = OVERLAY_DURATION;
                             show_overlay = true;
                         }
                     }

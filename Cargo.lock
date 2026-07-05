@@ -1047,7 +1047,7 @@ dependencies = [
 [[package]]
 name = "pedalboard-protocol"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#407911ac63690dab36cb6866f11db1c2c595f28a"
+source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#0a87d4360708c391fea4087be1c8800bbe8c883e"
 dependencies = [
  "heapless 0.9.3",
  "postcard",
