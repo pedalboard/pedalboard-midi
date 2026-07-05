@@ -563,9 +563,13 @@ mod app {
                 .ok();
         }
 
+        let mut tap_tempo = pedalboard_protocol::tap_tempo::TapTempo::new();
+        let mut loop_tick_ms: u32 = 0;
+
         loop {
             // Tick encoder acceleration timer unconditionally
             pe.tick();
+            loop_tick_ms = loop_tick_ms.wrapping_add(5); // ~5ms per loop iteration
 
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -637,8 +641,17 @@ mod app {
                                         *active_preset = *idx;
                                     }
                                 }
+                                SystemAction::TapTempo | SystemAction::SetBpm(_) => {}
                             }
                         });
+                    }
+                    // Handle tap tempo (needs access to tap_tempo state outside the lock)
+                    for action in &result.system {
+                        if matches!(action, pedalboard_midi::pe_handler::SystemAction::TapTempo) {
+                            if let Some(bpm) = tap_tempo.tap(loop_tick_ms) {
+                                ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
+                            }
+                        }
                     }
                     if result.led_dirty || !result.system.is_empty() {
                         let new_idx = ctx.shared.active_preset.lock(|p| *p);
@@ -733,6 +746,7 @@ mod app {
                                         *active_preset = *idx;
                                     }
                                 }
+                                SystemAction::TapTempo | SystemAction::SetBpm(_) => {}
                             }
                         });
                     }
@@ -1870,6 +1884,8 @@ mod app {
                                         "Select"
                                     }
                                 }
+                                SystemAction::TapTempo => "Tap",
+                                SystemAction::SetBpm(_) => "BPM",
                             };
                             displays.draw_long_press_hint(label);
                             show_overlay = true;
