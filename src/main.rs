@@ -1,9 +1,11 @@
 #![no_std]
 #![no_main]
 
+mod crash;
 mod hmi;
 
 use defmt_rtt as _;
+#[cfg(debug_assertions)]
 use panic_probe as _;
 use rtic::app;
 
@@ -176,6 +178,9 @@ mod app {
         adc: MaybeUninit<rp2040_hal::adc::Adc> = MaybeUninit::uninit()
     ])]
     fn init(ctx: init::Context) -> (Shared, Local) {
+        // Check if we recovered from a crash (must be before any RAM init)
+        crate::crash::check_crash_marker();
+
         let mut resets = ctx.device.RESETS;
         Mono::start(ctx.device.TIMER, &resets);
         let mut watchdog = Watchdog::new(ctx.device.WATCHDOG);

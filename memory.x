@@ -3,7 +3,8 @@ MEMORY {
     FLASH : ORIGIN = 0x10000100, LENGTH = 2048K - 0x100 - 64K
     /* Last 64KB reserved for configuration storage (wear-leveled) */
     STORAGE : ORIGIN = 0x101F0000, LENGTH = 64K
-    RAM   : ORIGIN = 0x20000000, LENGTH = 256K
+    /* Last 16 bytes reserved for crash recovery info (survives warm reset) */
+    RAM   : ORIGIN = 0x20000000, LENGTH = 256K - 16
 }
 
 EXTERN(BOOT2_FIRMWARE)
