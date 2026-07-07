@@ -1233,6 +1233,11 @@ mod app {
                                 } else if resource
                                     == pedalboard_protocol::config::DEVICE_INFO_RESOURCE
                                 {
+                                    let mut version = heapless::String::<24>::new();
+                                    let _ = core::fmt::Write::write_str(
+                                        &mut version,
+                                        concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH")),
+                                    );
                                     let info = pedalboard_protocol::config::DeviceInfo {
                                         flash_format: pedalboard_midi::FLASH_FORMAT_VERSION,
                                         presets_loaded: ctx.shared.pe_config.lock(|cfg| {
@@ -1243,6 +1248,7 @@ mod app {
                                                 as u8
                                         }),
                                         presets_skipped: ctx.shared.presets_skipped.lock(|s| *s),
+                                        version,
                                     };
                                     let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
                                     postcard::to_slice(&info, buf).ok().map(|s| s.len())
