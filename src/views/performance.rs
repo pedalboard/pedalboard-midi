@@ -27,6 +27,7 @@ pub const BUTTON_COUNT: usize = 6;
 pub struct PresetMeta {
     pub name: String<16>,
     pub button_labels: [String<16>; BUTTON_COUNT],
+    pub button_active: [bool; BUTTON_COUNT],
 }
 
 impl Default for PresetMeta {
@@ -34,6 +35,7 @@ impl Default for PresetMeta {
         Self {
             name: String::new(),
             button_labels: core::array::from_fn(|_| String::new()),
+            button_active: [false; BUTTON_COUNT],
         }
     }
 }
@@ -73,6 +75,11 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         .alignment(HorizontalAlignment::Center)
         .vertical_alignment(VerticalAlignment::Middle)
         .build();
+
+    let active_fill = PrimitiveStyleBuilder::new()
+        .fill_color(Gray4::WHITE)
+        .build();
+    let active_text_style = MonoTextStyle::new(&FONT_10X20, Gray4::BLACK);
 
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
     const INSET: u32 = 8;
@@ -133,14 +140,30 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 .build(),
         };
 
-        RoundedRectangle::new(rect, radii)
-            .into_styled(stroke)
-            .draw(display)?;
+        let btn_idx = indices[i as usize];
+        let is_active = preset.button_active[btn_idx];
+
+        if is_active {
+            // Active: filled white background
+            RoundedRectangle::new(rect, radii)
+                .into_styled(active_fill)
+                .draw(display)?;
+        } else {
+            // Inactive: outline only
+            RoundedRectangle::new(rect, radii)
+                .into_styled(stroke)
+                .draw(display)?;
+        }
 
         // Fill sharp corner with a solid triangle indicator
         let cs = 10i32;
+        let corner_fill_color = if is_active {
+            Gray4::BLACK
+        } else {
+            Gray4::WHITE
+        };
         let fill = PrimitiveStyleBuilder::new()
-            .fill_color(Gray4::WHITE)
+            .fill_color(corner_fill_color)
             .build();
         let corner_pos = match (side, i) {
             (Side::Left, 0) => Triangle::new(
@@ -171,13 +194,20 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         };
         corner_pos.into_styled(fill).draw(display)?;
 
-        // Label text with shadow for depth, then white on top
-        let shadow_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x7));
-        let shadow_rect = Rectangle::new(rect.top_left + Point::new(1, 1), rect.size);
-        TextBox::with_textbox_style(label.as_str(), shadow_rect, shadow_style, textbox_style)
-            .draw(display)?;
-        TextBox::with_textbox_style(label.as_str(), rect, text_style, textbox_style)
-            .draw(display)?;
+        // Label text
+        if is_active {
+            // Active: black text on white background (no shadow needed)
+            TextBox::with_textbox_style(label.as_str(), rect, active_text_style, textbox_style)
+                .draw(display)?;
+        } else {
+            // Inactive: shadow for depth, then white on top
+            let shadow_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x7));
+            let shadow_rect = Rectangle::new(rect.top_left + Point::new(1, 1), rect.size);
+            TextBox::with_textbox_style(label.as_str(), shadow_rect, shadow_style, textbox_style)
+                .draw(display)?;
+            TextBox::with_textbox_style(label.as_str(), rect, text_style, textbox_style)
+                .draw(display)?;
+        }
     }
 
     Ok(())

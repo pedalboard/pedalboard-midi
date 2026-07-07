@@ -131,6 +131,7 @@ mod app {
         global_config: pedalboard_protocol::config::GlobalConfig,
         state_store: pedalboard_protocol::state::PresetStateStore,
         presets_skipped: u8,
+        button_active: [bool; 6],
     }
 
     #[local]
@@ -381,6 +382,7 @@ mod app {
                 global_config: pedalboard_protocol::config::GlobalConfig::default(),
                 state_store: restored_state,
                 presets_skipped: 0,
+                button_active: [false; 6],
             },
             Local {
                 uart_midi_out,
@@ -481,7 +483,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store])]
+    #[task(local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store, button_active])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -660,6 +662,7 @@ mod app {
                                 led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
                             }
                         });
+                        ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                         if !result.system.is_empty() {
                             let new_idx = ctx.shared.active_preset.lock(|p| *p);
                             led_sender
@@ -818,6 +821,7 @@ mod app {
                                 let anims = pe.led_state(preset);
                                 led_event = Some(LedEvent::SetAllRings(anims));
                             });
+                            ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                         }
                     }
                     // Persist state to EEPROM on any state change
@@ -1743,7 +1747,7 @@ mod app {
         }
     }
 
-    #[task(local = [displays], shared = [active_preset, opendeck, pe_config])]
+    #[task(local = [displays], shared = [active_preset, opendeck, pe_config, button_active])]
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
@@ -1840,8 +1844,19 @@ mod app {
                 }
                 changed
             });
-            if config_changed && !debug_mode {
-                let idx = (current_preset as usize) % presets.len();
+
+            // Refresh button active state
+            let idx = (current_preset as usize) % presets.len();
+            let active_changed = ctx.shared.button_active.lock(|ba| {
+                if presets[idx].button_active != *ba {
+                    presets[idx].button_active = *ba;
+                    true
+                } else {
+                    false
+                }
+            });
+
+            if (config_changed || active_changed) && !debug_mode {
                 displays.draw_performance(&presets[idx]);
             }
 

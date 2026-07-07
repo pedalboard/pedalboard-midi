@@ -190,6 +190,11 @@ impl PeHandler {
         self.long_press.iter().any(|lp| lp.is_active())
     }
 
+    /// Returns the current button active state (toggle ON / momentary held).
+    pub fn button_active(&self) -> [bool; NUM_BUTTONS] {
+        self.button_active
+    }
+
     /// Process input events against a PE preset. Returns MIDI messages and system actions.
     pub fn handle_events(
         &mut self,

@@ -148,3 +148,37 @@ fn preset_meta_empty_label_uses_default() {
     let (_, labels) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(labels[0].as_str(), ""); // empty label = intentionally hidden
 }
+
+#[test]
+fn draw_active_button_renders_filled() {
+    let mut display_inactive = new_display();
+    let mut display_active = new_display();
+
+    let mut preset = test_preset();
+    performance::draw(&mut display_inactive, &preset, Side::Left).unwrap();
+
+    // Activate button D (index 3, shown as top row on left display)
+    preset.button_active[3] = true;
+    performance::draw(&mut display_active, &preset, Side::Left).unwrap();
+
+    // Active rendering should produce different pixels than inactive
+    // (filled background vs outline-only)
+    let inactive_pixels: Vec<_> = display_inactive
+        .affected_area()
+        .points()
+        .filter(|p| display_inactive.get_pixel(*p) == Some(Gray4::WHITE))
+        .collect();
+    let active_pixels: Vec<_> = display_active
+        .affected_area()
+        .points()
+        .filter(|p| display_active.get_pixel(*p) == Some(Gray4::WHITE))
+        .collect();
+
+    // Active (filled) should have significantly more white pixels than inactive (outline only)
+    assert!(
+        active_pixels.len() > inactive_pixels.len() * 2,
+        "Active button should have more white pixels (filled). active={}, inactive={}",
+        active_pixels.len(),
+        inactive_pixels.len()
+    );
+}
