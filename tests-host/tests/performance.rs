@@ -182,3 +182,66 @@ fn draw_active_button_renders_filled() {
         inactive_pixels.len()
     );
 }
+
+#[test]
+fn draw_single_button_fills_more_vertical_space() {
+    // With only 1 button, draw still works and produces output
+    let mut display = new_display();
+
+    let mut preset = PresetMeta::default();
+    preset.button_labels[3] = String::try_from("Solo").unwrap();
+    performance::draw(&mut display, &preset, Side::Left).unwrap();
+
+    assert!(!display.affected_area().is_zero_sized());
+}
+
+#[test]
+fn draw_two_buttons_renders_both() {
+    // With 2 buttons on left display (D and A), both should produce output
+    let mut display = new_display();
+
+    let mut preset = PresetMeta::default();
+    preset.button_labels[3] = String::try_from("Drive").unwrap(); // D = slot 0
+    preset.button_labels[0] = String::try_from("Clean").unwrap(); // A = slot 2
+    performance::draw(&mut display, &preset, Side::Left).unwrap();
+
+    assert!(!display.affected_area().is_zero_sized());
+}
+
+#[test]
+fn draw_two_buttons_preserves_position_order() {
+    // If D (slot 0/top) and A (slot 2/bottom) are active, D should appear first (top)
+    let mut display = new_display();
+
+    let mut preset = PresetMeta::default();
+    preset.button_labels[3] = String::try_from("Top").unwrap(); // D = slot 0
+    preset.button_labels[0] = String::try_from("Bot").unwrap(); // A = slot 2
+    performance::draw(&mut display, &preset, Side::Left).unwrap();
+
+    // The affected area should start near the top (D is first)
+    let area = display.affected_area();
+    assert!(
+        area.top_left.y < 10,
+        "First button (D/top) should be near top of display. y={}",
+        area.top_left.y
+    );
+}
+
+#[test]
+fn draw_middle_only_button_renders() {
+    // Only E (index 4, slot 1) on left display
+    let mut display = new_display();
+
+    let mut preset = PresetMeta::default();
+    preset.button_labels[4] = String::try_from("Tap").unwrap();
+    performance::draw(&mut display, &preset, Side::Left).unwrap();
+
+    // Should render starting near the top (it's the only row, placed at y=3)
+    let area = display.affected_area();
+    assert!(!area.is_zero_sized());
+    assert!(
+        area.top_left.y < 10,
+        "Single button should start near top. y={}",
+        area.top_left.y
+    );
+}

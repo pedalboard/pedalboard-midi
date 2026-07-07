@@ -16,8 +16,6 @@ use heapless::String;
 
 const DISPLAY_SIZE: u32 = 128;
 const PADDING: u32 = 3;
-const ROWS: u32 = 3;
-const ROW_HEIGHT: u32 = (DISPLAY_SIZE - ((ROWS + 1) * PADDING)) / ROWS;
 const ROW_WIDTH: u32 = DISPLAY_SIZE - 2 * PADDING;
 const CORNER_RADIUS: u32 = 14;
 
@@ -49,7 +47,15 @@ pub enum Side {
     Right,
 }
 
-/// Draw 3 button labels in rounded rectangles with arrow corners
+/// Draw button labels in rounded rectangles with arrow corners.
+/// Layout adapts dynamically based on how many buttons have non-empty labels:
+/// - 3 labels: standard 3-row layout
+/// - 2 labels: 2 taller rows filling the display
+/// - 1 label: single large centered label
+/// - 0 labels: nothing drawn
+///
+/// Buttons keep their physical position ordering (top/mid/bottom) so the
+/// spatial relationship to the hardware buttons is preserved.
 ///
 /// Physical layout:
 ///   D      E      F
@@ -64,10 +70,21 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     side: Side,
 ) -> Result<(), D::Error> {
     // Button indices: A=0, B=1, C=2, D=3, E=4, F=5
+    // Slot 0=top, 1=mid, 2=bottom
     let indices = match side {
         Side::Left => [3, 4, 0],  // D, E, A
         Side::Right => [5, 1, 2], // F, B, C
     };
+
+    // Collect active (non-empty) slots with their original slot position
+    let active_slots: heapless::Vec<u32, 3> = (0..3u32)
+        .filter(|&i| !preset.button_labels[indices[i as usize]].is_empty())
+        .collect();
+
+    let num_active = active_slots.len() as u32;
+    if num_active == 0 {
+        return Ok(());
+    }
 
     let stroke = PrimitiveStyle::with_stroke(Gray4::WHITE, 2);
     let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
@@ -84,17 +101,17 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
     const INSET: u32 = 8;
 
-    for i in 0..ROWS {
-        // Skip empty/unused buttons
-        let label = &preset.button_labels[indices[i as usize]];
-        if label.is_empty() {
-            continue;
-        }
+    // Compute row height dynamically
+    let row_height = (DISPLAY_SIZE - ((num_active + 1) * PADDING)) / num_active;
 
-        let y = (PADDING + i * (ROW_HEIGHT + PADDING)) as i32;
+    for (row_idx, &slot) in active_slots.iter().enumerate() {
+        let btn_idx = indices[slot as usize];
+        let label = &preset.button_labels[btn_idx];
+
+        let y = (PADDING + row_idx as u32 * (row_height + PADDING)) as i32;
 
         let sharp_on_left = matches!(
-            (side, i),
+            (side, slot),
             (Side::Left, 0) | (Side::Left, 2) | (Side::Right, 1)
         );
 
@@ -104,16 +121,10 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
             ((PADDING + INSET) as i32, ROW_WIDTH - INSET)
         };
 
-        let rect = Rectangle::new(Point::new(x, y), Size::new(w, ROW_HEIGHT));
+        let rect = Rectangle::new(Point::new(x, y), Size::new(w, row_height));
 
         // Sharp corner points toward the physical button location
-        // D is above-left of L  → top-left
-        // E is above-right of L → top-right
-        // A is below-left of L  → bottom-left
-        // F is above-right of R → top-right
-        // B is below-left of R  → bottom-left
-        // C is below-right of R → bottom-right
-        let radii = match (side, i) {
+        let radii = match (side, slot) {
             (Side::Left, 0) => CornerRadiiBuilder::new()
                 .all(radius)
                 .top_left(Size::zero())
@@ -140,16 +151,13 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 .build(),
         };
 
-        let btn_idx = indices[i as usize];
         let is_active = preset.button_active[btn_idx];
 
         if is_active {
-            // Active: filled white background
             RoundedRectangle::new(rect, radii)
                 .into_styled(active_fill)
                 .draw(display)?;
         } else {
-            // Inactive: outline only
             RoundedRectangle::new(rect, radii)
                 .into_styled(stroke)
                 .draw(display)?;
@@ -165,7 +173,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         let fill = PrimitiveStyleBuilder::new()
             .fill_color(corner_fill_color)
             .build();
-        let corner_pos = match (side, i) {
+        let corner_pos = match (side, slot) {
             (Side::Left, 0) => Triangle::new(
                 rect.top_left,
                 rect.top_left + Point::new(cs, 0),
@@ -176,7 +184,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Left, _) => {
-                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                let p = rect.top_left + Point::new(0, row_height as i32 - 1);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, 0) => {
@@ -184,11 +192,11 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Right, 1) => {
-                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                let p = rect.top_left + Point::new(0, row_height as i32 - 1);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, _) => {
-                let p = rect.top_left + Point::new(w as i32 - 1, ROW_HEIGHT as i32 - 1);
+                let p = rect.top_left + Point::new(w as i32 - 1, row_height as i32 - 1);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, -cs))
             }
         };
@@ -196,11 +204,9 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 
         // Label text
         if is_active {
-            // Active: black text on white background (no shadow needed)
             TextBox::with_textbox_style(label.as_str(), rect, active_text_style, textbox_style)
                 .draw(display)?;
         } else {
-            // Inactive: shadow for depth, then white on top
             let shadow_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x7));
             let shadow_rect = Rectangle::new(rect.top_left + Point::new(1, 1), rect.size);
             TextBox::with_textbox_style(label.as_str(), shadow_rect, shadow_style, textbox_style)
