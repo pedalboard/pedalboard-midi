@@ -16,6 +16,8 @@ use heapless::String;
 
 const DISPLAY_SIZE: u32 = 128;
 const PADDING: u32 = 3;
+const ROWS: u32 = 3;
+const ROW_HEIGHT: u32 = (DISPLAY_SIZE - ((ROWS + 1) * PADDING)) / ROWS;
 const ROW_WIDTH: u32 = DISPLAY_SIZE - 2 * PADDING;
 const CORNER_RADIUS: u32 = 14;
 
@@ -48,14 +50,9 @@ pub enum Side {
 }
 
 /// Draw button labels in rounded rectangles with arrow corners.
-/// Layout adapts dynamically based on how many buttons have non-empty labels:
-/// - 3 labels: standard 3-row layout
-/// - 2 labels: 2 taller rows filling the display
-/// - 1 label: single large centered label
-/// - 0 labels: nothing drawn
-///
-/// Buttons keep their physical position ordering (top/mid/bottom) so the
-/// spatial relationship to the hardware buttons is preserved.
+/// Each label is positioned at a fixed vertical slot corresponding to its
+/// physical button location (top/mid/bottom). Empty labels leave their
+/// slot blank — remaining labels do NOT shift or resize.
 ///
 /// Physical layout:
 ///   D      E      F
@@ -76,16 +73,6 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         Side::Right => [5, 1, 2], // F, B, C
     };
 
-    // Collect active (non-empty) slots with their original slot position
-    let active_slots: heapless::Vec<u32, 3> = (0..3u32)
-        .filter(|&i| !preset.button_labels[indices[i as usize]].is_empty())
-        .collect();
-
-    let num_active = active_slots.len() as u32;
-    if num_active == 0 {
-        return Ok(());
-    }
-
     let stroke = PrimitiveStyle::with_stroke(Gray4::WHITE, 2);
     let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
     let textbox_style = TextBoxStyleBuilder::new()
@@ -101,17 +88,17 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
     const INSET: u32 = 8;
 
-    // Compute row height dynamically
-    let row_height = (DISPLAY_SIZE - ((num_active + 1) * PADDING)) / num_active;
-
-    for (row_idx, &slot) in active_slots.iter().enumerate() {
-        let btn_idx = indices[slot as usize];
+    for i in 0..ROWS {
+        let btn_idx = indices[i as usize];
         let label = &preset.button_labels[btn_idx];
+        if label.is_empty() {
+            continue;
+        }
 
-        let y = (PADDING + row_idx as u32 * (row_height + PADDING)) as i32;
+        let y = (PADDING + i * (ROW_HEIGHT + PADDING)) as i32;
 
         let sharp_on_left = matches!(
-            (side, slot),
+            (side, i),
             (Side::Left, 0) | (Side::Left, 2) | (Side::Right, 1)
         );
 
@@ -121,10 +108,9 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
             ((PADDING + INSET) as i32, ROW_WIDTH - INSET)
         };
 
-        let rect = Rectangle::new(Point::new(x, y), Size::new(w, row_height));
+        let rect = Rectangle::new(Point::new(x, y), Size::new(w, ROW_HEIGHT));
 
-        // Sharp corner points toward the physical button location
-        let radii = match (side, slot) {
+        let radii = match (side, i) {
             (Side::Left, 0) => CornerRadiiBuilder::new()
                 .all(radius)
                 .top_left(Size::zero())
@@ -173,7 +159,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         let fill = PrimitiveStyleBuilder::new()
             .fill_color(corner_fill_color)
             .build();
-        let corner_pos = match (side, slot) {
+        let corner_pos = match (side, i) {
             (Side::Left, 0) => Triangle::new(
                 rect.top_left,
                 rect.top_left + Point::new(cs, 0),
@@ -184,7 +170,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Left, _) => {
-                let p = rect.top_left + Point::new(0, row_height as i32 - 1);
+                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, 0) => {
@@ -192,11 +178,11 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Right, 1) => {
-                let p = rect.top_left + Point::new(0, row_height as i32 - 1);
+                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, _) => {
-                let p = rect.top_left + Point::new(w as i32 - 1, row_height as i32 - 1);
+                let p = rect.top_left + Point::new(w as i32 - 1, ROW_HEIGHT as i32 - 1);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, -cs))
             }
         };

@@ -184,64 +184,38 @@ fn draw_active_button_renders_filled() {
 }
 
 #[test]
-fn draw_single_button_fills_more_vertical_space() {
-    // With only 1 button, draw still works and produces output
+fn draw_single_button_at_fixed_position() {
+    // Only button D (index 3) — should render at the top slot position
     let mut display = new_display();
 
     let mut preset = PresetMeta::default();
     preset.button_labels[3] = String::try_from("Solo").unwrap();
     performance::draw(&mut display, &preset, Side::Left).unwrap();
 
-    assert!(!display.affected_area().is_zero_sized());
-}
-
-#[test]
-fn draw_two_buttons_renders_both() {
-    // With 2 buttons on left display (D and A), both should produce output
-    let mut display = new_display();
-
-    let mut preset = PresetMeta::default();
-    preset.button_labels[3] = String::try_from("Drive").unwrap(); // D = slot 0
-    preset.button_labels[0] = String::try_from("Clean").unwrap(); // A = slot 2
-    performance::draw(&mut display, &preset, Side::Left).unwrap();
-
-    assert!(!display.affected_area().is_zero_sized());
-}
-
-#[test]
-fn draw_two_buttons_preserves_position_order() {
-    // If D (slot 0/top) and A (slot 2/bottom) are active, D should appear first (top)
-    let mut display = new_display();
-
-    let mut preset = PresetMeta::default();
-    preset.button_labels[3] = String::try_from("Top").unwrap(); // D = slot 0
-    preset.button_labels[0] = String::try_from("Bot").unwrap(); // A = slot 2
-    performance::draw(&mut display, &preset, Side::Left).unwrap();
-
-    // The affected area should start near the top (D is first)
     let area = display.affected_area();
+    assert!(!area.is_zero_sized());
+    // Top slot starts at y=3 (PADDING)
     assert!(
-        area.top_left.y < 10,
-        "First button (D/top) should be near top of display. y={}",
+        area.top_left.y < 5,
+        "Top button should be at top position. y={}",
         area.top_left.y
     );
 }
 
 #[test]
-fn draw_middle_only_button_renders() {
-    // Only E (index 4, slot 1) on left display
+fn draw_bottom_only_button_at_fixed_position() {
+    // Only button A (index 0) on left display — should NOT render at the top
+    // (bottom slot y=85 is beyond 64px MockDisplay, so no pixels within bounds)
     let mut display = new_display();
 
     let mut preset = PresetMeta::default();
-    preset.button_labels[4] = String::try_from("Tap").unwrap();
+    preset.button_labels[0] = String::try_from("Bass").unwrap();
     performance::draw(&mut display, &preset, Side::Left).unwrap();
 
-    // Should render starting near the top (it's the only row, placed at y=3)
-    let area = display.affected_area();
-    assert!(!area.is_zero_sized());
+    // Bottom slot starts at y=85 which is outside 64x64 MockDisplay
+    // So affected_area should be empty (all drawing is out of bounds)
     assert!(
-        area.top_left.y < 10,
-        "Single button should start near top. y={}",
-        area.top_left.y
+        display.affected_area().is_zero_sized(),
+        "Bottom button (y=85) should be outside 64px MockDisplay bounds"
     );
 }
