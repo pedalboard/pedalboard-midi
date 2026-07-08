@@ -820,7 +820,8 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 [[package]]
 name = "midi-controller"
 version = "0.1.0"
-source = "git+https://github.com/pedalboard/midi-controller?branch=main#443081cffc73b9bb077825957d4e7418de0ed33f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ea9fda62f1dd3614b19dc5523122d142c69f03ad265c7d37fc2ef6973113c78"
 dependencies = [
  "heapless 0.9.3",
  "postcard",
