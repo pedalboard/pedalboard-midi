@@ -357,6 +357,7 @@ fn renderer_from_config(rgb: crate::ledring::Rgb, renderer: LedRenderer, param: 
         LedRenderer::Fill => Renderer::Fill(rgb, param.max(1)),
         LedRenderer::Single => Renderer::Single(rgb, param),
         LedRenderer::Dots => Renderer::Dots(rgb, param.max(1)),
+        LedRenderer::Heatmap => Renderer::Heatmap(param),
     }
 }
 

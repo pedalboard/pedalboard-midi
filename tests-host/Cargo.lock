@@ -125,7 +125,7 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "midi-controller"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "heapless",
  "led-ring",

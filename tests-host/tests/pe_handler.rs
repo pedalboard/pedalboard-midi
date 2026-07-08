@@ -103,6 +103,7 @@ fn make_test_preset() -> Preset {
                 min: 0,
                 max: 127,
             },
+            ..Default::default()
         })
         .ok();
 

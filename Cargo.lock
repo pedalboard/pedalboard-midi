@@ -828,9 +828,9 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "midi-controller"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "719732ffeddec0179f7c84b847cf733ef0bdcf2babd867ec039dee8d5132dbf6"
+checksum = "082054a456306b3db4ae68a8746feea34c676d8c115bb8185ed2c46677a50af4"
 dependencies = [
  "heapless 0.9.3",
  "led-ring",
