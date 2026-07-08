@@ -33,6 +33,6 @@ repos:
 
       - id: host-tests
         name: host tests
-        entry: bash -c 'cargo test --manifest-path tests-host/Cargo.toml --target x86_64-unknown-linux-gnu --config "patch.\"https://github.com/pedalboard/pedalboard-protocol\".pedalboard-protocol.path=\"../pedalboard-protocol\""'
+        entry: bash -c 'cargo test --manifest-path tests-host/Cargo.toml --target x86_64-unknown-linux-gnu --config "patch.\"https://github.com/pedalboard/midi-controller\".midi-controller.path=\"../pedalboard-protocol\""'
         language: system
         pass_filenames: false

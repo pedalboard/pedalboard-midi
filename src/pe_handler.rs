@@ -9,17 +9,17 @@
 
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
-use pedalboard_protocol::config::{Color, Config, LedAnimation, LedRenderer, Preset};
-use pedalboard_protocol::controller::{Controller, Event as CtrlEvent, Output};
-use pedalboard_protocol::engine::ActionStep;
-use pedalboard_protocol::long_press::Edge as LpEdge;
-use pedalboard_protocol::state::PresetStateStore;
+use midi_controller::config::{Color, Config, LedAnimation, LedRenderer, Preset};
+use midi_controller::controller::{Controller, Event as CtrlEvent, Output};
+use midi_controller::engine::ActionStep;
+use midi_controller::long_press::Edge as LpEdge;
+use midi_controller::state::PresetStateStore;
 use smart_leds::RGB8;
 
 const NUM_BUTTONS: usize = 6;
 
 // Re-export types used by main.rs
-pub use pedalboard_protocol::engine::{DisplayEvent, DisplaySide, SystemAction};
+pub use midi_controller::engine::{DisplayEvent, DisplaySide, SystemAction};
 
 /// A step in an action sequence: raw MIDI bytes, a delay, or an LED change.
 #[derive(Debug, Clone, PartialEq, Eq)]

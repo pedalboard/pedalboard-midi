@@ -129,9 +129,9 @@ mod app {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         opendeck: OpenDeck,
         active_preset: u8,
-        pe_config: pedalboard_protocol::config::Config,
-        global_config: pedalboard_protocol::config::GlobalConfig,
-        state_store: pedalboard_protocol::state::PresetStateStore,
+        pe_config: midi_controller::config::Config,
+        global_config: midi_controller::config::GlobalConfig,
+        state_store: midi_controller::state::PresetStateStore,
         presets_skipped: u8,
         button_active: [bool; 6],
     }
@@ -296,14 +296,13 @@ mod app {
         );
 
         // Read runtime state from EEPROM (data address 0x50)
-        let mut restored_state = pedalboard_protocol::state::PresetStateStore::new();
+        let mut restored_state = midi_controller::state::PresetStateStore::new();
         let mut restored_active: u8 = 0;
         {
             use embedded_hal::i2c::I2c;
             let mut buf = [0u8; 128];
             if i2c.write_read(0x50u8, &[0x00u8], &mut buf).is_ok() {
-                if let Some(store) = pedalboard_protocol::state::PresetStateStore::from_eeprom(&buf)
-                {
+                if let Some(store) = midi_controller::state::PresetStateStore::from_eeprom(&buf) {
                     restored_active = store.active_index();
                     restored_state = store;
                     info!("EEPROM: restored runtime state, preset {}", restored_active);
@@ -375,7 +374,7 @@ mod app {
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
         // Presets loaded asynchronously in persist task
-        let pe_config = pedalboard_protocol::config::Config::default();
+        let pe_config = midi_controller::config::Config::default();
 
         (
             Shared {
@@ -384,7 +383,7 @@ mod app {
                 opendeck,
                 active_preset: restored_active,
                 pe_config,
-                global_config: pedalboard_protocol::config::GlobalConfig::default(),
+                global_config: midi_controller::config::GlobalConfig::default(),
                 state_store: restored_state,
                 presets_skipped: 0,
                 button_active: [false; 6],
@@ -436,11 +435,11 @@ mod app {
                     let preset_idx = ctx.shared.active_preset.lock(|p| *p);
                     ctx.shared.pe_config.lock(|cfg| {
                         if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                            if let Some(result) = pedalboard_protocol::engine::process_incoming_cc(
+                            if let Some(result) = midi_controller::engine::process_incoming_cc(
                                 preset, channel, cc, value,
                             ) {
+                                use midi_controller::engine::ReactiveResult;
                                 use pedalboard_midi::leds::LedEvent;
-                                use pedalboard_protocol::engine::ReactiveResult;
                                 let evt = match result {
                                     ReactiveResult::Heatmap(idx, fill) => {
                                         LedEvent::SetReactiveRing(idx, fill)
@@ -780,11 +779,11 @@ mod app {
                                 ctx.shared.pe_config.lock(|cfg| {
                                     if let Some(preset) = cfg.presets.get(preset_idx as usize) {
                                         if let Some(result) =
-                                            pedalboard_protocol::engine::process_incoming_cc(
+                                            midi_controller::engine::process_incoming_cc(
                                                 preset, channel, raw[1], raw[2],
                                             )
                                         {
-                                            use pedalboard_protocol::engine::ReactiveResult;
+                                            use midi_controller::engine::ReactiveResult;
                                             let evt = match result {
                                                 ReactiveResult::Heatmap(idx, fill) => {
                                                     LedEvent::SetReactiveRing(idx, fill)
@@ -812,10 +811,10 @@ mod app {
                             color,
                             animation,
                         } => {
+                            use midi_controller::config::LedAnimation;
                             use pedalboard_midi::ledring::{Modifier, Renderer, RingAnimation};
                             use pedalboard_midi::leds::{LedEvent, LedRings};
                             use pedalboard_midi::pe_handler::color_to_rgb;
-                            use pedalboard_protocol::config::LedAnimation;
 
                             let on_color = color_to_rgb(color);
                             let rgb = pedalboard_midi::ledring::rgb8_to_rgb(on_color);
@@ -943,11 +942,11 @@ mod app {
                         ctx.shared.pe_config.lock(|cfg| {
                             if let Some(preset) = cfg.presets.get(preset_idx as usize) {
                                 if let Some(result) =
-                                    pedalboard_protocol::engine::process_incoming_cc(
+                                    midi_controller::engine::process_incoming_cc(
                                         preset, channel, cc, value,
                                     )
                                 {
-                                    use pedalboard_protocol::engine::ReactiveResult;
+                                    use midi_controller::engine::ReactiveResult;
                                     let evt = match result {
                                         ReactiveResult::Heatmap(idx, fill) => {
                                             LedEvent::SetReactiveRing(idx, fill)
@@ -1012,41 +1011,39 @@ mod app {
                         debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
                         // Handle MIDI-CI Property Exchange messages
-                        if pedalboard_protocol::property_exchange::is_set_property(
+                        if midi_controller::property_exchange::is_set_property(
                             sysex_receive_buffer.as_ref(),
                         ) {
                             if let Some(data) =
-                                pedalboard_protocol::property_exchange::extract_set_property(
+                                midi_controller::property_exchange::extract_set_property(
                                     sysex_receive_buffer.as_ref(),
                                 )
                             {
                                 let mut decoded = [0u8; pedalboard_midi::MAX_PRESET_SIZE];
-                                let dec_len =
-                                    pedalboard_protocol::property_exchange::decode_mcoded7(
-                                        data.body,
-                                        &mut decoded,
-                                    );
+                                let dec_len = midi_controller::property_exchange::decode_mcoded7(
+                                    data.body,
+                                    &mut decoded,
+                                );
 
-                                if data.resource
-                                    == pedalboard_protocol::config::SYSTEM_COMMAND_RESOURCE
+                                if data.resource == midi_controller::config::SYSTEM_COMMAND_RESOURCE
                                 {
                                     // System command
                                     if dec_len > 0 {
                                         if let Some(cmd) =
-                                            pedalboard_protocol::config::SystemCommand::from_byte(
+                                            midi_controller::config::SystemCommand::from_byte(
                                                 decoded[0],
                                             )
                                         {
                                             use pedalboard_midi::persist::PersistCommand;
                                             debug!("PE System command: {}", cmd as u8);
                                             let persist_cmd = match cmd {
-                                                pedalboard_protocol::config::SystemCommand::Reboot => {
+                                                midi_controller::config::SystemCommand::Reboot => {
                                                     PersistCommand::Reboot
                                                 }
-                                                pedalboard_protocol::config::SystemCommand::Bootloader => {
+                                                midi_controller::config::SystemCommand::Bootloader => {
                                                     PersistCommand::Bootloader
                                                 }
-                                                pedalboard_protocol::config::SystemCommand::FactoryReset => {
+                                                midi_controller::config::SystemCommand::FactoryReset => {
                                                     PersistCommand::EraseAll
                                                 }
                                             };
@@ -1054,7 +1051,7 @@ mod app {
                                         }
                                     }
                                 } else if data.resource
-                                    == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
+                                    == midi_controller::config::GLOBAL_CONFIG_RESOURCE
                                 {
                                     // Global config — save via persist task (applied on load)
                                     debug!("PE Set GlobalConfig body len={}", dec_len);
@@ -1063,7 +1060,7 @@ mod app {
                                         ctx.local
                                             .persist_sender
                                             .try_send(pedalboard_midi::persist::PersistCommand::SavePreset(
-                                                pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE,
+                                                midi_controller::config::GLOBAL_CONFIG_RESOURCE,
                                                 blob,
                                             ))
                                             .ok();
@@ -1088,17 +1085,17 @@ mod app {
                                 }
 
                                 // Send ACK reply
-                                let req_id = pedalboard_protocol::property_exchange::request_id(
+                                let req_id = midi_controller::property_exchange::request_id(
                                     sysex_receive_buffer.as_ref(),
                                 );
-                                let src_muid = pedalboard_protocol::property_exchange::source_muid(
+                                let src_muid = midi_controller::property_exchange::source_muid(
                                     sysex_receive_buffer.as_ref(),
                                 );
-                                let reply = pedalboard_protocol::property_exchange::build_set_reply(
+                                let reply = midi_controller::property_exchange::build_set_reply(
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
-                                    pedalboard_protocol::property_exchange::PeStatus::Ok,
+                                    midi_controller::property_exchange::PeStatus::Ok,
                                 );
                                 for chunk in reply.chunks(3) {
                                     if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
@@ -1114,39 +1111,38 @@ mod app {
                         }
 
                         // Handle Get Property Inquiry (read-back)
-                        if pedalboard_protocol::property_exchange::is_get_property(
+                        if midi_controller::property_exchange::is_get_property(
                             sysex_receive_buffer.as_ref(),
                         ) {
                             if let Some(resource) =
-                                pedalboard_protocol::property_exchange::extract_get_resource(
+                                midi_controller::property_exchange::extract_get_resource(
                                     sysex_receive_buffer.as_ref(),
                                 )
                             {
-                                let req_id = pedalboard_protocol::property_exchange::request_id(
+                                let req_id = midi_controller::property_exchange::request_id(
                                     sysex_receive_buffer.as_ref(),
                                 );
-                                let src_muid = pedalboard_protocol::property_exchange::source_muid(
+                                let src_muid = midi_controller::property_exchange::source_muid(
                                     sysex_receive_buffer.as_ref(),
                                 );
                                 // Serialize from RAM for PE Get reply
                                 static mut GET_BUF: [u8; pedalboard_midi::MAX_PRESET_SIZE] =
                                     [0u8; pedalboard_midi::MAX_PRESET_SIZE];
                                 let body = if resource
-                                    == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
+                                    == midi_controller::config::GLOBAL_CONFIG_RESOURCE
                                 {
                                     ctx.shared.global_config.lock(|gc| {
                                         let buf = unsafe { &mut *core::ptr::addr_of_mut!(GET_BUF) };
                                         postcard::to_slice(gc, buf).ok().map(|s| s.len())
                                     })
-                                } else if resource
-                                    == pedalboard_protocol::config::DEVICE_INFO_RESOURCE
+                                } else if resource == midi_controller::config::DEVICE_INFO_RESOURCE
                                 {
                                     let mut version = heapless::String::<24>::new();
                                     let _ = core::fmt::Write::write_str(
                                         &mut version,
                                         concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH")),
                                     );
-                                    let info = pedalboard_protocol::config::DeviceInfo {
+                                    let info = midi_controller::config::DeviceInfo {
                                         flash_format: pedalboard_midi::FLASH_FORMAT_VERSION,
                                         presets_loaded: ctx.shared.pe_config.lock(|cfg| {
                                             cfg.presets
@@ -1183,11 +1179,11 @@ mod app {
                                     None => &[],
                                 };
                                 let get_status = if reply_body.is_empty() {
-                                    pedalboard_protocol::property_exchange::PeStatus::NotFound
+                                    midi_controller::property_exchange::PeStatus::NotFound
                                 } else {
-                                    pedalboard_protocol::property_exchange::PeStatus::Ok
+                                    midi_controller::property_exchange::PeStatus::Ok
                                 };
-                                let reply = pedalboard_protocol::property_exchange::build_get_reply(
+                                let reply = midi_controller::property_exchange::build_get_reply(
                                     [0x01, 0x02, 0x03, 0x04],
                                     src_muid,
                                     req_id,
@@ -1379,7 +1375,7 @@ mod app {
                     }
                     let payload = &data[1..]; // strip version byte
                     if let Ok(preset) =
-                        postcard::from_bytes::<pedalboard_protocol::config::Preset>(payload)
+                        postcard::from_bytes::<midi_controller::config::Preset>(payload)
                     {
                         ctx.shared.pe_config.lock(|cfg| {
                             let i = idx as usize;
@@ -1401,10 +1397,7 @@ mod app {
             // Load global config from flash
             let mut gc_buf = [0u8; 64];
             if let Some(data) = store
-                .load_preset(
-                    pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE,
-                    &mut gc_buf,
-                )
+                .load_preset(midi_controller::config::GLOBAL_CONFIG_RESOURCE, &mut gc_buf)
                 .await
             {
                 if data.is_empty() || data[0] != pedalboard_midi::FLASH_FORMAT_VERSION {
@@ -1416,7 +1409,7 @@ mod app {
                         );
                     }
                 } else if let Ok(gc) =
-                    postcard::from_bytes::<pedalboard_protocol::config::GlobalConfig>(&data[1..])
+                    postcard::from_bytes::<midi_controller::config::GlobalConfig>(&data[1..])
                 {
                     info!("global config loaded from flash");
                     ctx.shared.global_config.lock(|g| *g = gc.clone());
@@ -1443,7 +1436,7 @@ mod app {
 
                         if data.is_empty() {
                             // Empty body = delete preset from flash and RAM
-                            if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
+                            if preset_index == midi_controller::config::GLOBAL_CONFIG_RESOURCE {
                                 info!("global config cleared");
                                 ctx.shared.global_config.lock(|g| *g = Default::default());
                                 ctx.shared
@@ -1461,7 +1454,7 @@ mod app {
                                     if idx < cfg.presets.len() && !cfg.presets[idx].name.is_empty()
                                     {
                                         cfg.presets[idx] =
-                                            pedalboard_protocol::config::Preset::default();
+                                            midi_controller::config::Preset::default();
                                         true
                                     } else {
                                         false
@@ -1476,13 +1469,10 @@ mod app {
                                     store.save_preset(preset_index, &empty_marker).await;
                                 }
                             }
-                        } else if preset_index
-                            == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE
-                        {
+                        } else if preset_index == midi_controller::config::GLOBAL_CONFIG_RESOURCE {
                             // Global config — apply and save to flash
-                            if let Ok(gc) = postcard::from_bytes::<
-                                pedalboard_protocol::config::GlobalConfig,
-                            >(&data)
+                            if let Ok(gc) =
+                                postcard::from_bytes::<midi_controller::config::GlobalConfig>(&data)
                             {
                                 info!("global config applied and saved");
                                 ctx.shared.global_config.lock(|g| *g = gc.clone());
@@ -1490,7 +1480,7 @@ mod app {
                             }
                             store.save_preset(preset_index, &versioned).await;
                         } else if let Ok(preset) =
-                            postcard::from_bytes::<pedalboard_protocol::config::Preset>(&data)
+                            postcard::from_bytes::<midi_controller::config::Preset>(&data)
                         {
                             info!(
                                 "preset {} loaded: \"{}\"",
@@ -1502,7 +1492,7 @@ mod app {
                                 // Extend presets vec if needed
                                 while cfg.presets.len() <= idx {
                                     cfg.presets
-                                        .push(pedalboard_protocol::config::Preset::default())
+                                        .push(midi_controller::config::Preset::default())
                                         .ok();
                                 }
                                 cfg.presets[idx] = preset;
@@ -1511,9 +1501,9 @@ mod app {
                             // Write initial state from preset defaults to EEPROM
                             let buf = ctx.shared.pe_config.lock(|cfg| {
                                 let mut state_store =
-                                    pedalboard_protocol::state::PresetStateStore::new();
+                                    midi_controller::state::PresetStateStore::new();
                                 for (i, p) in cfg.presets.iter().enumerate() {
-                                    if i >= pedalboard_protocol::state::EEPROM_MAX_PRESETS {
+                                    if i >= midi_controller::state::EEPROM_MAX_PRESETS {
                                         break;
                                     }
                                     if !p.defaults.button_active.is_empty()
@@ -1521,9 +1511,7 @@ mod app {
                                     {
                                         state_store.set_state(
                                             i,
-                                            pedalboard_protocol::state::PresetState::from_defaults(
-                                                p,
-                                            ),
+                                            midi_controller::state::PresetState::from_defaults(p),
                                         );
                                     }
                                 }
@@ -1564,7 +1552,7 @@ mod app {
                         Mono::delay(200.millis()).await;
                         store.erase_all().await;
                         // Clear EEPROM runtime state
-                        let buf = pedalboard_protocol::state::PresetStateStore::cleared_eeprom();
+                        let buf = midi_controller::state::PresetStateStore::cleared_eeprom();
                         use embedded_hal::i2c::I2c;
                         for page in 0..16 {
                             let offset = page * 8;
@@ -1886,8 +1874,13 @@ mod app {
                                 // Check encoder 0
                                 if let Some(enc) = preset.and_then(|p| p.encoders.first()) {
                                     let enc_cc = match &enc.action {
-                                        pedalboard_protocol::config::EncoderAction::Cc { cc, .. } => Some(*cc as u8),
-                                        pedalboard_protocol::config::EncoderAction::CcRelative { cc, .. } => Some(*cc),
+                                        midi_controller::config::EncoderAction::Cc {
+                                            cc, ..
+                                        } => Some(*cc as u8),
+                                        midi_controller::config::EncoderAction::CcRelative {
+                                            cc,
+                                            ..
+                                        } => Some(*cc),
                                         _ => None,
                                     };
                                     if enc_cc == Some(raw[1]) {
@@ -1896,7 +1889,11 @@ mod app {
                                         } else {
                                             enc.label.clone()
                                         };
-                                        displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
+                                        displays.draw_overlay(
+                                            DisplayLocation::L,
+                                            lbl.as_str(),
+                                            raw[2],
+                                        );
                                         overlay_ticks = OVERLAY_DURATION;
                                         show_overlay = true;
                                         return;
@@ -1905,8 +1902,13 @@ mod app {
                                 // Check encoder 1
                                 if let Some(enc) = preset.and_then(|p| p.encoders.get(1)) {
                                     let enc_cc = match &enc.action {
-                                        pedalboard_protocol::config::EncoderAction::Cc { cc, .. } => Some(*cc as u8),
-                                        pedalboard_protocol::config::EncoderAction::CcRelative { cc, .. } => Some(*cc),
+                                        midi_controller::config::EncoderAction::Cc {
+                                            cc, ..
+                                        } => Some(*cc as u8),
+                                        midi_controller::config::EncoderAction::CcRelative {
+                                            cc,
+                                            ..
+                                        } => Some(*cc),
                                         _ => None,
                                     };
                                     if enc_cc == Some(raw[1]) {
@@ -1915,7 +1917,11 @@ mod app {
                                         } else {
                                             enc.label.clone()
                                         };
-                                        displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
+                                        displays.draw_overlay(
+                                            DisplayLocation::R,
+                                            lbl.as_str(),
+                                            raw[2],
+                                        );
                                         overlay_ticks = OVERLAY_DURATION;
                                         show_overlay = true;
                                         return;
@@ -1929,7 +1935,11 @@ mod app {
                                         } else {
                                             a.label.clone()
                                         };
-                                        displays.draw_overlay(DisplayLocation::L, lbl.as_str(), raw[2]);
+                                        displays.draw_overlay(
+                                            DisplayLocation::L,
+                                            lbl.as_str(),
+                                            raw[2],
+                                        );
                                         overlay_ticks = OVERLAY_DURATION;
                                         show_overlay = true;
                                         return;
@@ -1943,7 +1953,11 @@ mod app {
                                         } else {
                                             a.label.clone()
                                         };
-                                        displays.draw_overlay(DisplayLocation::R, lbl.as_str(), raw[2]);
+                                        displays.draw_overlay(
+                                            DisplayLocation::R,
+                                            lbl.as_str(),
+                                            raw[2],
+                                        );
                                         overlay_ticks = OVERLAY_DURATION;
                                         show_overlay = true;
                                         return;
@@ -2046,7 +2060,7 @@ mod app {
 
     fn load_preset_meta(
         presets: &mut [pedalboard_midi::views::performance::PresetMeta; 32],
-        cfg: &pedalboard_protocol::config::Config,
+        cfg: &midi_controller::config::Config,
     ) {
         for (i, meta) in presets.iter_mut().enumerate() {
             let (name, labels) =

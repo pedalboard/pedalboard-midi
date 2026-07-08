@@ -15,14 +15,14 @@ mod pe_handler;
 use events::{Edge, InputEvent, Pulse};
 use heapless::Vec;
 use pe_handler::{MidiStep, PeHandler};
-use pedalboard_protocol::config::*;
+use midi_controller::config::*;
 
 fn make_config() -> Config {
     let mut presets: Vec<Preset, MAX_PRESETS> = Vec::new();
     presets.push(make_test_preset()).ok();
     // Add a second preset so preset switching works
     presets.push(make_test_preset()).ok();
-    Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets }
+    Config { global: midi_controller::config::GlobalConfig::default(), presets }
 }
 
 fn make_test_preset() -> Preset {
@@ -256,7 +256,7 @@ fn action_sequence_with_delay() {
     };
     let mut presets: Vec<Preset, MAX_PRESETS> = Vec::new();
     presets.push(preset).ok();
-    let config = Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets };
+    let config = Config { global: midi_controller::config::GlobalConfig::default(), presets };
 
     let mut h = PeHandler::new();
     let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)],  0);

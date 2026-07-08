@@ -17,7 +17,7 @@
 /// ```
 ///
 /// `N` = `MAX_PRESET_SIZE`. When increasing, also update:
-/// - `pedalboard-protocol`: `build_get_reply` Vec capacity and `encoded_body` buffer
+/// - `midi-controller`: `build_get_reply` Vec capacity and `encoded_body` buffer
 /// - `USB_OUT_CAPACITY` (the static assert will catch this)
 pub const MAX_PRESET_SIZE: usize = 256;
 
@@ -28,7 +28,7 @@ pub const MAX_PRESET_SIZE: usize = 256;
 /// field at the end does NOT require a bump (postcard tolerates trailing data).
 ///
 /// See: `dotgithub/docs/adr-versioning.md`
-pub const FLASH_FORMAT_VERSION: u8 = pedalboard_protocol::config::PRESET_SCHEMA_VERSION;
+pub const FLASH_FORMAT_VERSION: u8 = midi_controller::config::PRESET_SCHEMA_VERSION;
 
 /// Maximum PE GET reply message size (capped by protocol Vec<u8, 350>).
 pub const MAX_PE_REPLY_SIZE: usize = 350;

@@ -1,10 +1,8 @@
-//! LED ring rendering — thin re-export from pedalboard-protocol with smart_leds bridge.
+//! LED ring rendering — thin re-export from midi-controller with smart_leds bridge.
 
 use smart_leds::RGB8;
 
-pub use pedalboard_protocol::led::{
-    LedRing, Modifier, Renderer, Rgb, RingAnimation, LEDS_PER_RING,
-};
+pub use midi_controller::led::{LedRing, Modifier, Renderer, Rgb, RingAnimation, LEDS_PER_RING};
 
 pub type LedData = [RGB8; LEDS_PER_RING];
 

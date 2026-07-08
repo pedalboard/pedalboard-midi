@@ -208,7 +208,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 /// Build display metadata (name + button labels) from a PE config preset.
 /// Falls back to defaults ("Preset N", "A"-"F") if empty.
 pub fn preset_meta_from_config(
-    cfg: &pedalboard_protocol::config::Config,
+    cfg: &midi_controller::config::Config,
     index: usize,
 ) -> (String<16>, [String<16>; BUTTON_COUNT]) {
     let defaults = ["A", "B", "C", "D", "E", "F"];

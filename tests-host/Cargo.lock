@@ -115,6 +115,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
+name = "midi-controller"
+version = "0.1.0"
+dependencies = [
+ "heapless",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -130,15 +139,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41af26158b0f5530f7b79955006c2727cd23d0d8e7c3109dc316db0a919784dd"
 
 [[package]]
-name = "pedalboard-protocol"
-version = "0.1.0"
-dependencies = [
- "heapless",
- "postcard",
- "serde",
-]
-
-[[package]]
 name = "pedalboard-views-test"
 version = "0.0.0"
 dependencies = [
@@ -146,7 +146,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-text",
  "heapless",
- "pedalboard-protocol",
+ "midi-controller",
  "smart-leds",
 ]
 

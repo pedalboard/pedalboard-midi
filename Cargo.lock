@@ -818,6 +818,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
+name = "midi-controller"
+version = "0.1.0"
+source = "git+https://github.com/pedalboard/midi-controller?branch=main#443081cffc73b9bb077825957d4e7418de0ed33f"
+dependencies = [
+ "heapless 0.9.3",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "midi-convert"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1018,6 +1028,7 @@ dependencies = [
  "embedded-storage-async",
  "embedded-text",
  "heapless 0.9.3",
+ "midi-controller",
  "midi-convert",
  "midi-types 0.2.1",
  "midi2",
@@ -1025,7 +1036,6 @@ dependencies = [
  "nb 1.1.0",
  "opendeck",
  "panic-probe",
- "pedalboard-protocol",
  "portable-atomic",
  "postcard",
  "rotary-encoder-embedded",
@@ -1042,16 +1052,6 @@ dependencies = [
  "usb-device",
  "usbd-midi",
  "ws2812-pio",
-]
-
-[[package]]
-name = "pedalboard-protocol"
-version = "0.1.0"
-source = "git+https://github.com/pedalboard/pedalboard-protocol?branch=main#07fcf934b8d476e22e333f5e0fe5ace0c4d5d2e9"
-dependencies = [
- "heapless 0.9.3",
- "postcard",
- "serde",
 ]
 
 [[package]]
