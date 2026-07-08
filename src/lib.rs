@@ -41,7 +41,6 @@ pub mod display;
 pub mod events;
 pub mod ledring;
 pub mod leds;
-pub mod long_press;
 #[cfg(all(target_arch = "arm", feature = "opendeck"))]
 pub mod opendeck_handler;
 pub mod pe_handler;

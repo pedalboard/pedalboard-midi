@@ -6,9 +6,6 @@ mod events;
 #[path = "../../src/action.rs"]
 mod action;
 
-#[path = "../../src/long_press.rs"]
-mod long_press;
-
 #[path = "../../src/ledring.rs"]
 mod ledring;
 
@@ -113,7 +110,7 @@ fn on_press_fires_immediately() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)], &cal, 0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
     assert!(r.system.is_empty());
@@ -124,7 +121,7 @@ fn on_release_fires_note_off() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Deactivate)], &cal, 0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
 }
@@ -134,7 +131,7 @@ fn long_press_defers_on_press() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
     assert!(r.midi.is_empty());
     assert!(r.system.is_empty());
 }
@@ -144,11 +141,11 @@ fn short_release_fires_on_press() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal);
-    for _ in 0..100 {
-        h.handle_events(&preset, &[], &cal);
+    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    for i in 1..=100 {
+        h.handle_events(&preset, &[], &cal, i);
     }
-    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)], &cal, 101);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
     assert!(r.system.is_empty());
@@ -159,10 +156,10 @@ fn long_press_fires_preset_next() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal);
+    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
     let mut found = false;
-    for _ in 0..501 {
-        let r = h.handle_events(&preset, &[], &cal);
+    for i in 1..=501 {
+        let r = h.handle_events(&preset, &[], &cal, i);
         if !r.system.is_empty() {
             assert_eq!(r.system[0], SystemAction::PresetNext);
             assert!(r.midi.is_empty());
@@ -178,10 +175,10 @@ fn long_press_fires_preset_prev() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&preset, &[InputEvent::ButtonC(Edge::Activate)], &cal);
+    h.handle_events(&preset, &[InputEvent::ButtonC(Edge::Activate)], &cal, 0);
     let mut found = false;
-    for _ in 0..501 {
-        let r = h.handle_events(&preset, &[], &cal);
+    for i in 1..=501 {
+        let r = h.handle_events(&preset, &[], &cal, i);
         if !r.system.is_empty() {
             assert_eq!(r.system[0], SystemAction::PresetPrev);
             found = true;
@@ -196,11 +193,11 @@ fn long_press_suppresses_on_press() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal);
-    for _ in 0..501 {
-        h.handle_events(&preset, &[], &cal);
+    h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    for i in 1..=501 {
+        h.handle_events(&preset, &[], &cal, i);
     }
-    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonB(Edge::Deactivate)], &cal, 502);
     assert!(r.midi.is_empty());
     assert!(r.system.is_empty());
 }
@@ -211,7 +208,7 @@ fn encoder_generates_cc() {
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
     h.encoder_values[0] = 64;
-    let r = h.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)], &cal, 0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
 }
@@ -249,7 +246,7 @@ fn action_sequence_with_delay() {
     };
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)], &cal);
+    let r = h.handle_events(&preset, &[InputEvent::ButtonA(Edge::Activate)], &cal, 0);
     assert_eq!(r.midi.len(), 3);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 1, 127]));
     assert_eq!(r.midi[1], MidiStep::Delay(100));

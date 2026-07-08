@@ -573,9 +573,6 @@ mod app {
         let mut tap_tempo = pedalboard_protocol::tap_tempo::TapTempo::new();
 
         loop {
-            // Tick encoder acceleration timer unconditionally
-            pe.tick();
-
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw) {
@@ -721,7 +718,8 @@ mod app {
                     });
                     let result = ctx.shared.pe_config.lock(|cfg| {
                         let preset = &cfg.presets[preset_idx as usize];
-                        pe.handle_events(preset, &events, &cal)
+                        let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                        pe.handle_events(preset, &events, &cal, now_ms)
                     });
                     for step in &result.midi {
                         pe_midi_steps.push(step.clone()).ok();
