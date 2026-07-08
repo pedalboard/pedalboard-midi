@@ -48,7 +48,7 @@ usbd-midi = { version = "0.5.1" }
 midi-types = { version = "0.2.0", features = ["defmt"] }
 # midi crates
 opendeck = { git = "https://github.com/pedalboard/opendeck", branch = "main", optional = true }
-midi-controller = "0.2.0"
+midi-controller = "0.3.0"
 postcard = { version = "1.1.1", default-features = false }
 midi2 = { version = "0.11", default-features = false, features = [
   "channel-voice1",
