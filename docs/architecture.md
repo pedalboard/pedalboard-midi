@@ -19,6 +19,56 @@ The firmware uses RTIC v2 with async tasks on the RP2040. Dispatcher: `SW0_IRQ`.
 
 Inter-task communication uses `rtic_sync::channel` (bounded, lock-free).
 
+## Task Dependency Graph
+
+```mermaid
+graph LR
+    subgraph "Priority 3 (ISR)"
+        USB_RX[usb_rx<br/>SysEx · PE Set/Get]
+        MIDI_IN[midi_in<br/>DIN MIDI input]
+    end
+
+    subgraph "Priority 1 (Async Tasks)"
+        POLL[poll_input<br/>1ms loop · events]
+        DISPLAY[display_out<br/>200ms loop · labels]
+        LED[led_writer<br/>SPI render]
+        SYSEX[sysex_processor<br/>OpenDeck responses]
+        PERSIST[persist<br/>Flash read/write]
+        SEND[send_to_usb_midi<br/>USB out queue]
+        BLINK[blink<br/>heartbeat LED]
+        CLOCK[midi_clock<br/>BPM sync]
+        MON[mon_off<br/>activity LED timeout]
+    end
+
+    USB_RX -->|PersistCommand| PERSIST
+    USB_RX -->|SysEx responses| SYSEX
+    USB_RX -->|USB packets| SEND
+    MIDI_IN -->|LED data| LED
+    POLL -->|USB packets| SEND
+    POLL -->|LED data| LED
+    POLL -->|display msgs| DISPLAY
+    SYSEX -->|USB packets| SEND
+    PERSIST -->|pe_config| POLL
+```
+
+## PeHandler State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle --> ButtonPressed : Activate
+    ButtonPressed --> Idle : Deactivate (Momentary)
+    ButtonPressed --> Active : Toggle/RadioGroup
+    Active --> Idle : Toggle again
+
+    Idle --> LongPressWait : Activate (has on_long_press)
+    LongPressWait --> ShortPress : Release before 500ms
+    LongPressWait --> LongPress : Hold past 500ms
+    ShortPress --> Idle : fire on_press
+    LongPress --> Idle : fire on_long_press
+```
+
 ## PE Config Pipeline
 
 ```
