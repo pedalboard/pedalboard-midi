@@ -1,21 +1,21 @@
-//! PE preset event handler: thin hardware adapter over protocol::engine.
+//! PE preset event handler: thin hardware adapter over protocol::controller.
 //!
 //! Responsibilities (HMI/hardware only):
-//! - Input event → abstract index mapping
-//! - Format conversion (MidiMessage → raw bytes)
-//! - Timing: passes `now_ms` to protocol crate's timing structs
+//! - Input event → abstract InputEvent mapping
+//! - Format conversion (ActionStep → MidiStep with raw bytes)
+//! - LED ring rendering (hardware-specific RGB animations)
+//! - On_enter/on_exit actions (preset switch lifecycle)
+//! - MIDI trigger processing
 //!
-//! All timing logic (long-press detection, encoder acceleration) lives in the
-//! protocol crate and is driven by absolute timestamps.
+//! All timing and button/encoder logic is delegated to the Controller.
 
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
-use pedalboard_protocol::action::{EncoderDirection, MidiMessage};
-use pedalboard_protocol::config::{ButtonMode, Color, LedAnimation, LedRenderer, Preset};
-use pedalboard_protocol::encoder_accel::EncoderAccel;
-use pedalboard_protocol::engine::{self, ButtonEvent};
-use pedalboard_protocol::long_press::{Edge as LpEdge, Gesture, LongPressDetector};
-use pedalboard_protocol::state::{PresetState, PresetStateStore};
+use pedalboard_protocol::config::{Color, LedAnimation, LedRenderer, Preset};
+use pedalboard_protocol::controller::{Controller, ControllerResult, InputEvent as CtrlEvent};
+use pedalboard_protocol::engine::ActionStep;
+use pedalboard_protocol::long_press::Edge as LpEdge;
+use pedalboard_protocol::state::PresetStateStore;
 use smart_leds::RGB8;
 
 const NUM_BUTTONS: usize = 6;
@@ -40,7 +40,7 @@ impl Default for AdcCalibration {
 }
 
 // Re-export types used by main.rs
-pub use pedalboard_protocol::engine::{ActionStep, DisplayEvent, DisplaySide, SystemAction};
+pub use pedalboard_protocol::engine::{DisplayEvent, DisplaySide, SystemAction};
 
 /// A step in an action sequence: raw MIDI bytes, a delay, or an LED change.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,8 +49,8 @@ pub enum MidiStep {
     Delay(u16),
     SetLed {
         btn_idx: usize,
-        color: pedalboard_protocol::config::Color,
-        animation: pedalboard_protocol::config::LedAnimation,
+        color: Color,
+        animation: LedAnimation,
     },
 }
 
@@ -65,14 +65,10 @@ pub struct HandleResult {
 /// LED state for all 8 rings (A-F + Vol + Gain).
 pub type LedAnimations = [RingAnimation; 8];
 
-/// Stateful PE event handler. Thin adapter over protocol::engine.
+/// Stateful PE event handler. Wraps the protocol crate's Controller and adds
+/// hardware-specific concerns (LED rendering, MIDI format, on_enter/on_exit).
 pub struct PeHandler {
-    pub encoder_values: [u8; 2],
-    button_active: [bool; NUM_BUTTONS],
-    cycle_index: [u8; NUM_BUTTONS],
-    encoder_accel: [EncoderAccel; 2],
-    long_press: [LongPressDetector; NUM_BUTTONS],
-    state_store: PresetStateStore,
+    ctrl: Controller,
 }
 
 impl Default for PeHandler {
@@ -84,30 +80,19 @@ impl Default for PeHandler {
 impl PeHandler {
     pub fn new() -> Self {
         Self {
-            encoder_values: [0; 2],
-            button_active: [false; NUM_BUTTONS],
-            cycle_index: [0; NUM_BUTTONS],
-            encoder_accel: [EncoderAccel::new(), EncoderAccel::new()],
-            long_press: core::array::from_fn(|_| LongPressDetector::new_fired()),
-            state_store: PresetStateStore::new(),
+            ctrl: Controller::new(),
         }
     }
 
     /// Create with a restored state store (from EEPROM).
     pub fn with_state(store: PresetStateStore) -> Self {
-        let state = store.current().clone();
         Self {
-            encoder_values: state.encoder_values,
-            button_active: state.button_active,
-            cycle_index: state.cycle_index,
-            encoder_accel: [EncoderAccel::new(), EncoderAccel::new()],
-            long_press: core::array::from_fn(|_| LongPressDetector::new_fired()),
-            state_store: store,
+            ctrl: Controller::with_state(store),
         }
     }
 
     /// Switch to a new preset: saves current state, loads new state,
-    /// and returns MIDI messages to sync external gear.
+    /// fires on_exit/on_enter actions, and returns recall MIDI.
     pub fn switch_preset(
         &mut self,
         new_preset: u8,
@@ -130,25 +115,10 @@ impl PeHandler {
             }
         }
 
-        // 2. Clear momentary visual feedback — only toggle/radio state should persist
-        for i in 0..NUM_BUTTONS {
-            if let Some(btn) = old_preset.buttons.get(i) {
-                if matches!(btn.mode, ButtonMode::Momentary) {
-                    self.button_active[i] = false;
-                }
-            }
-        }
+        // 2. Delegate state save/load/recall to Controller
+        let recall = self.ctrl.switch_preset(new_preset, new_preset_cfg);
 
-        // 3. Save/load state
-        let mut working = self.working_state();
-        let recall = self
-            .state_store
-            .switch(new_preset, &mut working, new_preset_cfg);
-        self.apply_state(&working);
-        // Use "fired" state so stale Deactivate from the switch button is suppressed
-        self.long_press = core::array::from_fn(|_| LongPressDetector::new_fired());
-
-        // 4. Fire on_enter for new preset
+        // 3. Fire on_enter for new preset
         for action in &new_preset_cfg.on_enter {
             match action {
                 pedalboard_protocol::config::Action::Delay(ms) => {
@@ -162,9 +132,11 @@ impl PeHandler {
             }
         }
 
-        // 5. Recall MIDI (active toggles + encoder values)
-        for msg in &recall {
-            result.push(MidiStep::Send(msg.data, msg.len)).ok();
+        // 4. Recall MIDI (active toggles + encoder values)
+        for step in &recall {
+            if let ActionStep::Send(msg) = step {
+                result.push(MidiStep::Send(msg.data, msg.len)).ok();
+            }
         }
 
         result
@@ -172,24 +144,31 @@ impl PeHandler {
 
     /// Serialize current state to a 128-byte EEPROM buffer for persistence.
     pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
-        let mut buf = [0u8; 128];
-        // Save current working state into the store before serializing
-        let mut store_copy = self.state_store.clone();
-        let working = self.working_state();
-        // Update the active preset's state in the store copy
-        store_copy.save_working(&working);
-        store_copy.to_eeprom(&mut buf);
-        heapless::Vec::from_slice(&buf).unwrap_or_default()
+        self.ctrl.eeprom_state()
     }
 
     /// Returns true if any button is currently held (long-press counting).
     pub fn any_active(&self) -> bool {
-        self.long_press.iter().any(|lp| lp.is_active())
+        self.ctrl.any_active()
     }
 
     /// Returns the current button active state (toggle ON / momentary held).
     pub fn button_active(&self) -> [bool; NUM_BUTTONS] {
-        self.button_active
+        *self.ctrl.button_active()
+    }
+
+    /// Get the current encoder values.
+    pub fn encoder_values(&self) -> [u8; 2] {
+        self.ctrl.encoder_values()
+    }
+
+    /// Set encoder value (for test setup or initial state from config).
+    pub fn set_encoder_value(&mut self, index: usize, value: u8) {
+        let mut state = self.ctrl.state().clone();
+        if index < 2 {
+            state.encoder_values[index] = value;
+        }
+        self.ctrl.save_working(&state);
     }
 
     /// Process input events against a PE preset. Returns MIDI messages and system actions.
@@ -200,249 +179,164 @@ impl PeHandler {
         cal: &AdcCalibration,
         now_ms: u32,
     ) -> HandleResult {
-        let mut midi = heapless::Vec::new();
-        let mut system = heapless::Vec::new();
-        let mut display = heapless::Vec::new();
-        let mut led_dirty = false;
+        let mut result = HandleResult {
+            midi: heapless::Vec::new(),
+            system: heapless::Vec::new(),
+            display: heapless::Vec::new(),
+            led_dirty: false,
+        };
 
-        // --- Buttons: long-press detection (HMI) → engine (logic) ---
+        // Map hardware events to abstract Controller events and process
         for i in 0..NUM_BUTTONS {
-            let edge = button_edge(events, i);
-
-            let has_long_press = preset
-                .buttons
-                .get(i)
-                .map(|b| !b.on_long_press.is_empty())
-                .unwrap_or(false);
-
-            let mode = preset
-                .buttons
-                .get(i)
-                .map(|b| &b.mode)
-                .unwrap_or(&ButtonMode::Momentary);
-
-            if has_long_press {
-                // Momentary visual feedback while held
-                if matches!(mode, &ButtonMode::Momentary) {
-                    match edge {
-                        Some(Edge::Activate) => {
-                            self.button_active[i] = true;
-                            led_dirty = true;
-                        }
-                        Some(Edge::Deactivate) => {
-                            self.button_active[i] = false;
-                            led_dirty = true;
-                        }
-                        None => {}
-                    }
-                }
-                // Emit display hint on press, cancel on release
-                if let Some(Edge::Activate) = edge {
-                    if let Some(btn) = preset.buttons.get(i) {
-                        let hint_action = btn.on_long_press.iter().find_map(|a| match a {
-                            pedalboard_protocol::config::Action::PresetNext => {
-                                Some(SystemAction::PresetNext)
-                            }
-                            pedalboard_protocol::config::Action::PresetPrev => {
-                                Some(SystemAction::PresetPrev)
-                            }
-                            _ => None,
-                        });
-                        if let Some(action) = hint_action {
-                            display.push(DisplayEvent::LongPressHint { action }).ok();
-                        }
-                    }
-                }
-                // Long-press detection resolves gesture
-                match self.long_press[i].update(edge.map(edge_to_lp), now_ms) {
-                    Some(Gesture::ShortPress) => {
-                        display.push(DisplayEvent::LongPressCancel).ok();
-                        let mut state = self.working_state();
-                        let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
-                        self.apply_state(&state);
-                        self.merge_result(
-                            &r,
-                            i,
-                            &mut midi,
-                            &mut system,
-                            &mut display,
-                            &mut led_dirty,
-                        );
-                        // For momentary: also release (button is no longer held)
-                        // For toggle/radio with on_release: fire release actions
-                        if let Some(btn) = preset.buttons.get(i) {
-                            if mode == &ButtonMode::Momentary || !btn.on_release.is_empty() {
-                                let mut state2 = self.working_state();
-                                let r2 = engine::process_button(
-                                    &mut state2,
-                                    preset,
-                                    i,
-                                    ButtonEvent::Release,
-                                );
-                                self.apply_state(&state2);
-                                self.merge_result(
-                                    &r2,
-                                    i,
-                                    &mut midi,
-                                    &mut system,
-                                    &mut display,
-                                    &mut led_dirty,
-                                );
-                            }
-                        }
-                    }
-                    Some(Gesture::LongPress) => {
-                        let mut state = self.working_state();
-                        let r =
-                            engine::process_button(&mut state, preset, i, ButtonEvent::LongPress);
-                        self.apply_state(&state);
-                        self.merge_result(
-                            &r,
-                            i,
-                            &mut midi,
-                            &mut system,
-                            &mut display,
-                            &mut led_dirty,
-                        );
-                    }
-                    None => {}
-                }
-            } else {
-                // No long-press: immediate dispatch
-                match edge {
-                    Some(Edge::Activate) => {
-                        let mut state = self.working_state();
-                        let r = engine::process_button(&mut state, preset, i, ButtonEvent::Press);
-                        self.apply_state(&state);
-                        self.merge_result(
-                            &r,
-                            i,
-                            &mut midi,
-                            &mut system,
-                            &mut display,
-                            &mut led_dirty,
-                        );
-                    }
-                    Some(Edge::Deactivate) => {
-                        let mut state = self.working_state();
-                        let r = engine::process_button(&mut state, preset, i, ButtonEvent::Release);
-                        self.apply_state(&state);
-                        self.merge_result(
-                            &r,
-                            i,
-                            &mut midi,
-                            &mut system,
-                            &mut display,
-                            &mut led_dirty,
-                        );
-                    }
-                    None => {}
-                }
+            if let Some(edge) = button_edge(events, i) {
+                let ctrl_result = self.ctrl.process(
+                    CtrlEvent::ButtonEdge {
+                        index: i as u8,
+                        edge: edge_to_lp(edge),
+                    },
+                    now_ms,
+                    preset,
+                );
+                self.merge_ctrl_result(&ctrl_result, i, &mut result);
             }
         }
 
-        // --- Encoders: acceleration (HMI) → engine (logic) ---
+        // Tick for long-press detection on buttons with no edge this cycle
+        if self.ctrl.any_active() {
+            let tick_result = self.ctrl.tick(now_ms, preset);
+            self.merge_ctrl_result(&tick_result, 0, &mut result);
+        }
+
+        // Encoders
         for event in events {
             match event {
                 InputEvent::Vol(pulse) => {
-                    let steps = self.encoder_accel[0].steps(now_ms);
-                    let mut state = self.working_state();
-                    let r =
-                        engine::process_encoder(&mut state, preset, 0, pulse_to_dir(*pulse), steps);
-                    self.apply_state(&state);
-                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    let ctrl_result = self.ctrl.process(
+                        CtrlEvent::EncoderTurn {
+                            index: 0,
+                            clockwise: *pulse == Pulse::Clockwise,
+                        },
+                        now_ms,
+                        preset,
+                    );
+                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
                 }
                 InputEvent::Gain(pulse) => {
-                    let steps = self.encoder_accel[1].steps(now_ms);
-                    let mut state = self.working_state();
-                    let r =
-                        engine::process_encoder(&mut state, preset, 1, pulse_to_dir(*pulse), steps);
-                    self.apply_state(&state);
-                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    let ctrl_result = self.ctrl.process(
+                        CtrlEvent::EncoderTurn {
+                            index: 1,
+                            clockwise: *pulse == Pulse::Clockwise,
+                        },
+                        now_ms,
+                        preset,
+                    );
+                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
                 }
                 InputEvent::ExpressionPedal2(raw_adc) => {
-                    let r = engine::process_analog(preset, 0, *raw_adc, cal.exp2_min, cal.exp2_max);
-                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    let ctrl_result = self.ctrl.process(
+                        CtrlEvent::Analog {
+                            index: 0,
+                            raw: *raw_adc,
+                            min: cal.exp2_min,
+                            max: cal.exp2_max,
+                        },
+                        now_ms,
+                        preset,
+                    );
+                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
                 }
                 InputEvent::ExpressionPedal1(raw_adc) => {
-                    let r = engine::process_analog(preset, 1, *raw_adc, cal.exp1_min, cal.exp1_max);
-                    self.merge_result(&r, 0, &mut midi, &mut system, &mut display, &mut led_dirty);
+                    let ctrl_result = self.ctrl.process(
+                        CtrlEvent::Analog {
+                            index: 1,
+                            raw: *raw_adc,
+                            min: cal.exp1_min,
+                            max: cal.exp1_max,
+                        },
+                        now_ms,
+                        preset,
+                    );
+                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
                 }
                 _ => {}
             }
         }
 
-        HandleResult {
-            midi,
-            system,
-            display,
-            led_dirty,
-        }
+        result
     }
 
     /// Process incoming MIDI against preset triggers. Returns MIDI steps + system actions.
     pub fn process_incoming_midi(&mut self, preset: &Preset, raw: &[u8]) -> HandleResult {
         use pedalboard_protocol::engine::process_triggers;
+        use pedalboard_protocol::state::PresetState;
 
-        let mut midi = heapless::Vec::new();
-        let mut system = heapless::Vec::new();
-        let mut led_dirty = false;
+        let mut result = HandleResult {
+            midi: heapless::Vec::new(),
+            system: heapless::Vec::new(),
+            display: heapless::Vec::new(),
+            led_dirty: false,
+        };
 
         if raw.len() >= 2 {
-            let mut state = pedalboard_protocol::state::PresetState {
-                button_active: self.button_active,
-                encoder_values: self.encoder_values,
-                cycle_index: self.cycle_index,
+            // Build a working state from the controller's current state
+            let button_active = *self.ctrl.button_active();
+            let encoder_values = self.ctrl.encoder_values();
+            let mut state = PresetState {
+                button_active,
+                encoder_values,
+                cycle_index: self.ctrl.state().cycle_index,
             };
             let data2 = if raw.len() >= 3 { raw[2] } else { 0 };
-            let result = process_triggers(&mut state, preset, raw[0], raw[1], data2);
-            self.button_active = state.button_active;
-            self.cycle_index = state.cycle_index;
+            let trigger_result = process_triggers(&mut state, preset, raw[0], raw[1], data2);
 
-            for step in &result.midi {
-                let _ = match step {
-                    pedalboard_protocol::engine::ActionStep::Send(msg) => {
-                        midi.push(MidiStep::Send(msg.data, msg.len))
+            // Apply trigger state changes back
+            self.ctrl.save_working(&state);
+
+            // Convert to MidiSteps
+            for step in &trigger_result.midi {
+                match step {
+                    ActionStep::Send(msg) => {
+                        result.midi.push(MidiStep::Send(msg.data, msg.len)).ok();
                     }
-                    pedalboard_protocol::engine::ActionStep::Delay(ms) => {
-                        midi.push(MidiStep::Delay(*ms))
+                    ActionStep::Delay(ms) => {
+                        result.midi.push(MidiStep::Delay(*ms)).ok();
                     }
-                    pedalboard_protocol::engine::ActionStep::SetLed { color, animation } => midi
-                        .push(MidiStep::SetLed {
-                            btn_idx: 0,
-                            color: *color,
-                            animation: *animation,
-                        }),
-                };
+                    ActionStep::SetLed { color, animation } => {
+                        result
+                            .midi
+                            .push(MidiStep::SetLed {
+                                btn_idx: 0,
+                                color: *color,
+                                animation: *animation,
+                            })
+                            .ok();
+                    }
+                }
             }
-            for s in &result.system {
-                system.push(*s).ok();
+            for s in &trigger_result.system {
+                result.system.push(*s).ok();
             }
-            led_dirty = result.led_dirty;
+            result.led_dirty = trigger_result.led_dirty;
         }
 
-        HandleResult {
-            midi,
-            system,
-            display: heapless::Vec::new(),
-            led_dirty,
-        }
+        result
     }
 
     /// Compute LED animations for all 8 rings based on current state + preset config.
     pub fn led_state(&self, preset: &Preset) -> LedAnimations {
         let mut anims = [RingAnimation::off(); 8];
+        let button_active = self.ctrl.button_active();
+        let encoder_values = self.ctrl.encoder_values();
 
         for (i, anim) in anims.iter_mut().enumerate().take(NUM_BUTTONS) {
             if let Some(btn) = preset.buttons.get(i) {
-                // Reactive LED buttons are controlled by incoming MIDI, not button state
                 if btn.listen_cc.is_some() {
                     continue;
                 }
                 let on_color = color_to_rgb(&btn.color.on);
                 if on_color == RGB8::default() {
                     *anim = RingAnimation::off();
-                } else if self.button_active[i] {
+                } else if button_active[i] {
                     let modifier = match btn.color.animation {
                         LedAnimation::Solid => Modifier::Solid,
                         LedAnimation::Blink => Modifier::Blink,
@@ -459,7 +353,6 @@ impl PeHandler {
                     };
                     *anim = RingAnimation { renderer, modifier };
                 } else if btn.color.off == Color::Off {
-                    // No explicit off color → glow with same renderer shape
                     let rgb = rgb8_to_rgb(on_color);
                     let renderer = match btn.color.renderer {
                         LedRenderer::Solid => Renderer::Solid(rgb),
@@ -478,12 +371,12 @@ impl PeHandler {
             }
         }
 
-        let fill_vol = ((self.encoder_values[0] as u16 * 12) / 127).min(12) as u8;
+        let fill_vol = ((encoder_values[0] as u16 * 12) / 127).min(12) as u8;
         anims[6] = RingAnimation {
             renderer: Renderer::Heatmap(fill_vol),
             modifier: Modifier::Solid,
         };
-        let fill_gain = ((self.encoder_values[1] as u16 * 12) / 127).min(12) as u8;
+        let fill_gain = ((encoder_values[1] as u16 * 12) / 127).min(12) as u8;
         anims[7] = RingAnimation {
             renderer: Renderer::Heatmap(fill_gain),
             modifier: Modifier::Solid,
@@ -494,56 +387,40 @@ impl PeHandler {
 
     // --- Private helpers ---
 
-    fn working_state(&self) -> PresetState {
-        PresetState {
-            button_active: self.button_active,
-            cycle_index: self.cycle_index,
-            encoder_values: self.encoder_values,
-        }
-    }
-
-    fn apply_state(&mut self, state: &PresetState) {
-        self.button_active = state.button_active;
-        self.cycle_index = state.cycle_index;
-        self.encoder_values = state.encoder_values;
-    }
-
-    fn merge_result(
+    fn merge_ctrl_result(
         &self,
-        r: &engine::EngineResult,
+        ctrl_result: &ControllerResult,
         btn_idx: usize,
-        midi: &mut heapless::Vec<MidiStep, 8>,
-        system: &mut heapless::Vec<SystemAction, 2>,
-        display: &mut heapless::Vec<DisplayEvent, 2>,
-        led_dirty: &mut bool,
+        result: &mut HandleResult,
     ) {
-        for step in &r.midi {
+        for step in &ctrl_result.midi {
             match step {
                 ActionStep::Send(msg) => {
-                    midi.push(MidiStep::Send(midi_to_raw(msg).0, midi_to_raw(msg).1))
-                        .ok();
+                    result.midi.push(MidiStep::Send(msg.data, msg.len)).ok();
                 }
                 ActionStep::Delay(ms) => {
-                    midi.push(MidiStep::Delay(*ms)).ok();
+                    result.midi.push(MidiStep::Delay(*ms)).ok();
                 }
                 ActionStep::SetLed { color, animation } => {
-                    midi.push(MidiStep::SetLed {
-                        btn_idx,
-                        color: *color,
-                        animation: *animation,
-                    })
-                    .ok();
+                    result
+                        .midi
+                        .push(MidiStep::SetLed {
+                            btn_idx,
+                            color: *color,
+                            animation: *animation,
+                        })
+                        .ok();
                 }
             }
         }
-        for s in &r.system {
-            system.push(*s).ok();
+        for s in &ctrl_result.system {
+            result.system.push(*s).ok();
         }
-        for d in &r.display {
-            display.push(d.clone()).ok();
+        for d in &ctrl_result.display {
+            result.display.push(d.clone()).ok();
         }
-        if r.led_dirty {
-            *led_dirty = true;
+        if ctrl_result.led_dirty {
+            result.led_dirty = true;
         }
     }
 }
@@ -577,9 +454,7 @@ pub fn color_to_rgb(c: &Color) -> RGB8 {
 }
 
 /// Build the "on" ring animation for a button from its preset config.
-/// Used by reactive trigger mode to show the button's configured color+animation.
 pub fn button_ring_animation(preset: &Preset, btn_idx: usize) -> RingAnimation {
-    use pedalboard_protocol::config::{LedAnimation, LedRenderer};
     let Some(btn) = preset.buttons.get(btn_idx) else {
         return RingAnimation::off();
     };
@@ -604,906 +479,10 @@ pub fn button_ring_animation(preset: &Preset, btn_idx: usize) -> RingAnimation {
     RingAnimation { renderer, modifier }
 }
 
-fn pulse_to_dir(pulse: Pulse) -> EncoderDirection {
-    match pulse {
-        Pulse::Clockwise => EncoderDirection::Clockwise,
-        Pulse::CounterClockwise => EncoderDirection::CounterClockwise,
-    }
-}
-
 /// Convert firmware Edge to protocol long_press Edge.
 fn edge_to_lp(edge: Edge) -> LpEdge {
     match edge {
         Edge::Activate => LpEdge::Activate,
         Edge::Deactivate => LpEdge::Deactivate,
-    }
-}
-
-fn midi_to_raw(msg: &MidiMessage) -> ([u8; 3], usize) {
-    let mut raw = [0u8; 3];
-    let len = msg.len.min(3);
-    raw[..len].copy_from_slice(&msg.data[..len]);
-    (raw, len)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ledring::Rgb;
-    use heapless::Vec;
-    use pedalboard_protocol::config::*;
-
-    fn make_test_preset() -> Preset {
-        let mut buttons: Vec<ButtonConfig, MAX_BUTTONS> = Vec::new();
-        let mut on_press: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_press.push(Action::note_on(60, 1).unwrap()).ok();
-        let mut on_release: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_release.push(Action::note_off(60, 1).unwrap()).ok();
-        buttons
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::default(),
-                on_press,
-                on_release,
-                on_long_press: Vec::new(),
-                cycle_values: Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-
-        let mut on_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_press_b.push(Action::cc(10, 127, 1).unwrap()).ok();
-        let mut on_long_press_b: Vec<Action, MAX_ACTIONS> = Vec::new();
-        on_long_press_b
-            .push(Action::program_change(5, 1).unwrap())
-            .ok();
-        buttons
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::default(),
-                on_press: on_press_b,
-                on_release: Vec::new(),
-                on_long_press: on_long_press_b,
-                cycle_values: Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-
-        let mut encoders: Vec<EncoderConfig, MAX_ENCODERS> = Vec::new();
-        encoders
-            .push(EncoderConfig {
-                label: Label::try_from("Vol").unwrap(),
-                action: EncoderAction::Cc {
-                    cc: 7,
-                    channel: 1,
-                    min: 0,
-                    max: 127,
-                },
-            })
-            .ok();
-
-        Preset {
-            name: Label::try_from("Test").unwrap(),
-            buttons,
-            encoders,
-            analog: Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        }
-    }
-
-    #[test]
-    fn on_press_fires_immediately_without_long_press() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert_eq!(r.midi.len(), 1);
-        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
-    }
-
-    #[test]
-    fn on_release_fires_on_deactivate() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert_eq!(r.midi.len(), 1);
-        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
-    }
-
-    #[test]
-    fn long_press_button_defers_on_press() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(r.midi.is_empty());
-    }
-
-    #[test]
-    fn long_press_short_release_fires_on_press() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for i in 1..=100u32 {
-            handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-        }
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            101,
-        );
-        assert_eq!(r.midi.len(), 1);
-        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
-    }
-
-    #[test]
-    fn long_press_fires_on_long_press() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let mut found = false;
-        for i in 1..=501u32 {
-            let r = handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-            if !r.midi.is_empty() {
-                assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if d[..2] == [0xC0, 5]));
-                found = true;
-                break;
-            }
-        }
-        assert!(found);
-    }
-
-    #[test]
-    fn long_press_suppresses_on_press_on_release() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for i in 1..=501u32 {
-            handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-        }
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            502,
-        );
-        assert!(r.midi.is_empty());
-    }
-
-    #[test]
-    fn momentary_with_long_press_led_off_after_short_release() {
-        // Button B: momentary + has on_long_press
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-
-        // Press and release quickly (short press)
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(handler.button_active[1]); // LED on while held
-
-        // Tick a few times (not enough for long press)
-        for i in 1..=100u32 {
-            handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-        }
-
-        // Release — should fire on_press AND clear LED
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(!handler.button_active[1]); // LED must be off after release
-    }
-
-    #[test]
-    fn long_press_switch_clears_held_button_led() {
-        // Button B has on_long_press (PresetNext). After long-press triggers
-        // a preset switch, the new preset should NOT show button B as active.
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-
-        // Hold button B
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(handler.button_active[1]); // visual feedback while held
-
-        // Tick past threshold — long press fires
-        for i in 1..=501u32 {
-            handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-        }
-
-        // Now simulate what poll_input does: switch_preset
-        handler.switch_preset(1, &preset, &preset);
-
-        // New preset should have clean state — button B not active
-        assert!(!handler.button_active[1]);
-    }
-
-    #[test]
-    fn long_press_switch_does_not_save_held_button_as_active() {
-        // When switching away via long-press, the held button's visual feedback
-        // should NOT be persisted. Switching back should show it inactive.
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-
-        // Hold button B and trigger long-press to switch to preset 1
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for i in 1..=501u32 {
-            handler.handle_events(&preset, &[], &AdcCalibration::default(), i);
-        }
-        handler.switch_preset(1, &preset, &preset);
-
-        // Switch back to preset 0 — button B should NOT be active
-        handler.switch_preset(0, &preset, &preset);
-        assert!(!handler.button_active[1]);
-    }
-
-    #[test]
-    fn toggle_state_preserved_across_switch_via_different_button() {
-        // P1: button A=toggle, button B=momentary+long_press(switch)
-        // 1. Short-press A (toggle ON)
-        // 2. Long-press B to switch to preset 1
-        // 3. Long-press B to switch back to preset 0
-        // => A should still be toggle ON
-        use pedalboard_protocol::config::*;
-
-        let mut buttons_p1: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
-        // A: Toggle
-        let mut on_press_a: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_press_a.push(Action::cc(0, 127, 1).unwrap()).ok();
-        buttons_p1
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Toggle,
-                on_press: on_press_a,
-                on_release: heapless::Vec::new(),
-                on_long_press: heapless::Vec::new(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        // B: Momentary + long_press = next_preset
-        let mut on_long_b: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_long_b.push(Action::PresetNext).ok();
-        buttons_p1
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Momentary,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: on_long_b.clone(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-
-        let preset_p1 = Preset {
-            name: Label::try_from("P1").unwrap(),
-            buttons: buttons_p1,
-            encoders: heapless::Vec::new(),
-            analog: heapless::Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        };
-
-        // P2: B also has long_press (to switch back)
-        let mut buttons_p2: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
-        buttons_p2
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Momentary,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: heapless::Vec::new(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        buttons_p2
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Momentary,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: on_long_b,
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-
-        let preset_p2 = Preset {
-            name: Label::try_from("P2").unwrap(),
-            buttons: buttons_p2,
-            encoders: heapless::Vec::new(),
-            analog: heapless::Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        };
-
-        let mut handler = PeHandler::new();
-
-        // 1. Short-press A on P1 (toggle ON)
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonA(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonA(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(handler.button_active[0]); // toggled ON
-
-        // 2. Long-press B to switch to P2
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for _ in 0..501 {
-            handler.handle_events(&preset_p1, &[], &AdcCalibration::default(), 0);
-        }
-        // Simulate poll_input: switch_preset
-        handler.switch_preset(1, &preset_p1, &preset_p2);
-
-        // 3. Long-press B to switch back to P1
-        handler.handle_events(
-            &preset_p2,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for _ in 0..501 {
-            handler.handle_events(&preset_p2, &[], &AdcCalibration::default(), 0);
-        }
-        handler.switch_preset(0, &preset_p2, &preset_p1);
-
-        // A should still be toggled ON
-        assert!(handler.button_active[0]);
-    }
-
-    #[test]
-    fn toggle_with_long_press_state_preserved_across_switch() {
-        // Bug reproduction: D(3)=Toggle+on_long_press, F(5)=Radio+on_long_press(next)
-        // P2: D(3)=Momentary+on_long_press(prev)
-        // Sequence: short-press D on P1, long-press F to P2, long-press D on P2 back to P1
-        // Expected: D on P1 still toggled ON
-        use pedalboard_protocol::config::*;
-
-        let mut buttons_p1: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
-        // A,B,C (0-2): Radio(1)
-        for _ in 0..3 {
-            buttons_p1
-                .push(ButtonConfig {
-                    label: Label::new(),
-                    color: LedConfig::default(),
-                    mode: ButtonMode::RadioGroup(1),
-                    on_press: heapless::Vec::new(),
-                    on_release: heapless::Vec::new(),
-                    on_long_press: heapless::Vec::new(),
-                    cycle_values: heapless::Vec::new(),
-                    listen_cc: None,
-                })
-                .ok();
-        }
-        // D (3): Toggle + on_long_press(prev)
-        let mut on_press_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_press_d.push(Action::cc(0, 127, 3).unwrap()).ok();
-        let mut on_long_d: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_long_d.push(Action::PresetPrev).ok();
-        buttons_p1
-            .push(ButtonConfig {
-                label: Label::try_from("Bypass").unwrap(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Toggle,
-                on_press: on_press_d,
-                on_release: heapless::Vec::new(),
-                on_long_press: on_long_d,
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        // E (4): empty
-        buttons_p1
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::Momentary,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: heapless::Vec::new(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        // F (5): Radio(1) + on_long_press(next)
-        let mut on_long_f: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-        on_long_f.push(Action::PresetNext).ok();
-        buttons_p1
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig::default(),
-                mode: ButtonMode::RadioGroup(1),
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: on_long_f,
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-
-        let preset_p1 = Preset {
-            name: Label::try_from("Live FX").unwrap(),
-            buttons: buttons_p1,
-            encoders: heapless::Vec::new(),
-            analog: heapless::Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        };
-
-        // P2: all momentary, D(3) has on_long_press(prev)
-        let mut buttons_p2: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
-        for i in 0..6 {
-            let mut lp: heapless::Vec<Action, MAX_ACTIONS> = heapless::Vec::new();
-            if i == 3 {
-                lp.push(Action::PresetPrev).ok();
-            }
-            buttons_p2
-                .push(ButtonConfig {
-                    label: Label::new(),
-                    color: LedConfig::default(),
-                    mode: ButtonMode::Momentary,
-                    on_press: heapless::Vec::new(),
-                    on_release: heapless::Vec::new(),
-                    on_long_press: lp,
-                    cycle_values: heapless::Vec::new(),
-                    listen_cc: None,
-                })
-                .ok();
-        }
-
-        let preset_p2 = Preset {
-            name: Label::try_from("Looper").unwrap(),
-            buttons: buttons_p2,
-            encoders: heapless::Vec::new(),
-            analog: heapless::Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        };
-
-        let mut handler = PeHandler::new();
-
-        // 1. Short-press D on P1 (toggle ON). D has on_long_press so it defers.
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonD(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for _ in 0..50 {
-            handler.handle_events(&preset_p1, &[], &AdcCalibration::default(), 0);
-        }
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonD(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(
-            handler.button_active[3],
-            "D should be toggled ON after short press"
-        );
-
-        // 2. Long-press F on P1 (switch to P2)
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonF(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for _ in 0..501 {
-            handler.handle_events(&preset_p1, &[], &AdcCalibration::default(), 0);
-        }
-        handler.switch_preset(1, &preset_p1, &preset_p2);
-
-        // 3. Long-press D on P2 (switch back to P1)
-        handler.handle_events(
-            &preset_p2,
-            &[InputEvent::ButtonD(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        for _ in 0..501 {
-            handler.handle_events(&preset_p2, &[], &AdcCalibration::default(), 0);
-        }
-        handler.switch_preset(0, &preset_p2, &preset_p1);
-
-        // Stale Deactivate arrives from the button D release on P2
-        // (user releases D after the switch — this must NOT toggle D on P1)
-        handler.handle_events(
-            &preset_p1,
-            &[InputEvent::ButtonD(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-
-        // D on P1 should still be toggled ON
-        assert!(
-            handler.button_active[3],
-            "D (Bypass) toggle state lost after switch round-trip"
-        );
-    }
-
-    #[test]
-    fn encoder_still_works() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.encoder_values[0] = 64;
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::Vol(Pulse::Clockwise)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert_eq!(r.midi.len(), 1);
-        assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
-    }
-
-    #[test]
-    fn encoder_emits_display_event() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.encoder_values[0] = 64;
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::Vol(Pulse::Clockwise)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert_eq!(r.display.len(), 1);
-        match &r.display[0] {
-            DisplayEvent::EncoderOverlay { side, label, value } => {
-                assert_eq!(*side, DisplaySide::L);
-                assert_eq!(label.as_str(), "Vol");
-                assert_eq!(*value, 65);
-            }
-            _ => panic!("expected EncoderOverlay"),
-        }
-    }
-
-    // --- Preset switch tests ---
-
-    #[test]
-    fn switch_preset_saves_and_restores_state() {
-        // Use the LED preset which has button B as Toggle
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-
-        // Toggle button B on
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(handler.button_active[1]);
-
-        // Switch to preset 1 — fresh state
-        handler.switch_preset(1, &preset, &preset);
-        assert!(!handler.button_active[1]);
-
-        // Switch back — toggle state restored
-        handler.switch_preset(0, &preset, &preset);
-        assert!(handler.button_active[1]);
-    }
-
-    #[test]
-    fn switch_preset_recalls_encoder_values() {
-        let preset = make_test_preset();
-        let mut handler = PeHandler::new();
-        handler.encoder_values[0] = 100;
-        handler.switch_preset(1, &preset, &preset);
-        assert_eq!(handler.encoder_values[0], 0);
-
-        let recall = handler.switch_preset(0, &preset, &preset);
-        assert_eq!(handler.encoder_values[0], 100);
-        assert!(recall
-            .iter()
-            .any(|step| matches!(step, MidiStep::Send(raw, _) if raw[0] == 0xB0 && raw[1] == 7 && raw[2] == 100)));
-    }
-
-    #[test]
-    fn led_state_updates_after_switch() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(
-            matches!(handler.led_state(&preset)[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
-        );
-
-        handler.switch_preset(1, &preset, &preset);
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
-        );
-
-        handler.switch_preset(0, &preset, &preset);
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
-        );
-    }
-
-    // --- LED state tests ---
-
-    fn make_led_preset() -> Preset {
-        let mut buttons: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
-        buttons
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig {
-                    on: Color::Green,
-                    off: Color::Off,
-                    animation: pedalboard_protocol::config::LedAnimation::Solid,
-                    renderer: pedalboard_protocol::config::LedRenderer::Solid,
-                    renderer_param: 0,
-                },
-                mode: ButtonMode::Momentary,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: heapless::Vec::new(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        buttons
-            .push(ButtonConfig {
-                label: Label::new(),
-                color: LedConfig {
-                    on: Color::Blue,
-                    off: Color::Red,
-                    animation: pedalboard_protocol::config::LedAnimation::Solid,
-                    renderer: pedalboard_protocol::config::LedRenderer::Solid,
-                    renderer_param: 0,
-                },
-                mode: ButtonMode::Toggle,
-                on_press: heapless::Vec::new(),
-                on_release: heapless::Vec::new(),
-                on_long_press: heapless::Vec::new(),
-                cycle_values: heapless::Vec::new(),
-                listen_cc: None,
-            })
-            .ok();
-        Preset {
-            name: Label::try_from("LED").unwrap(),
-            buttons,
-            encoders: heapless::Vec::new(),
-            analog: heapless::Vec::new(),
-            defaults: Default::default(),
-            on_enter: heapless::Vec::new(),
-            on_exit: heapless::Vec::new(),
-            triggers: heapless::Vec::new(),
-        }
-    }
-
-    #[test]
-    fn led_state_reflects_restored_state_on_boot() {
-        // Simulate: state was saved with button B (toggle) active
-        let mut store = pedalboard_protocol::state::PresetStateStore::new();
-        let mut working = pedalboard_protocol::state::PresetState::default();
-        working.button_active[1] = true; // Toggle B was ON
-        store.save_working(&working);
-
-        // Create handler from restored state (as boot would)
-        let handler = PeHandler::with_state(store);
-        let preset = make_led_preset();
-        let leds = handler.led_state(&preset);
-
-        // Button B should show active color (blue) immediately
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
-        );
-    }
-
-    #[test]
-    fn led_state_off_by_default() {
-        let preset = make_led_preset();
-        let handler = PeHandler::new();
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), modifier: Modifier::Glow } if c == Rgb::new(0, 255, 0))
-        );
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
-        );
-    }
-
-    #[test]
-    fn led_state_momentary_on_while_pressed() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 255, 0))
-        );
-    }
-
-    #[test]
-    fn led_state_momentary_off_after_release() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[0], RingAnimation { renderer: Renderer::Solid(c), modifier: Modifier::Glow } if c == Rgb::new(0, 255, 0))
-        );
-    }
-
-    #[test]
-    fn led_state_toggle_alternates() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
-        );
-
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Deactivate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(0, 0, 255))
-        );
-
-        handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonB(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        let leds = handler.led_state(&preset);
-        assert!(
-            matches!(leds[1], RingAnimation { renderer: Renderer::Solid(c), .. } if c == Rgb::new(255, 0, 0))
-        );
-    }
-
-    #[test]
-    fn led_state_encoder_heatmap() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        handler.encoder_values[0] = 64;
-        handler.encoder_values[1] = 127;
-        let leds = handler.led_state(&preset);
-        assert!(matches!(
-            leds[6],
-            RingAnimation {
-                renderer: Renderer::Heatmap(6),
-                ..
-            }
-        ));
-        assert!(matches!(
-            leds[7],
-            RingAnimation {
-                renderer: Renderer::Heatmap(12),
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn led_dirty_on_button_press() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        let r = handler.handle_events(
-            &preset,
-            &[InputEvent::ButtonA(Edge::Activate)],
-            &AdcCalibration::default(),
-            0,
-        );
-        assert!(r.led_dirty);
-    }
-
-    #[test]
-    fn led_not_dirty_when_idle() {
-        let preset = make_led_preset();
-        let mut handler = PeHandler::new();
-        let r = handler.handle_events(&preset, &[], &AdcCalibration::default(), 0);
-        assert!(!r.led_dirty);
     }
 }

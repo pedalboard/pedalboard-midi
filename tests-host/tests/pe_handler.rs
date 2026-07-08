@@ -207,7 +207,7 @@ fn encoder_generates_cc() {
     let preset = make_test_preset();
     let mut h = PeHandler::new();
     let cal = pe_handler::AdcCalibration::default();
-    h.encoder_values[0] = 64;
+    h.set_encoder_value(0, 64);
     let r = h.handle_events(&preset, &[InputEvent::Vol(Pulse::Clockwise)], &cal, 0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
