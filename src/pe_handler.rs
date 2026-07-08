@@ -1,17 +1,15 @@
 //! PE preset event handler: thin hardware adapter over protocol::controller.
 //!
-//! Responsibilities (HMI/hardware only):
-//! - Input event → abstract InputEvent mapping
-//! - Format conversion (ActionStep → MidiStep with raw bytes)
-//! - LED ring rendering (hardware-specific RGB animations)
-//! - On_enter/on_exit actions (preset switch lifecycle)
-//! - MIDI trigger processing
+//! The firmware-specific responsibilities are:
+//! - Map GPIO InputEvents to abstract Controller events
+//! - Convert ActionStep to raw MIDI bytes for UART/USB output
+//! - Render LED ring animations from button/encoder state
 //!
-//! All timing and button/encoder logic is delegated to the Controller.
+//! All business logic lives in the Controller.
 
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
-use pedalboard_protocol::config::{Color, LedAnimation, LedRenderer, Preset};
+use pedalboard_protocol::config::{Color, Config, LedAnimation, LedRenderer, Preset};
 use pedalboard_protocol::controller::{Controller, ControllerResult, InputEvent as CtrlEvent};
 use pedalboard_protocol::engine::ActionStep;
 use pedalboard_protocol::long_press::Edge as LpEdge;
@@ -54,19 +52,19 @@ pub enum MidiStep {
     },
 }
 
-/// Result of processing events: MIDI steps + system actions + display + LED dirty flag.
+/// Result of processing events.
 pub struct HandleResult {
-    pub midi: heapless::Vec<MidiStep, 8>,
-    pub system: heapless::Vec<SystemAction, 2>,
+    pub midi: heapless::Vec<MidiStep, 32>,
     pub display: heapless::Vec<DisplayEvent, 2>,
     pub led_dirty: bool,
+    pub preset_changed: bool,
+    pub bpm: Option<u16>,
 }
 
 /// LED state for all 8 rings (A-F + Vol + Gain).
 pub type LedAnimations = [RingAnimation; 8];
 
-/// Stateful PE event handler. Wraps the protocol crate's Controller and adds
-/// hardware-specific concerns (LED rendering, MIDI format, on_enter/on_exit).
+/// Stateful PE event handler. Wraps the protocol crate's Controller.
 pub struct PeHandler {
     ctrl: Controller,
 }
@@ -91,149 +89,70 @@ impl PeHandler {
         }
     }
 
-    /// Switch to a new preset: saves current state, loads new state,
-    /// fires on_exit/on_enter actions, and returns recall MIDI.
-    pub fn switch_preset(
-        &mut self,
-        new_preset: u8,
-        old_preset: &Preset,
-        new_preset_cfg: &Preset,
-    ) -> heapless::Vec<MidiStep, 32> {
-        let mut result: heapless::Vec<MidiStep, 32> = heapless::Vec::new();
-
-        // 1. Fire on_exit for old preset
-        for action in &old_preset.on_exit {
-            match action {
-                pedalboard_protocol::config::Action::Delay(ms) => {
-                    result.push(MidiStep::Delay(*ms)).ok();
-                }
-                _ => {
-                    if let Some(msg) = pedalboard_protocol::action::action_to_midi(action) {
-                        result.push(MidiStep::Send(msg.data, msg.len)).ok();
-                    }
-                }
-            }
-        }
-
-        // 2. Delegate state save/load/recall to Controller
-        let recall = self.ctrl.switch_preset(new_preset, new_preset_cfg);
-
-        // 3. Fire on_enter for new preset
-        for action in &new_preset_cfg.on_enter {
-            match action {
-                pedalboard_protocol::config::Action::Delay(ms) => {
-                    result.push(MidiStep::Delay(*ms)).ok();
-                }
-                _ => {
-                    if let Some(msg) = pedalboard_protocol::action::action_to_midi(action) {
-                        result.push(MidiStep::Send(msg.data, msg.len)).ok();
-                    }
-                }
-            }
-        }
-
-        // 4. Recall MIDI (active toggles + encoder values)
-        for step in &recall {
-            if let ActionStep::Send(msg) = step {
-                result.push(MidiStep::Send(msg.data, msg.len)).ok();
-            }
-        }
-
-        result
-    }
-
-    /// Serialize current state to a 128-byte EEPROM buffer for persistence.
-    pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
-        self.ctrl.eeprom_state()
-    }
-
-    /// Returns true if any button is currently held (long-press counting).
-    pub fn any_active(&self) -> bool {
-        self.ctrl.any_active()
-    }
-
-    /// Returns the current button active state (toggle ON / momentary held).
-    pub fn button_active(&self) -> [bool; NUM_BUTTONS] {
-        *self.ctrl.button_active()
-    }
-
-    /// Get the current encoder values.
-    pub fn encoder_values(&self) -> [u8; 2] {
-        self.ctrl.encoder_values()
-    }
-
-    /// Set encoder value (for test setup or initial state from config).
-    pub fn set_encoder_value(&mut self, index: usize, value: u8) {
-        let mut state = self.ctrl.state().clone();
-        if index < 2 {
-            state.encoder_values[index] = value;
-        }
-        self.ctrl.save_working(&state);
-    }
-
-    /// Process input events against a PE preset. Returns MIDI messages and system actions.
+    /// Process input events against the config. Returns MIDI output + flags.
     pub fn handle_events(
         &mut self,
-        preset: &Preset,
+        config: &Config,
         events: &[InputEvent],
         cal: &AdcCalibration,
         now_ms: u32,
     ) -> HandleResult {
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
-            system: heapless::Vec::new(),
             display: heapless::Vec::new(),
             led_dirty: false,
+            preset_changed: false,
+            bpm: None,
         };
 
-        // Map hardware events to abstract Controller events and process
+        // Map hardware button events
         for i in 0..NUM_BUTTONS {
             if let Some(edge) = button_edge(events, i) {
-                let ctrl_result = self.ctrl.process(
+                let r = self.ctrl.process(
                     CtrlEvent::ButtonEdge {
                         index: i as u8,
                         edge: edge_to_lp(edge),
                     },
                     now_ms,
-                    preset,
+                    config,
                 );
-                self.merge_ctrl_result(&ctrl_result, i, &mut result);
+                self.merge(&r, &mut result);
             }
         }
 
-        // Tick for long-press detection on buttons with no edge this cycle
+        // Tick for long-press detection
         if self.ctrl.any_active() {
-            let tick_result = self.ctrl.tick(now_ms, preset);
-            self.merge_ctrl_result(&tick_result, 0, &mut result);
+            let r = self.ctrl.tick(now_ms, config);
+            self.merge(&r, &mut result);
         }
 
-        // Encoders
+        // Map hardware encoder/analog events
         for event in events {
             match event {
                 InputEvent::Vol(pulse) => {
-                    let ctrl_result = self.ctrl.process(
+                    let r = self.ctrl.process(
                         CtrlEvent::EncoderTurn {
                             index: 0,
                             clockwise: *pulse == Pulse::Clockwise,
                         },
                         now_ms,
-                        preset,
+                        config,
                     );
-                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
+                    self.merge(&r, &mut result);
                 }
                 InputEvent::Gain(pulse) => {
-                    let ctrl_result = self.ctrl.process(
+                    let r = self.ctrl.process(
                         CtrlEvent::EncoderTurn {
                             index: 1,
                             clockwise: *pulse == Pulse::Clockwise,
                         },
                         now_ms,
-                        preset,
+                        config,
                     );
-                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
+                    self.merge(&r, &mut result);
                 }
                 InputEvent::ExpressionPedal2(raw_adc) => {
-                    let ctrl_result = self.ctrl.process(
+                    let r = self.ctrl.process(
                         CtrlEvent::Analog {
                             index: 0,
                             raw: *raw_adc,
@@ -241,12 +160,12 @@ impl PeHandler {
                             max: cal.exp2_max,
                         },
                         now_ms,
-                        preset,
+                        config,
                     );
-                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
+                    self.merge(&r, &mut result);
                 }
                 InputEvent::ExpressionPedal1(raw_adc) => {
-                    let ctrl_result = self.ctrl.process(
+                    let r = self.ctrl.process(
                         CtrlEvent::Analog {
                             index: 1,
                             raw: *raw_adc,
@@ -254,9 +173,9 @@ impl PeHandler {
                             max: cal.exp1_max,
                         },
                         now_ms,
-                        preset,
+                        config,
                     );
-                    self.merge_ctrl_result(&ctrl_result, 0, &mut result);
+                    self.merge(&r, &mut result);
                 }
                 _ => {}
             }
@@ -265,64 +184,60 @@ impl PeHandler {
         result
     }
 
-    /// Process incoming MIDI against preset triggers. Returns MIDI steps + system actions.
-    pub fn process_incoming_midi(&mut self, preset: &Preset, raw: &[u8]) -> HandleResult {
-        use pedalboard_protocol::engine::process_triggers;
-        use pedalboard_protocol::state::PresetState;
-
+    /// Process incoming MIDI against preset triggers.
+    pub fn process_incoming_midi(&mut self, config: &Config, raw: &[u8]) -> HandleResult {
+        let r = self.ctrl.process_incoming_midi(raw, config);
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
-            system: heapless::Vec::new(),
             display: heapless::Vec::new(),
             led_dirty: false,
+            preset_changed: false,
+            bpm: None,
         };
-
-        if raw.len() >= 2 {
-            // Build a working state from the controller's current state
-            let button_active = *self.ctrl.button_active();
-            let encoder_values = self.ctrl.encoder_values();
-            let mut state = PresetState {
-                button_active,
-                encoder_values,
-                cycle_index: self.ctrl.state().cycle_index,
-            };
-            let data2 = if raw.len() >= 3 { raw[2] } else { 0 };
-            let trigger_result = process_triggers(&mut state, preset, raw[0], raw[1], data2);
-
-            // Apply trigger state changes back
-            self.ctrl.save_working(&state);
-
-            // Convert to MidiSteps
-            for step in &trigger_result.midi {
-                match step {
-                    ActionStep::Send(msg) => {
-                        result.midi.push(MidiStep::Send(msg.data, msg.len)).ok();
-                    }
-                    ActionStep::Delay(ms) => {
-                        result.midi.push(MidiStep::Delay(*ms)).ok();
-                    }
-                    ActionStep::SetLed { color, animation } => {
-                        result
-                            .midi
-                            .push(MidiStep::SetLed {
-                                btn_idx: 0,
-                                color: *color,
-                                animation: *animation,
-                            })
-                            .ok();
-                    }
-                }
-            }
-            for s in &trigger_result.system {
-                result.system.push(*s).ok();
-            }
-            result.led_dirty = trigger_result.led_dirty;
-        }
-
+        self.merge(&r, &mut result);
         result
     }
 
-    /// Compute LED animations for all 8 rings based on current state + preset config.
+    /// Serialize current state to EEPROM buffer.
+    pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
+        self.ctrl.eeprom_state()
+    }
+
+    /// Returns true if any button is currently held.
+    pub fn any_active(&self) -> bool {
+        self.ctrl.any_active()
+    }
+
+    /// Returns the current button active state.
+    pub fn button_active(&self) -> [bool; NUM_BUTTONS] {
+        *self.ctrl.button_active()
+    }
+
+    /// Get the active preset index.
+    pub fn active_preset(&self) -> u8 {
+        self.ctrl.active_preset()
+    }
+
+    /// Set encoder value (for test/init).
+    pub fn set_encoder_value(&mut self, index: usize, value: u8) {
+        self.ctrl.set_encoder_value(index, value);
+    }
+
+    /// Switch to a preset (for boot initialization).
+    pub fn switch_to(&mut self, preset_idx: u8, config: &Config) -> HandleResult {
+        let r = self.ctrl.switch_to(preset_idx, config);
+        let mut result = HandleResult {
+            midi: heapless::Vec::new(),
+            display: heapless::Vec::new(),
+            led_dirty: false,
+            preset_changed: false,
+            bpm: None,
+        };
+        self.merge(&r, &mut result);
+        result
+    }
+
+    /// Compute LED animations for all 8 rings.
     pub fn led_state(&self, preset: &Preset) -> LedAnimations {
         let mut anims = [RingAnimation::off(); 8];
         let button_active = self.ctrl.button_active();
@@ -337,29 +252,15 @@ impl PeHandler {
                 if on_color == RGB8::default() {
                     *anim = RingAnimation::off();
                 } else if button_active[i] {
-                    let modifier = match btn.color.animation {
-                        LedAnimation::Solid => Modifier::Solid,
-                        LedAnimation::Blink => Modifier::Blink,
-                        LedAnimation::Pulse => Modifier::Pulse,
-                        LedAnimation::Rotate => Modifier::Rotate,
-                        LedAnimation::ColorCycle => Modifier::ColorCycle,
-                    };
+                    let modifier = anim_to_modifier(btn.color.animation);
                     let rgb = rgb8_to_rgb(on_color);
-                    let renderer = match btn.color.renderer {
-                        LedRenderer::Solid => Renderer::Solid(rgb),
-                        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
-                        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
-                        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
-                    };
+                    let renderer =
+                        renderer_from_config(rgb, btn.color.renderer, btn.color.renderer_param);
                     *anim = RingAnimation { renderer, modifier };
                 } else if btn.color.off == Color::Off {
                     let rgb = rgb8_to_rgb(on_color);
-                    let renderer = match btn.color.renderer {
-                        LedRenderer::Solid => Renderer::Solid(rgb),
-                        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
-                        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
-                        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
-                    };
+                    let renderer =
+                        renderer_from_config(rgb, btn.color.renderer, btn.color.renderer_param);
                     *anim = RingAnimation {
                         renderer,
                         modifier: Modifier::Glow,
@@ -385,14 +286,9 @@ impl PeHandler {
         anims
     }
 
-    // --- Private helpers ---
+    // --- Private ---
 
-    fn merge_ctrl_result(
-        &self,
-        ctrl_result: &ControllerResult,
-        btn_idx: usize,
-        result: &mut HandleResult,
-    ) {
+    fn merge(&self, ctrl_result: &ControllerResult, result: &mut HandleResult) {
         for step in &ctrl_result.midi {
             match step {
                 ActionStep::Send(msg) => {
@@ -405,7 +301,7 @@ impl PeHandler {
                     result
                         .midi
                         .push(MidiStep::SetLed {
-                            btn_idx,
+                            btn_idx: 0,
                             color: *color,
                             animation: *animation,
                         })
@@ -413,14 +309,17 @@ impl PeHandler {
                 }
             }
         }
-        for s in &ctrl_result.system {
-            result.system.push(*s).ok();
-        }
         for d in &ctrl_result.display {
             result.display.push(d.clone()).ok();
         }
         if ctrl_result.led_dirty {
             result.led_dirty = true;
+        }
+        if ctrl_result.preset_changed {
+            result.preset_changed = true;
+        }
+        if let Some(bpm) = ctrl_result.bpm {
+            result.bpm = Some(bpm);
         }
     }
 }
@@ -453,6 +352,25 @@ pub fn color_to_rgb(c: &Color) -> RGB8 {
     }
 }
 
+fn anim_to_modifier(anim: LedAnimation) -> Modifier {
+    match anim {
+        LedAnimation::Solid => Modifier::Solid,
+        LedAnimation::Blink => Modifier::Blink,
+        LedAnimation::Pulse => Modifier::Pulse,
+        LedAnimation::Rotate => Modifier::Rotate,
+        LedAnimation::ColorCycle => Modifier::ColorCycle,
+    }
+}
+
+fn renderer_from_config(rgb: crate::ledring::Rgb, renderer: LedRenderer, param: u8) -> Renderer {
+    match renderer {
+        LedRenderer::Solid => Renderer::Solid(rgb),
+        LedRenderer::Fill => Renderer::Fill(rgb, param.max(1)),
+        LedRenderer::Single => Renderer::Single(rgb, param),
+        LedRenderer::Dots => Renderer::Dots(rgb, param.max(1)),
+    }
+}
+
 /// Build the "on" ring animation for a button from its preset config.
 pub fn button_ring_animation(preset: &Preset, btn_idx: usize) -> RingAnimation {
     let Some(btn) = preset.buttons.get(btn_idx) else {
@@ -462,24 +380,12 @@ pub fn button_ring_animation(preset: &Preset, btn_idx: usize) -> RingAnimation {
     if on_color == RGB8::default() {
         return RingAnimation::off();
     }
-    let modifier = match btn.color.animation {
-        LedAnimation::Solid => Modifier::Solid,
-        LedAnimation::Blink => Modifier::Blink,
-        LedAnimation::Pulse => Modifier::Pulse,
-        LedAnimation::Rotate => Modifier::Rotate,
-        LedAnimation::ColorCycle => Modifier::ColorCycle,
-    };
+    let modifier = anim_to_modifier(btn.color.animation);
     let rgb = rgb8_to_rgb(on_color);
-    let renderer = match btn.color.renderer {
-        LedRenderer::Solid => Renderer::Solid(rgb),
-        LedRenderer::Fill => Renderer::Fill(rgb, btn.color.renderer_param.max(1)),
-        LedRenderer::Single => Renderer::Single(rgb, btn.color.renderer_param),
-        LedRenderer::Dots => Renderer::Dots(rgb, btn.color.renderer_param.max(1)),
-    };
+    let renderer = renderer_from_config(rgb, btn.color.renderer, btn.color.renderer_param);
     RingAnimation { renderer, modifier }
 }
 
-/// Convert firmware Edge to protocol long_press Edge.
 fn edge_to_lp(edge: Edge) -> LpEdge {
     match edge {
         Edge::Activate => LpEdge::Activate,

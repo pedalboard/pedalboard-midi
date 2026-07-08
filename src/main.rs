@@ -538,25 +538,24 @@ mod app {
             ctx.shared.pe_config.lock(|cfg| {
                 if let Some(preset) = cfg.presets.get(preset_idx as usize) {
                     if !preset.name.is_empty() {
+                        // Initialize Controller to the restored preset
+                        let boot_result = pe.switch_to(preset_idx, cfg);
                         let anims = pe.led_state(preset);
                         led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
-                        // Fire on_enter for the boot preset
-                        for action in &preset.on_enter {
-                            match action {
-                                pedalboard_protocol::config::Action::Delay(_) => {}
-                                _ => {
-                                    if let Some(msg) =
-                                        pedalboard_protocol::action::action_to_midi(action)
-                                    {
-                                        let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                            CableNumber::Cable0,
-                                            &msg.data[..msg.len],
-                                        );
-                                        if let Ok(packet) = packet {
-                                            sender.try_send(packet).ok();
-                                        }
+                        // Send any MIDI from boot switch (on_enter actions)
+                        for step in &boot_result.midi {
+                            use pedalboard_midi::pe_handler::MidiStep;
+                            match step {
+                                MidiStep::Send(raw, len) => {
+                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                        CableNumber::Cable0,
+                                        &raw[..*len],
+                                    );
+                                    if let Ok(packet) = packet {
+                                        sender.try_send(packet).ok();
                                     }
                                 }
+                                MidiStep::Delay(_) | MidiStep::SetLed { .. } => {}
                             }
                         }
                     }
@@ -570,8 +569,6 @@ mod app {
                 .ok();
         }
 
-        let mut tap_tempo = pedalboard_protocol::tap_tempo::TapTempo::new();
-
         loop {
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -582,11 +579,11 @@ mod app {
 
             // Process incoming MIDI triggers
             while let Ok(raw) = ctx.local.trigger_receiver.try_recv() {
-                let trigger_preset_idx = ctx.shared.active_preset.lock(|p| *p);
                 let trigger_result = ctx.shared.pe_config.lock(|cfg| {
-                    if let Some(preset) = cfg.presets.get(trigger_preset_idx as usize) {
+                    let preset_idx = pe.active_preset() as usize;
+                    if let Some(preset) = cfg.presets.get(preset_idx) {
                         if !preset.triggers.is_empty() {
-                            Some(pe.process_incoming_midi(preset, &raw))
+                            Some(pe.process_incoming_midi(cfg, &raw))
                         } else {
                             None
                         }
@@ -617,47 +614,17 @@ mod app {
                             MidiStep::SetLed { .. } => {}
                         }
                     }
-                    for action in &result.system {
-                        use pedalboard_protocol::engine::SystemAction;
-                        ctx.shared.active_preset.lock(|active_preset| {
-                            let active_count = ctx
-                                .shared
-                                .pe_config
-                                .lock(|cfg| {
-                                    cfg.presets.iter().filter(|p| !p.name.is_empty()).count() as u8
-                                })
-                                .max(1);
-                            match action {
-                                SystemAction::PresetNext => {
-                                    *active_preset = (*active_preset + 1) % active_count;
-                                }
-                                SystemAction::PresetPrev => {
-                                    *active_preset = if *active_preset == 0 {
-                                        active_count - 1
-                                    } else {
-                                        *active_preset - 1
-                                    };
-                                }
-                                SystemAction::PresetSelect(idx) => {
-                                    if *idx < active_count {
-                                        *active_preset = *idx;
-                                    }
-                                }
-                                SystemAction::TapTempo | SystemAction::SetBpm(_) => {}
-                            }
-                        });
+                    // Handle tap tempo from result
+                    if let Some(bpm) = result.bpm {
+                        ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
                     }
-                    // Handle tap tempo (needs access to tap_tempo state outside the lock)
-                    for action in &result.system {
-                        if matches!(action, pedalboard_midi::pe_handler::SystemAction::TapTempo) {
-                            let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                            if let Some(bpm) = tap_tempo.tap(now_ms) {
-                                ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                            }
-                        }
+                    // Handle preset change
+                    if result.preset_changed {
+                        let new_idx = pe.active_preset();
+                        ctx.shared.active_preset.lock(|p| *p = new_idx);
                     }
-                    if result.led_dirty || !result.system.is_empty() {
-                        let new_idx = ctx.shared.active_preset.lock(|p| *p);
+                    if result.led_dirty || result.preset_changed {
+                        let new_idx = pe.active_preset();
                         ctx.shared.pe_config.lock(|cfg| {
                             if let Some(preset) = cfg.presets.get(new_idx as usize) {
                                 let anims = pe.led_state(preset);
@@ -665,8 +632,8 @@ mod app {
                             }
                         });
                         ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
-                        if !result.system.is_empty() {
-                            let new_idx = ctx.shared.active_preset.lock(|p| *p);
+                        if result.preset_changed {
+                            let new_idx = pe.active_preset();
                             led_sender
                                 .try_send(LedEvent::SetSingle(
                                     Led::Mode,
@@ -717,80 +684,23 @@ mod app {
                         }
                     });
                     let result = ctx.shared.pe_config.lock(|cfg| {
-                        let preset = &cfg.presets[preset_idx as usize];
                         let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                        pe.handle_events(preset, &events, &cal, now_ms)
+                        pe.handle_events(cfg, &events, &cal, now_ms)
                     });
                     for step in &result.midi {
                         pe_midi_steps.push(step.clone()).ok();
                     }
-                    // Handle system actions (preset switching)
-                    for action in &result.system {
-                        use pedalboard_midi::pe_handler::SystemAction;
-                        ctx.shared.active_preset.lock(|active_preset| {
-                            let active_count = ctx
-                                .shared
-                                .pe_config
-                                .lock(|cfg| {
-                                    cfg.presets.iter().filter(|p| !p.name.is_empty()).count() as u8
-                                })
-                                .max(1);
-                            match action {
-                                SystemAction::PresetNext => {
-                                    *active_preset = (*active_preset + 1) % active_count;
-                                }
-                                SystemAction::PresetPrev => {
-                                    *active_preset = if *active_preset == 0 {
-                                        active_count - 1
-                                    } else {
-                                        *active_preset - 1
-                                    };
-                                }
-                                SystemAction::PresetSelect(idx) => {
-                                    if *idx < active_count {
-                                        *active_preset = *idx;
-                                    }
-                                }
-                                SystemAction::TapTempo | SystemAction::SetBpm(_) => {}
-                            }
-                        });
+                    // Handle tap tempo from result
+                    if let Some(bpm) = result.bpm {
+                        ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
+                        display_event_sender
+                            .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
+                            .ok();
                     }
-                    // Handle tap tempo (outside lock, needs mutable tap_tempo)
-                    for action in &result.system {
-                        use pedalboard_midi::pe_handler::SystemAction;
-                        if matches!(action, SystemAction::TapTempo) {
-                            let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                            if let Some(bpm) = tap_tempo.tap(now_ms) {
-                                ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                                display_event_sender
-                                    .try_send(
-                                        pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
-                                            bpm,
-                                        },
-                                    )
-                                    .ok();
-                            } else {
-                                display_event_sender
-                                    .try_send(
-                                        pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
-                                            bpm: 0,
-                                        },
-                                    )
-                                    .ok();
-                            }
-                        }
-                    }
-                    let new_preset = ctx.shared.active_preset.lock(|p| *p);
-                    if new_preset != preset_idx {
-                        // Preset actually changed — switch state and recall MIDI
-                        let switch_midi = ctx.shared.pe_config.lock(|cfg| {
-                            let old_preset = &cfg.presets[preset_idx as usize];
-                            let new_preset_cfg = &cfg.presets[new_preset as usize];
-                            pe.switch_preset(new_preset, old_preset, new_preset_cfg)
-                        });
-                        for step in &switch_midi {
-                            pe_midi_steps.push(step.clone()).ok();
-                        }
+                    let new_preset = pe.active_preset();
+                    if result.preset_changed {
+                        ctx.shared.active_preset.lock(|p| *p = new_preset);
+                        // Preset actually changed — persist
                         use pedalboard_midi::persist::PersistCommand;
                         persist_sender
                             .try_send(PersistCommand::SaveActivePreset(new_preset))
@@ -804,9 +714,8 @@ mod app {
                         display_event_sender.try_send(evt).ok();
                     }
                     // Update LEDs and preset index on actual switch
-                    let preset_changed = new_preset != preset_idx;
-                    let led_dirty = result.led_dirty || preset_changed;
-                    if preset_changed {
+                    let led_dirty = result.led_dirty || result.preset_changed;
+                    if result.preset_changed {
                         preset_idx = new_preset;
                         led_sender
                             .try_send(LedEvent::SetSingle(
@@ -827,8 +736,8 @@ mod app {
                             ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                         }
                     }
-                    // Persist state to EEPROM on any state change
-                    if led_dirty && result.system.is_empty() {
+                    // Persist state to EEPROM on any state change (but not if preset switch already saved)
+                    if led_dirty && !result.preset_changed {
                         use pedalboard_midi::persist::PersistCommand;
                         persist_sender
                             .try_send(PersistCommand::SaveState(pe.eeprom_state()))
