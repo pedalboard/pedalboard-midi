@@ -1552,7 +1552,7 @@ mod app {
                         Mono::delay(200.millis()).await;
                         store.erase_all().await;
                         // Clear EEPROM runtime state
-                        let buf = midi_controller::state::PresetStateStore::cleared_eeprom();
+                        let buf = midi_controller::state::DefaultPresetStateStore::cleared_eeprom();
                         use embedded_hal::i2c::I2c;
                         for page in 0..16 {
                             let offset = page * 8;
