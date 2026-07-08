@@ -97,7 +97,8 @@ impl Leds {
     pub const fn new() -> Self {
         Leds {
             singles: [None; NUM_LEDS],
-            ledrings: [LedRing::new(8); NUM_LED_RINGS],
+            ledrings: [LedRing::with_rotation(&midi_controller::led::PEDALBOARD_CLOCK_MAP, 8);
+                NUM_LED_RINGS],
             flash_ticks: [0; NUM_LEDS],
             reactive: [false; NUM_LED_RINGS],
             buffer: [RGB8 { r: 0, g: 0, b: 0 }; LED_OUTPUTS],

@@ -109,6 +109,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "led-ring"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dbdc27542c0d9de05547ad31dfd32c1bd4e2147e095497f2bb81e8c646eb4e2"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "micromath"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -116,9 +125,10 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "midi-controller"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "heapless",
+ "led-ring",
  "postcard",
  "serde",
 ]

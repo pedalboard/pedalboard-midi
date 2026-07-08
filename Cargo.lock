@@ -762,6 +762,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "led-ring"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dbdc27542c0d9de05547ad31dfd32c1bd4e2147e095497f2bb81e8c646eb4e2"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -819,11 +828,12 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "midi-controller"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1baec252dcfd562ff7a047e8419b52cc4db16cc29f4b6cdc35e38e18aabf477f"
+checksum = "719732ffeddec0179f7c84b847cf733ef0bdcf2babd867ec039dee8d5132dbf6"
 dependencies = [
  "heapless 0.9.3",
+ "led-ring",
  "postcard",
  "serde",
 ]
