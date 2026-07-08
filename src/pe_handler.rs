@@ -122,7 +122,7 @@ impl PeHandler {
 
         // Tick for long-press detection
         if self.ctrl.any_active() {
-            let r = self.ctrl.tick(now_ms, config);
+            let r = self.ctrl.process(CtrlEvent::Tick, now_ms, config);
             self.merge(&r, &mut result);
         }
 
@@ -186,7 +186,17 @@ impl PeHandler {
 
     /// Process incoming MIDI against preset triggers.
     pub fn process_incoming_midi(&mut self, config: &Config, raw: &[u8]) -> HandleResult {
-        let r = self.ctrl.process_incoming_midi(raw, config);
+        let mut data = [0u8; 3];
+        let len = raw.len().min(3);
+        data[..len].copy_from_slice(&raw[..len]);
+        let r = self.ctrl.process(
+            CtrlEvent::IncomingMidi {
+                data,
+                len: len as u8,
+            },
+            0,
+            config,
+        );
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
