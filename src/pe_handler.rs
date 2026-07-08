@@ -10,7 +10,7 @@
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
 use pedalboard_protocol::config::{Color, Config, LedAnimation, LedRenderer, Preset};
-use pedalboard_protocol::controller::{Controller, ControllerResult, InputEvent as CtrlEvent};
+use pedalboard_protocol::controller::{Controller, Event as CtrlEvent, Output};
 use pedalboard_protocol::engine::ActionStep;
 use pedalboard_protocol::long_press::Edge as LpEdge;
 use pedalboard_protocol::state::PresetStateStore;
@@ -37,7 +37,7 @@ pub enum MidiStep {
 pub struct HandleResult {
     pub midi: heapless::Vec<MidiStep, 32>,
     pub display: heapless::Vec<DisplayEvent, 2>,
-    pub led_dirty: bool,
+    pub leds_changed: bool,
     pub preset_changed: bool,
     pub bpm: Option<u16>,
 }
@@ -80,7 +80,7 @@ impl PeHandler {
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
-            led_dirty: false,
+            leds_changed: false,
             preset_changed: false,
             bpm: None,
         };
@@ -101,7 +101,7 @@ impl PeHandler {
         }
 
         // Tick for long-press detection
-        if self.ctrl.any_active() {
+        if self.ctrl.button_held() {
             let r = self.ctrl.process(CtrlEvent::Tick, now_ms, config);
             self.merge(&r, &mut result);
         }
@@ -176,7 +176,7 @@ impl PeHandler {
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
-            led_dirty: false,
+            leds_changed: false,
             preset_changed: false,
             bpm: None,
         };
@@ -186,17 +186,17 @@ impl PeHandler {
 
     /// Serialize current state to EEPROM buffer.
     pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
-        self.ctrl.eeprom_state()
+        self.ctrl.save_state()
     }
 
     /// Returns true if any button is currently held.
     pub fn any_active(&self) -> bool {
-        self.ctrl.any_active()
+        self.ctrl.button_held()
     }
 
     /// Returns the current button active state.
     pub fn button_active(&self) -> [bool; NUM_BUTTONS] {
-        *self.ctrl.button_active()
+        *self.ctrl.button_states()
     }
 
     /// Get the active preset index.
@@ -211,11 +211,11 @@ impl PeHandler {
 
     /// Switch to a preset (for boot initialization).
     pub fn switch_to(&mut self, preset_idx: u8, config: &Config) -> HandleResult {
-        let r = self.ctrl.switch_to(preset_idx, config);
+        let r = self.ctrl.select_preset(preset_idx, config);
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
-            led_dirty: false,
+            leds_changed: false,
             preset_changed: false,
             bpm: None,
         };
@@ -226,7 +226,7 @@ impl PeHandler {
     /// Compute LED animations for all 8 rings.
     pub fn led_state(&self, preset: &Preset) -> LedAnimations {
         let mut anims = [RingAnimation::off(); 8];
-        let button_active = self.ctrl.button_active();
+        let button_active = self.ctrl.button_states();
         let encoder_values = self.ctrl.encoder_values();
 
         for (i, anim) in anims.iter_mut().enumerate().take(NUM_BUTTONS) {
@@ -274,7 +274,7 @@ impl PeHandler {
 
     // --- Private ---
 
-    fn merge(&self, ctrl_result: &ControllerResult, result: &mut HandleResult) {
+    fn merge(&self, ctrl_result: &Output, result: &mut HandleResult) {
         for step in &ctrl_result.midi {
             match step {
                 ActionStep::Send(msg) => {
@@ -298,8 +298,8 @@ impl PeHandler {
         for d in &ctrl_result.display {
             result.display.push(d.clone()).ok();
         }
-        if ctrl_result.led_dirty {
-            result.led_dirty = true;
+        if ctrl_result.leds_changed {
+            result.leds_changed = true;
         }
         if ctrl_result.preset_changed {
             result.preset_changed = true;

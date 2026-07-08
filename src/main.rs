@@ -623,7 +623,7 @@ mod app {
                         let new_idx = pe.active_preset();
                         ctx.shared.active_preset.lock(|p| *p = new_idx);
                     }
-                    if result.led_dirty || result.preset_changed {
+                    if result.leds_changed || result.preset_changed {
                         let new_idx = pe.active_preset();
                         ctx.shared.pe_config.lock(|cfg| {
                             if let Some(preset) = cfg.presets.get(new_idx as usize) {
@@ -706,7 +706,7 @@ mod app {
                         display_event_sender.try_send(evt).ok();
                     }
                     // Update LEDs and preset index on actual switch
-                    let led_dirty = result.led_dirty || result.preset_changed;
+                    let led_dirty = result.leds_changed || result.preset_changed;
                     if result.preset_changed {
                         preset_idx = new_preset;
                         led_sender
