@@ -186,7 +186,10 @@ impl PeHandler {
 
     /// Serialize current state to EEPROM buffer.
     pub fn eeprom_state(&self) -> heapless::Vec<u8, 128> {
-        self.ctrl.save_state()
+        let mut buf = [0u8; 128];
+        let store = self.ctrl.snapshot_store();
+        store.to_eeprom(&mut buf);
+        heapless::Vec::from_slice(&buf).unwrap_or_default()
     }
 
     /// Returns true if any button is currently held.
