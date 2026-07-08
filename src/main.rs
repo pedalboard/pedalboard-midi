@@ -675,17 +675,9 @@ mod app {
                 // PE mode: only lock pe_config when needed
                 let need_tick = !events.is_empty() || pe.any_active();
                 if need_tick {
-                    let cal = ctx.shared.global_config.lock(|gc| {
-                        pedalboard_midi::pe_handler::AdcCalibration {
-                            exp1_min: gc.exp1_min,
-                            exp1_max: gc.exp1_max,
-                            exp2_min: gc.exp2_min,
-                            exp2_max: gc.exp2_max,
-                        }
-                    });
                     let result = ctx.shared.pe_config.lock(|cfg| {
                         let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                        pe.handle_events(cfg, &events, &cal, now_ms)
+                        pe.handle_events(cfg, &events, now_ms)
                     });
                     for step in &result.midi {
                         pe_midi_steps.push(step.clone()).ok();
@@ -1427,7 +1419,8 @@ mod app {
                     postcard::from_bytes::<pedalboard_protocol::config::GlobalConfig>(&data[1..])
                 {
                     info!("global config loaded from flash");
-                    ctx.shared.global_config.lock(|g| *g = gc);
+                    ctx.shared.global_config.lock(|g| *g = gc.clone());
+                    ctx.shared.pe_config.lock(|cfg| cfg.global = gc);
                 }
             }
 
@@ -1453,6 +1446,9 @@ mod app {
                             if preset_index == pedalboard_protocol::config::GLOBAL_CONFIG_RESOURCE {
                                 info!("global config cleared");
                                 ctx.shared.global_config.lock(|g| *g = Default::default());
+                                ctx.shared
+                                    .pe_config
+                                    .lock(|cfg| cfg.global = Default::default());
                                 let empty_marker: heapless::Vec<
                                     u8,
                                     { pedalboard_midi::MAX_PRESET_SIZE + 1 },
@@ -1489,7 +1485,8 @@ mod app {
                             >(&data)
                             {
                                 info!("global config applied and saved");
-                                ctx.shared.global_config.lock(|g| *g = gc);
+                                ctx.shared.global_config.lock(|g| *g = gc.clone());
+                                ctx.shared.pe_config.lock(|cfg| cfg.global = gc);
                             }
                             store.save_preset(preset_index, &versioned).await;
                         } else if let Ok(preset) =

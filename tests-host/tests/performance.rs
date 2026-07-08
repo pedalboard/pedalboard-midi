@@ -104,7 +104,7 @@ fn preset_meta_uses_config_name_and_labels() {
         })
         .ok();
 
-    let cfg = Config { presets };
+    let cfg = Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets };
     let (name, labels) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(name.as_str(), "My Song");
     assert_eq!(labels[0].as_str(), "Verse");
@@ -144,7 +144,7 @@ fn preset_meta_empty_label_uses_default() {
         })
         .ok();
 
-    let cfg = Config { presets };
+    let cfg = Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets };
     let (_, labels) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(labels[0].as_str(), ""); // empty label = intentionally hidden
 }

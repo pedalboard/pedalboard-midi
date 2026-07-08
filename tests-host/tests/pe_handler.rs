@@ -22,7 +22,7 @@ fn make_config() -> Config {
     presets.push(make_test_preset()).ok();
     // Add a second preset so preset switching works
     presets.push(make_test_preset()).ok();
-    Config { presets }
+    Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets }
 }
 
 fn make_test_preset() -> Preset {
@@ -122,8 +122,7 @@ fn make_test_preset() -> Preset {
 fn on_press_fires_immediately() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)], &cal, 0);
+    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)],  0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
 }
@@ -132,8 +131,7 @@ fn on_press_fires_immediately() {
 fn on_release_fires_note_off() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Deactivate)], &cal, 0);
+    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Deactivate)],  0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
 }
@@ -142,8 +140,7 @@ fn on_release_fires_note_off() {
 fn long_press_defers_on_press() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    let r = h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)],  0);
     assert!(r.midi.is_empty());
 }
 
@@ -151,15 +148,13 @@ fn long_press_defers_on_press() {
 fn short_release_fires_on_press() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)],  0);
     for i in 1..=100u32 {
-        h.handle_events(&config, &[], &cal, i);
+        h.handle_events(&config, &[],  i);
     }
     let r = h.handle_events(
         &config,
         &[InputEvent::ButtonB(Edge::Deactivate)],
-        &cal,
         101,
     );
     assert_eq!(r.midi.len(), 1);
@@ -170,11 +165,10 @@ fn short_release_fires_on_press() {
 fn long_press_switches_preset() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)],  0);
     let mut switched = false;
     for i in 1..=501u32 {
-        let r = h.handle_events(&config, &[], &cal, i);
+        let r = h.handle_events(&config, &[],  i);
         if r.preset_changed {
             assert_eq!(h.active_preset(), 1);
             switched = true;
@@ -188,11 +182,10 @@ fn long_press_switches_preset() {
 fn long_press_prev_switches_preset() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&config, &[InputEvent::ButtonC(Edge::Activate)], &cal, 0);
+    h.handle_events(&config, &[InputEvent::ButtonC(Edge::Activate)],  0);
     let mut switched = false;
     for i in 1..=501u32 {
-        let r = h.handle_events(&config, &[], &cal, i);
+        let r = h.handle_events(&config, &[],  i);
         if r.preset_changed {
             // From preset 0, prev wraps to preset 1 (2 presets total)
             assert_eq!(h.active_preset(), 1);
@@ -207,15 +200,13 @@ fn long_press_prev_switches_preset() {
 fn long_press_suppresses_on_press() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)], &cal, 0);
+    h.handle_events(&config, &[InputEvent::ButtonB(Edge::Activate)],  0);
     for i in 1..=501u32 {
-        h.handle_events(&config, &[], &cal, i);
+        h.handle_events(&config, &[],  i);
     }
     let r = h.handle_events(
         &config,
         &[InputEvent::ButtonB(Edge::Deactivate)],
-        &cal,
         502,
     );
     // After long press fired (and preset switched), release should produce nothing
@@ -226,9 +217,8 @@ fn long_press_suppresses_on_press() {
 fn encoder_generates_cc() {
     let config = make_config();
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
     h.set_encoder_value(0, 64);
-    let r = h.handle_events(&config, &[InputEvent::Vol(Pulse::Clockwise)], &cal, 0);
+    let r = h.handle_events(&config, &[InputEvent::Vol(Pulse::Clockwise)],  0);
     assert_eq!(r.midi.len(), 1);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
 }
@@ -266,11 +256,10 @@ fn action_sequence_with_delay() {
     };
     let mut presets: Vec<Preset, MAX_PRESETS> = Vec::new();
     presets.push(preset).ok();
-    let config = Config { presets };
+    let config = Config { global: pedalboard_protocol::config::GlobalConfig::default(), presets };
 
     let mut h = PeHandler::new();
-    let cal = pe_handler::AdcCalibration::default();
-    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)], &cal, 0);
+    let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)],  0);
     assert_eq!(r.midi.len(), 3);
     assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 1, 127]));
     assert_eq!(r.midi[1], MidiStep::Delay(100));

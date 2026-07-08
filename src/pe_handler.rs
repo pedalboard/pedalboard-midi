@@ -18,25 +18,6 @@ use smart_leds::RGB8;
 
 const NUM_BUTTONS: usize = 6;
 
-/// ADC calibration values per expression pedal (loaded from GlobalConfig).
-pub struct AdcCalibration {
-    pub exp1_min: u16,
-    pub exp1_max: u16,
-    pub exp2_min: u16,
-    pub exp2_max: u16,
-}
-
-impl Default for AdcCalibration {
-    fn default() -> Self {
-        Self {
-            exp1_min: 0,
-            exp1_max: 3750,
-            exp2_min: 0,
-            exp2_max: 3750,
-        }
-    }
-}
-
 // Re-export types used by main.rs
 pub use pedalboard_protocol::engine::{DisplayEvent, DisplaySide, SystemAction};
 
@@ -94,7 +75,6 @@ impl PeHandler {
         &mut self,
         config: &Config,
         events: &[InputEvent],
-        cal: &AdcCalibration,
         now_ms: u32,
     ) -> HandleResult {
         let mut result = HandleResult {
@@ -156,8 +136,6 @@ impl PeHandler {
                         CtrlEvent::Analog {
                             index: 0,
                             raw: *raw_adc,
-                            min: cal.exp2_min,
-                            max: cal.exp2_max,
                         },
                         now_ms,
                         config,
@@ -169,8 +147,6 @@ impl PeHandler {
                         CtrlEvent::Analog {
                             index: 1,
                             raw: *raw_adc,
-                            min: cal.exp1_min,
-                            max: cal.exp1_max,
                         },
                         now_ms,
                         config,
