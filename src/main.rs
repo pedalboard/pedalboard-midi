@@ -487,7 +487,7 @@ mod app {
         }
     }
 
-    #[task(local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store, button_active])]
+    #[task(priority = 2, local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store, button_active])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -674,10 +674,11 @@ mod app {
                 // PE mode: only lock pe_config when needed
                 let need_tick = !events.is_empty() || pe.any_active();
                 if need_tick {
-                    let result = ctx.shared.pe_config.lock(|cfg| {
-                        let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                        pe.handle_events(cfg, &events, now_ms)
-                    });
+                    let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                    let result = ctx
+                        .shared
+                        .pe_config
+                        .lock(|cfg| pe.handle_events(cfg, &events, now_ms));
                     for step in &result.midi {
                         pe_midi_steps.push(step.clone()).ok();
                     }
@@ -1616,7 +1617,7 @@ mod app {
         }
     }
 
-    #[task(local = [led_spi, leds: pedalboard_midi::leds::Leds = pedalboard_midi::leds::Leds::new()])]
+    #[task(priority = 2, local = [led_spi, leds: pedalboard_midi::leds::Leds = pedalboard_midi::leds::Leds::new()])]
     async fn led_out(
         ctx: led_out::Context,
         mut receiver: Receiver<'static, LedEvent, LED_CAPACITY>,
@@ -2008,7 +2009,7 @@ mod app {
         }
     }
 
-    #[task(shared = [global_config])]
+    #[task(priority = 2, shared = [global_config])]
     async fn midi_clock(
         mut ctx: midi_clock::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
