@@ -405,33 +405,12 @@ mod app {
                 // Reactive LED: check incoming CC against active preset's listen_cc bindings
                 if (buf[0] & 0xF0) == 0xB0 {
                     let channel = (buf[0] & 0x0F) + 1;
-                    let cc = buf[1];
-                    let value = buf[2];
                     let preset_idx = ctx.shared.active_preset.lock(|p| *p);
                     ctx.shared.pe_config.lock(|cfg| {
                         if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                            if let Some(result) = midi_controller::engine::process_incoming_cc(
-                                preset, channel, cc, value,
+                            if let Some(evt) = pedalboard_midi::pe_handler::reactive_led_event(
+                                preset, channel, buf[1], buf[2],
                             ) {
-                                use midi_controller::engine::ReactiveResult;
-                                use pedalboard_midi::leds::LedEvent;
-                                let evt = match result {
-                                    ReactiveResult::Heatmap(idx, fill) => {
-                                        LedEvent::SetReactiveRing(idx, fill)
-                                    }
-                                    ReactiveResult::Trigger(idx, active) => {
-                                        let anim = if active {
-                                            Some(
-                                                pedalboard_midi::pe_handler::button_ring_animation(
-                                                    preset, idx,
-                                                ),
-                                            )
-                                        } else {
-                                            None
-                                        };
-                                        LedEvent::SetReactiveTrigger(idx, anim)
-                                    }
-                                };
                                 ctx.local.led_sender_midi.try_send(evt).ok();
                             }
                         }
@@ -715,25 +694,11 @@ mod app {
                                 let channel = (raw[0] & 0x0F) + 1;
                                 ctx.shared.pe_config.lock(|cfg| {
                                     if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                                        if let Some(result) =
-                                            midi_controller::engine::process_incoming_cc(
+                                        if let Some(evt) =
+                                            pedalboard_midi::pe_handler::reactive_led_event(
                                                 preset, channel, raw[1], raw[2],
                                             )
                                         {
-                                            use midi_controller::engine::ReactiveResult;
-                                            let evt = match result {
-                                                ReactiveResult::Heatmap(idx, fill) => {
-                                                    LedEvent::SetReactiveRing(idx, fill)
-                                                }
-                                                ReactiveResult::Trigger(idx, active) => {
-                                                    let anim = if active {
-                                                        Some(pedalboard_midi::pe_handler::button_ring_animation(preset, idx))
-                                                    } else {
-                                                        None
-                                                    };
-                                                    LedEvent::SetReactiveTrigger(idx, anim)
-                                                }
-                                            };
                                             led_sender.try_send(evt).ok();
                                         }
                                     }
@@ -840,30 +805,12 @@ mod app {
                     let raw = packet.payload_bytes();
                     if raw.len() >= 3 && (raw[0] & 0xF0) == 0xB0 {
                         let channel = (raw[0] & 0x0F) + 1;
-                        let cc = raw[1];
-                        let value = raw[2];
                         let preset_idx = ctx.shared.active_preset.lock(|p| *p);
                         ctx.shared.pe_config.lock(|cfg| {
                             if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                                if let Some(result) =
-                                    midi_controller::engine::process_incoming_cc(
-                                        preset, channel, cc, value,
-                                    )
-                                {
-                                    use midi_controller::engine::ReactiveResult;
-                                    let evt = match result {
-                                        ReactiveResult::Heatmap(idx, fill) => {
-                                            LedEvent::SetReactiveRing(idx, fill)
-                                        }
-                                        ReactiveResult::Trigger(idx, active) => {
-                                            let anim = if active {
-                                                Some(pedalboard_midi::pe_handler::button_ring_animation(preset, idx))
-                                            } else {
-                                                None
-                                            };
-                                            LedEvent::SetReactiveTrigger(idx, anim)
-                                        }
-                                    };
+                                if let Some(evt) = pedalboard_midi::pe_handler::reactive_led_event(
+                                    preset, channel, raw[1], raw[2],
+                                ) {
                                     ctx.local.led_sender_usb.try_send(evt).ok();
                                 }
                             }

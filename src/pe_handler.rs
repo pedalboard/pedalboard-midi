@@ -9,6 +9,8 @@
 
 use crate::events::{Edge, InputEvent, Pulse};
 use crate::ledring::{rgb8_to_rgb, Modifier, Renderer, RingAnimation};
+#[cfg(target_arch = "arm")]
+use crate::leds::LedEvent;
 use midi_controller::config::{Color, Config, LedAnimation, LedRenderer, Preset};
 use midi_controller::controller::{Controller, Event as CtrlEvent, Output};
 use midi_controller::engine::ActionStep;
@@ -381,4 +383,25 @@ fn edge_to_lp(edge: Edge) -> LpEdge {
         Edge::Activate => LpEdge::Activate,
         Edge::Deactivate => LpEdge::Deactivate,
     }
+}
+
+/// Process an incoming CC message against a preset's reactive LED bindings.
+/// Returns a LedEvent if the CC triggers a reactive ring update.
+#[cfg(target_arch = "arm")]
+pub fn reactive_led_event(preset: &Preset, channel: u8, cc: u8, value: u8) -> Option<LedEvent> {
+    use midi_controller::engine::{process_incoming_cc, ReactiveResult};
+
+    let result = process_incoming_cc(preset, channel, cc, value)?;
+    let evt = match result {
+        ReactiveResult::Heatmap(idx, fill) => LedEvent::SetReactiveRing(idx, fill),
+        ReactiveResult::Trigger(idx, active) => {
+            let anim = if active {
+                Some(button_ring_animation(preset, idx))
+            } else {
+                None
+            };
+            LedEvent::SetReactiveTrigger(idx, anim)
+        }
+    };
+    Some(evt)
 }
