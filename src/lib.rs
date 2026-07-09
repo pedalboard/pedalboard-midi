@@ -42,6 +42,7 @@ pub mod events;
 pub mod ledring;
 pub mod leds;
 pub mod pe_handler;
+pub mod pe_sysex;
 pub mod persist;
 #[cfg(target_arch = "arm")]
 pub mod storage;

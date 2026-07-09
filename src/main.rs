@@ -859,99 +859,18 @@ mod app {
                         debug!("SysEx IN  message: {:?}", sysex_receive_buffer);
 
                         // Handle MIDI-CI Property Exchange messages
-                        if midi_controller::property_exchange::is_set_property(
-                            sysex_receive_buffer.as_ref(),
-                        ) {
-                            if let Some(data) =
-                                midi_controller::property_exchange::extract_set_property(
-                                    sysex_receive_buffer.as_ref(),
-                                )
-                            {
-                                let mut decoded = [0u8; pedalboard_midi::MAX_PRESET_SIZE];
-                                let dec_len = midi_controller::property_exchange::decode_mcoded7(
-                                    data.body,
-                                    &mut decoded,
-                                );
-
-                                if data.resource == midi_controller::config::SYSTEM_COMMAND_RESOURCE
-                                {
-                                    // System command
-                                    if dec_len > 0 {
-                                        if let Some(cmd) =
-                                            midi_controller::config::SystemCommand::from_byte(
-                                                decoded[0],
-                                            )
-                                        {
-                                            use pedalboard_midi::persist::PersistCommand;
-                                            debug!("PE System command: {}", cmd as u8);
-                                            let persist_cmd = match cmd {
-                                                midi_controller::config::SystemCommand::Reboot => {
-                                                    PersistCommand::Reboot
-                                                }
-                                                midi_controller::config::SystemCommand::Bootloader => {
-                                                    PersistCommand::Bootloader
-                                                }
-                                                midi_controller::config::SystemCommand::FactoryReset => {
-                                                    PersistCommand::EraseAll
-                                                }
-                                            };
-                                            ctx.local.persist_sender.try_send(persist_cmd).ok();
-                                        }
-                                    }
-                                } else if data.resource
-                                    == midi_controller::config::GLOBAL_CONFIG_RESOURCE
-                                {
-                                    // Global config — save via persist task (applied on load)
-                                    debug!("PE Set GlobalConfig body len={}", dec_len);
-                                    if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len])
-                                    {
-                                        ctx.local
-                                            .persist_sender
-                                            .try_send(pedalboard_midi::persist::PersistCommand::SavePreset(
-                                                midi_controller::config::GLOBAL_CONFIG_RESOURCE,
-                                                blob,
-                                            ))
-                                            .ok();
-                                    }
-                                } else {
-                                    // Preset
-                                    debug!(
-                                        "PE Set Property preset={} body len={}",
-                                        data.resource,
-                                        data.body.len()
-                                    );
-                                    if let Ok(blob) = heapless::Vec::from_slice(&decoded[..dec_len])
-                                    {
-                                        ctx.local
-                                            .persist_sender
-                                            .try_send(pedalboard_midi::persist::PersistCommand::SavePreset(
-                                                data.resource,
-                                                blob,
-                                            ))
-                                            .ok();
-                                    }
-                                }
-
-                                // Send ACK reply
-                                let req_id = midi_controller::property_exchange::request_id(
-                                    sysex_receive_buffer.as_ref(),
-                                );
-                                let src_muid = midi_controller::property_exchange::source_muid(
-                                    sysex_receive_buffer.as_ref(),
-                                );
-                                let reply = midi_controller::property_exchange::build_set_reply(
-                                    [0x01, 0x02, 0x03, 0x04],
-                                    src_muid,
-                                    req_id,
-                                    midi_controller::property_exchange::PeStatus::Ok,
-                                );
-                                for chunk in reply.chunks(3) {
-                                    if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
-                                        CableNumber::Cable0,
-                                        chunk,
-                                    ) {
-                                        ctx.local.usb_sender_usb_thru.try_send(p).ok();
-                                    }
+                        if let Some(result) =
+                            pedalboard_midi::pe_sysex::handle_set(sysex_receive_buffer.as_ref())
+                        {
+                            if let Some(cmd) = result.command {
+                                ctx.local.persist_sender.try_send(cmd).ok();
+                            }
+                            for chunk in result.reply.chunks(3) {
+                                if let Ok(p) = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    chunk,
+                                ) {
+                                    ctx.local.usb_sender_usb_thru.try_send(p).ok();
                                 }
                             }
                             sysex_receive_buffer.clear();
