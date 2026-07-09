@@ -208,6 +208,24 @@ mod app {
         let mut debug_led = pins.gpio10.into_push_pull_output();
         debug_led.set_high().unwrap();
 
+        // Read flash unique ID for stable USB serial number
+        let mut flash_id = [0u8; 8];
+        unsafe {
+            rp2040_flash::flash::flash_unique_id(&mut flash_id, true);
+        }
+        // Static storage for serial string (init runs once at boot, no races)
+        #[allow(static_mut_refs)]
+        let serial_str = unsafe {
+            static mut BUF: [u8; 16] = [0u8; 16];
+            for (i, byte) in flash_id.iter().enumerate() {
+                let hi = byte >> 4;
+                let lo = byte & 0x0F;
+                BUF[i * 2] = if hi < 10 { b'0' + hi } else { b'A' + hi - 10 };
+                BUF[i * 2 + 1] = if lo < 10 { b'0' + lo } else { b'A' + lo - 10 };
+            }
+            core::str::from_utf8_unchecked(&BUF)
+        };
+
         // USB
         let usb_bus: &'static _ = ctx.local.usb_bus.write(UsbBusAllocator::new(UsbBus::new(
             ctx.device.USBCTRL_REGS,
@@ -222,7 +240,7 @@ mod app {
             .strings(&[StringDescriptors::default()
                 .product("pedalboard OpenDeck")
                 .manufacturer("github.com/pedalboard")
-                .serial_number("1.0.0")])
+                .serial_number(serial_str)])
             .expect("Failed to set usb device strings")
             .device_class(0)
             .device_sub_class(0)
