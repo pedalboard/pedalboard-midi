@@ -624,14 +624,6 @@ mod app {
                 if result.preset_changed {
                     bpm_displayed = false;
                     ctx.shared.active_preset.lock(|p| *p = new_preset);
-                    // Preset actually changed — persist
-                    use pedalboard_midi::persist::PersistCommand;
-                    persist_sender
-                        .try_send(PersistCommand::SaveActivePreset(new_preset))
-                        .ok();
-                    persist_sender
-                        .try_send(PersistCommand::SaveState(pe.eeprom_state()))
-                        .ok();
                 }
                 // Send display events directly (no MIDI round-trip)
                 for evt in result.display {
@@ -660,9 +652,14 @@ mod app {
                         ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                     }
                 }
-                // Persist state to EEPROM on any state change (but not if preset switch already saved)
-                if led_dirty && !result.preset_changed {
+                // Persist state changes to EEPROM/flash
+                if result.preset_changed || led_dirty {
                     use pedalboard_midi::persist::PersistCommand;
+                    if result.preset_changed {
+                        persist_sender
+                            .try_send(PersistCommand::SaveActivePreset(new_preset))
+                            .ok();
+                    }
                     persist_sender
                         .try_send(PersistCommand::SaveState(pe.eeprom_state()))
                         .ok();
