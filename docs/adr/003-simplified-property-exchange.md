@@ -100,7 +100,7 @@ safe (0x00–0x7F). Only the mcoded7-encoded body section can represent 8-bit da
 - `pedalboard-cli` (Rust, host) — builds and parses PE messages
 - `pedalboard-midi` (Rust, RP2040) — handles PE Set/Get in USB RX ISR
 - `pedalboard-bridge` (Go, CM5) — transparent passthrough (treats as opaque SysEx)
-- `pedalboard-protocol` (Rust, shared) — framing, encode/decode, types
+- `midi-controller` (Rust, shared) — framing, encode/decode, types
 
 ## When to revisit
 

@@ -12,7 +12,7 @@ clean: ## clean build results
 	cargo clean
 
 OPENDECK_PATCH := --config 'patch."https://github.com/pedalboard/opendeck".opendeck.path="../opendeck"'
-PROTOCOL_PATCH := --config 'patch."https://github.com/pedalboard/pedalboard-protocol".pedalboard-protocol.path="../pedalboard-protocol"'
+PROTOCOL_PATCH := --config 'patch."https://github.com/pedalboard/midi-controller".midi-controller.path="../midi-controller"'
 PATCHES := $(OPENDECK_PATCH) $(PROTOCOL_PATCH)
 
 build: ## build
