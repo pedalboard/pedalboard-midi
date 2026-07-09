@@ -568,6 +568,8 @@ mod app {
                 .ok();
         }
 
+        let mut bpm_displayed = false;
+
         loop {
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
@@ -685,12 +687,18 @@ mod app {
                     // Handle tap tempo from result
                     if let Some(bpm) = result.bpm {
                         ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                        display_event_sender
-                            .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
-                            .ok();
+                        if !bpm_displayed {
+                            bpm_displayed = true;
+                            display_event_sender
+                                .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
+                                    bpm,
+                                })
+                                .ok();
+                        }
                     }
                     let new_preset = pe.active_preset();
                     if result.preset_changed {
+                        bpm_displayed = false;
                         ctx.shared.active_preset.lock(|p| *p = new_preset);
                         // Preset actually changed — persist
                         use pedalboard_midi::persist::PersistCommand;
