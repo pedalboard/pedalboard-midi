@@ -690,11 +690,7 @@ mod app {
                 }
             }
 
-            // Send LED update outside the lock
-            if let Some(evt) = led_event {
-                led_sender.try_send(evt).ok();
-            }
-            // Send MIDI outside the lock
+            // Send MIDI outside the lock (latency-critical path first)
             let mut midi_sent = false;
             {
                 use pedalboard_midi::pe_handler::MidiStep;
@@ -792,6 +788,10 @@ mod app {
                         5,
                     ))
                     .ok();
+            }
+            // Send LED update (visual feedback, not latency-critical)
+            if let Some(evt) = led_event {
+                led_sender.try_send(evt).ok();
             }
             Mono::delay(1.millis()).await;
         }
