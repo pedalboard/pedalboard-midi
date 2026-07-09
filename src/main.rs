@@ -466,7 +466,7 @@ mod app {
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
-        mut display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
+        mut _display_sender: Sender<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
         mut display_event_sender: Sender<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
         mut led_sender: Sender<'static, LedEvent, LED_CAPACITY>,
         mut persist_sender: Sender<
@@ -613,107 +613,90 @@ mod app {
                 events.push(*e).ok();
             }
 
-            #[allow(unused_mut)]
-            let mut all_sent: heapless::Vec<([u8; 6], usize), 24> = heapless::Vec::new();
             let mut pe_midi_steps: heapless::Vec<pedalboard_midi::pe_handler::MidiStep, 24> =
                 heapless::Vec::new();
             let mut led_event: Option<LedEvent> = None;
             let mut din_enabled = true;
-            #[allow(unused_mut)]
-            let mut component_info_buf: Option<([u8; 16], usize)> = None;
 
-            // Determine if active preset is a PE preset (has a name)
             let mut preset_idx = ctx.shared.active_preset.lock(|p| *p);
-            let pe_active = ctx.shared.pe_config.lock(|cfg| {
-                cfg.presets
-                    .get(preset_idx as usize)
-                    .map(|p| !p.name.is_empty())
-                    .unwrap_or(false)
-            });
 
-            if pe_active {
-                // PE mode: only lock pe_config when needed
-                let need_tick = !events.is_empty() || pe.any_active();
-                if need_tick {
-                    let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                    let result = ctx
-                        .shared
-                        .pe_config
-                        .lock(|cfg| pe.handle_events(cfg, &events, now_ms));
-                    for step in &result.midi {
-                        pe_midi_steps.push(step.clone()).ok();
-                    }
-                    // Handle tap tempo from result
-                    if let Some(bpm) = result.bpm {
-                        ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                        if !bpm_displayed {
-                            bpm_displayed = true;
-                            display_event_sender
-                                .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay {
-                                    bpm,
-                                })
-                                .ok();
-                        }
-                    }
-                    let new_preset = pe.active_preset();
-                    if result.preset_changed {
-                        bpm_displayed = false;
-                        ctx.shared.active_preset.lock(|p| *p = new_preset);
-                        // Preset actually changed — persist
-                        use pedalboard_midi::persist::PersistCommand;
-                        persist_sender
-                            .try_send(PersistCommand::SaveActivePreset(new_preset))
-                            .ok();
-                        persist_sender
-                            .try_send(PersistCommand::SaveState(pe.eeprom_state()))
-                            .ok();
-                    }
-                    // Send display events directly (no MIDI round-trip)
-                    for evt in result.display {
-                        display_event_sender.try_send(evt).ok();
-                    }
-                    // Update LEDs and preset index on actual switch
-                    let led_dirty = result.leds_changed || result.preset_changed;
-                    if result.preset_changed {
-                        preset_idx = new_preset;
-                        led_sender
-                            .try_send(LedEvent::SetSingle(
-                                Led::Mode,
-                                Some(pedalboard_midi::leds::preset_color(preset_idx)),
-                            ))
-                            .ok();
-                    }
-                    if !pe_midi_steps.is_empty() || led_dirty {
-                        // Read DIN enabled from global config
-                        din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
-                        if led_dirty {
-                            ctx.shared.pe_config.lock(|cfg| {
-                                let preset = &cfg.presets[preset_idx as usize];
-                                let anims = pe.led_state(preset);
-                                led_event = Some(LedEvent::SetAllRings(anims));
-                            });
-                            ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
-                        }
-                    }
-                    // Persist state to EEPROM on any state change (but not if preset switch already saved)
-                    if led_dirty && !result.preset_changed {
-                        use pedalboard_midi::persist::PersistCommand;
-                        persist_sender
-                            .try_send(PersistCommand::SaveState(pe.eeprom_state()))
+            // Process events through PE handler
+            let need_tick = !events.is_empty() || pe.any_active();
+            if need_tick {
+                let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                let result = ctx
+                    .shared
+                    .pe_config
+                    .lock(|cfg| pe.handle_events(cfg, &events, now_ms));
+                for step in &result.midi {
+                    pe_midi_steps.push(step.clone()).ok();
+                }
+                // Handle tap tempo from result
+                if let Some(bpm) = result.bpm {
+                    ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
+                    if !bpm_displayed {
+                        bpm_displayed = true;
+                        display_event_sender
+                            .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
                             .ok();
                     }
                 }
-            } else if !events.is_empty() && preset_idx < 4 {
-                // Slots without PE presets: inputs are silent
+                let new_preset = pe.active_preset();
+                if result.preset_changed {
+                    bpm_displayed = false;
+                    ctx.shared.active_preset.lock(|p| *p = new_preset);
+                    // Preset actually changed — persist
+                    use pedalboard_midi::persist::PersistCommand;
+                    persist_sender
+                        .try_send(PersistCommand::SaveActivePreset(new_preset))
+                        .ok();
+                    persist_sender
+                        .try_send(PersistCommand::SaveState(pe.eeprom_state()))
+                        .ok();
+                }
+                // Send display events directly (no MIDI round-trip)
+                for evt in result.display {
+                    display_event_sender.try_send(evt).ok();
+                }
+                // Update LEDs and preset index on actual switch
+                let led_dirty = result.leds_changed || result.preset_changed;
+                if result.preset_changed {
+                    preset_idx = new_preset;
+                    led_sender
+                        .try_send(LedEvent::SetSingle(
+                            Led::Mode,
+                            Some(pedalboard_midi::leds::preset_color(preset_idx)),
+                        ))
+                        .ok();
+                }
+                if !pe_midi_steps.is_empty() || led_dirty {
+                    // Read DIN enabled from global config
+                    din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
+                    if led_dirty {
+                        ctx.shared.pe_config.lock(|cfg| {
+                            let preset = &cfg.presets[preset_idx as usize];
+                            let anims = pe.led_state(preset);
+                            led_event = Some(LedEvent::SetAllRings(anims));
+                        });
+                        ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
+                    }
+                }
+                // Persist state to EEPROM on any state change (but not if preset switch already saved)
+                if led_dirty && !result.preset_changed {
+                    use pedalboard_midi::persist::PersistCommand;
+                    persist_sender
+                        .try_send(PersistCommand::SaveState(pe.eeprom_state()))
+                        .ok();
+                }
             }
-            // Slots 4+ with no PE preset: inputs are silent
+
             // Send LED update outside the lock
             if let Some(evt) = led_event {
                 led_sender.try_send(evt).ok();
             }
             // Send MIDI outside the lock
             let mut midi_sent = false;
-            if pe_active {
+            {
                 use pedalboard_midi::pe_handler::MidiStep;
                 for step in &pe_midi_steps {
                     match step {
@@ -800,28 +783,6 @@ mod app {
                     }
                 }
             }
-            for (raw, len) in &all_sent {
-                midi_sent = true;
-                // DIN MIDI out (only if enabled)
-                if din_enabled {
-                    if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
-                        uart_midi_out.write(&mm).ok();
-                    }
-                }
-                // Display log (only in non-PE mode — PE overlay is handled separately)
-                if !pe_active {
-                    let mut display_raw = [0u8; 3];
-                    let copy_len = (*len).min(3);
-                    display_raw[..copy_len].copy_from_slice(&raw[..copy_len]);
-                    display_sender.try_send(display_raw).ok();
-                }
-                // USB MIDI out (always for locally-generated messages)
-                let packet =
-                    UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw[..*len]);
-                if let Ok(packet) = packet {
-                    sender.try_send(packet).ok();
-                }
-            }
             // Flash Mon LED for outgoing MIDI activity
             if midi_sent {
                 led_sender
@@ -831,16 +792,6 @@ mod app {
                         5,
                     ))
                     .ok();
-            }
-            // Send component info SysEx (chunked into 3-byte USB MIDI packets)
-            if let Some((ci_buf, ci_len)) = component_info_buf {
-                for chunk in ci_buf[..ci_len].chunks(3) {
-                    if let Ok(packet) =
-                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk)
-                    {
-                        sender.try_send(packet).ok();
-                    }
-                }
             }
             Mono::delay(1.millis()).await;
         }
