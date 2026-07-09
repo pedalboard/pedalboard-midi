@@ -164,13 +164,14 @@ impl PeHandler {
 
     /// Process incoming MIDI against preset triggers.
     pub fn process_incoming_midi(&mut self, config: &Config, raw: &[u8]) -> HandleResult {
-        let mut data = [0u8; 3];
-        let len = raw.len().min(3);
+        let mut data = [0u8; 8];
+        let len = raw.len().min(8);
         data[..len].copy_from_slice(&raw[..len]);
         let r = self.ctrl.process(
-            CtrlEvent::IncomingMidi {
+            CtrlEvent::Midi {
                 data,
                 len: len as u8,
+                source: midi_controller::routing::MidiPort::USB,
             },
             0,
             config,
