@@ -39,6 +39,8 @@ pub enum MidiStep {
 pub struct HandleResult {
     pub midi: heapless::Vec<MidiStep, 32>,
     pub display: heapless::Vec<DisplayEvent, 2>,
+    pub routed: heapless::Vec<midi_controller::routing::MidiOut, 16>,
+    pub reactive_led: Option<midi_controller::engine::ReactiveResult>,
     pub leds_changed: bool,
     pub preset_changed: bool,
     pub bpm: Option<u16>,
@@ -82,6 +84,8 @@ impl PeHandler {
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
+            routed: heapless::Vec::new(),
+            reactive_led: None,
             leds_changed: false,
             preset_changed: false,
             bpm: None,
@@ -162,12 +166,12 @@ impl PeHandler {
         result
     }
 
-    /// Process incoming MIDI against preset triggers.
+    /// Process incoming MIDI: routing, reactive LEDs, and triggers.
     pub fn process_incoming_midi(&mut self, config: &Config, raw: &[u8]) -> HandleResult {
         let mut data = [0u8; 8];
         let len = raw.len().min(8);
         data[..len].copy_from_slice(&raw[..len]);
-        let r = self.ctrl.process(
+        let mut r = self.ctrl.process(
             CtrlEvent::Midi {
                 data,
                 len: len as u8,
@@ -176,9 +180,13 @@ impl PeHandler {
             0,
             config,
         );
+        let routed = core::mem::take(&mut r.midi_out);
+        let reactive_led = r.reactive_led;
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
+            routed,
+            reactive_led,
             leds_changed: false,
             preset_changed: false,
             bpm: None,
@@ -221,6 +229,8 @@ impl PeHandler {
         let mut result = HandleResult {
             midi: heapless::Vec::new(),
             display: heapless::Vec::new(),
+            routed: heapless::Vec::new(),
+            reactive_led: None,
             leds_changed: false,
             preset_changed: false,
             bpm: None,

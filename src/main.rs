@@ -133,9 +133,7 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        led_sender_midi: Sender<'static, LedEvent, LED_CAPACITY>,
         led_sender_usb: Sender<'static, LedEvent, LED_CAPACITY>,
-        usb_sender_din_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         usb_sender_usb_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
         din_thru_receiver: Receiver<'static, [u8; 3], DIN_THRU_CAPACITY>,
         din_thru_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
@@ -380,9 +378,7 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
-                led_sender_midi: led_sender.clone(),
                 led_sender_usb: led_sender,
-                usb_sender_din_thru: usb_sender.clone(),
                 usb_sender_usb_thru: usb_sender.clone(),
                 din_thru_receiver,
                 din_thru_sender,
@@ -395,46 +391,14 @@ mod app {
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru, trigger_sender_din], shared = [global_config, pe_config, active_preset])]
-    fn midi_in(mut ctx: midi_in::Context) {
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, trigger_sender_din], shared = [])]
+    fn midi_in(ctx: midi_in::Context) {
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
-                let thru = ctx.shared.global_config.lock(|gc| gc.din_to_usb_thru);
                 let mut buf = [0x00u8; 3];
                 m.render_slice(&mut buf);
-                // Reactive LED: check incoming CC against active preset's listen_cc bindings
-                if (buf[0] & 0xF0) == 0xB0 {
-                    let channel = (buf[0] & 0x0F) + 1;
-                    let preset_idx = ctx.shared.active_preset.lock(|p| *p);
-                    ctx.shared.pe_config.lock(|cfg| {
-                        if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                            if let Some(evt) = pedalboard_midi::pe_handler::reactive_led_event(
-                                preset, channel, buf[1], buf[2],
-                            ) {
-                                ctx.local.led_sender_midi.try_send(evt).ok();
-                            }
-                        }
-                    });
-                }
-                // Forward to trigger processor in poll_input
+                // All routing, reactive LEDs, and Mon LED handled in poll_input
                 ctx.local.trigger_sender_din.try_send(buf).ok();
-                let din_to_usb = if thru { Some(buf) } else { None };
-                // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
-                ctx.local
-                    .led_sender_midi
-                    .try_send(LedEvent::Flash(
-                        pedalboard_midi::leds::Led::Mon,
-                        smart_leds::RGB8::new(0, 0, 64),
-                        5,
-                    ))
-                    .ok();
-                if let Some(raw) = din_to_usb {
-                    let packet =
-                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &raw);
-                    if let Ok(packet) = packet {
-                        ctx.local.usb_sender_din_thru.try_send(packet).ok();
-                    }
-                }
             }
             Err(nb::Error::WouldBlock) => {}
             Err(_) => error!("failed to receive midi message"),
@@ -517,70 +481,111 @@ mod app {
                 }
             }
 
-            // Process incoming MIDI triggers
+            // Process incoming MIDI (routing, reactive LEDs, triggers)
             while let Ok(raw) = ctx.local.trigger_receiver.try_recv() {
-                let trigger_result = ctx.shared.pe_config.lock(|cfg| {
-                    let preset_idx = pe.active_preset() as usize;
-                    if let Some(preset) = cfg.presets.get(preset_idx) {
-                        if !preset.triggers.is_empty() {
-                            Some(pe.process_incoming_midi(cfg, &raw))
-                        } else {
-                            None
+                let result = ctx
+                    .shared
+                    .pe_config
+                    .lock(|cfg| pe.process_incoming_midi(cfg, &raw));
+                // Mon LED: blue flash for incoming MIDI activity
+                led_sender
+                    .try_send(LedEvent::Flash(
+                        Led::Mon,
+                        smart_leds::RGB8::new(0, 0, 64),
+                        5,
+                    ))
+                    .ok();
+                // Thru routing: send routed MIDI via DIN and/or USB
+                for routed in &result.routed {
+                    use midi_controller::routing::MidiPort;
+                    let bytes = routed.bytes();
+                    if routed.dest.contains(MidiPort::DIN) {
+                        if let Ok(mm) = MidiMessage::try_parse_slice(bytes) {
+                            uart_midi_out.write(&mm).ok();
                         }
-                    } else {
-                        None
                     }
-                });
-                if let Some(result) = trigger_result {
-                    for step in &result.midi {
-                        use pedalboard_midi::pe_handler::MidiStep;
-                        match step {
-                            MidiStep::Send(raw, len) => {
-                                let din_on = ctx.shared.global_config.lock(|gc| gc.din_enabled);
-                                if din_on {
-                                    if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
-                                        uart_midi_out.write(&mm).ok();
-                                    }
-                                }
-                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                    CableNumber::Cable0,
-                                    &raw[..*len],
-                                );
-                                if let Ok(packet) = packet {
-                                    sender.try_send(packet).ok();
+                    if routed.dest.contains(MidiPort::USB) {
+                        if let Ok(packet) =
+                            UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, bytes)
+                        {
+                            sender.try_send(packet).ok();
+                        }
+                    }
+                }
+                // Reactive LED from incoming CC
+                if let Some(reactive) = &result.reactive_led {
+                    use midi_controller::engine::ReactiveResult;
+                    let evt = match reactive {
+                        ReactiveResult::Heatmap(idx, fill) => {
+                            LedEvent::SetReactiveRing(*idx, *fill)
+                        }
+                        ReactiveResult::Trigger(idx, active) => {
+                            let anim = if *active {
+                                let preset_idx = pe.active_preset() as usize;
+                                ctx.shared.pe_config.lock(|cfg| {
+                                    cfg.presets.get(preset_idx).map(|preset| {
+                                        pedalboard_midi::pe_handler::button_ring_animation(
+                                            preset, *idx,
+                                        )
+                                    })
+                                })
+                            } else {
+                                None
+                            };
+                            LedEvent::SetReactiveTrigger(*idx, anim)
+                        }
+                    };
+                    led_sender.try_send(evt).ok();
+                }
+                // Trigger-generated MIDI output
+                for step in &result.midi {
+                    use pedalboard_midi::pe_handler::MidiStep;
+                    match step {
+                        MidiStep::Send(raw, len) => {
+                            let din_on = ctx.shared.global_config.lock(|gc| gc.din_enabled);
+                            if din_on {
+                                if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
+                                    uart_midi_out.write(&mm).ok();
                                 }
                             }
-                            MidiStep::Delay(_) => {}
-                            MidiStep::SetLed { .. } => {}
+                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                CableNumber::Cable0,
+                                &raw[..*len],
+                            );
+                            if let Ok(packet) = packet {
+                                sender.try_send(packet).ok();
+                            }
                         }
+                        MidiStep::Delay(_) => {}
+                        MidiStep::SetLed { .. } => {}
                     }
-                    // Handle tap tempo from result
-                    if let Some(bpm) = result.bpm {
-                        ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                    }
-                    // Handle preset change
+                }
+                // Handle tap tempo from result
+                if let Some(bpm) = result.bpm {
+                    ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
+                }
+                // Handle preset change
+                if result.preset_changed {
+                    let new_idx = pe.active_preset();
+                    ctx.shared.active_preset.lock(|p| *p = new_idx);
+                }
+                if result.leds_changed || result.preset_changed {
+                    let new_idx = pe.active_preset();
+                    ctx.shared.pe_config.lock(|cfg| {
+                        if let Some(preset) = cfg.presets.get(new_idx as usize) {
+                            let anims = pe.led_state(preset);
+                            led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
+                        }
+                    });
+                    ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                     if result.preset_changed {
                         let new_idx = pe.active_preset();
-                        ctx.shared.active_preset.lock(|p| *p = new_idx);
-                    }
-                    if result.leds_changed || result.preset_changed {
-                        let new_idx = pe.active_preset();
-                        ctx.shared.pe_config.lock(|cfg| {
-                            if let Some(preset) = cfg.presets.get(new_idx as usize) {
-                                let anims = pe.led_state(preset);
-                                led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
-                            }
-                        });
-                        ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
-                        if result.preset_changed {
-                            let new_idx = pe.active_preset();
-                            led_sender
-                                .try_send(LedEvent::SetSingle(
-                                    Led::Mode,
-                                    Some(pedalboard_midi::leds::preset_color(new_idx)),
-                                ))
-                                .ok();
-                        }
+                        led_sender
+                            .try_send(LedEvent::SetSingle(
+                                Led::Mode,
+                                Some(pedalboard_midi::leds::preset_color(new_idx)),
+                            ))
+                            .ok();
                     }
                 }
             }
@@ -794,55 +799,12 @@ mod app {
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
                 {
-                    let (usb_to_din, usb_to_usb) = ctx
-                        .shared
-                        .global_config
-                        .lock(|gc| (gc.usb_to_din_thru, gc.usb_to_usb_thru));
-                    // Reactive LED: check incoming CC against active preset's listen_cc bindings
+                    // All routing, reactive LEDs, and Mon LED handled in poll_input
                     let raw = packet.payload_bytes();
-                    if raw.len() >= 3 && (raw[0] & 0xF0) == 0xB0 {
-                        let channel = (raw[0] & 0x0F) + 1;
-                        let preset_idx = ctx.shared.active_preset.lock(|p| *p);
-                        ctx.shared.pe_config.lock(|cfg| {
-                            if let Some(preset) = cfg.presets.get(preset_idx as usize) {
-                                if let Some(evt) = pedalboard_midi::pe_handler::reactive_led_event(
-                                    preset, channel, raw[1], raw[2],
-                                ) {
-                                    ctx.local.led_sender_usb.try_send(evt).ok();
-                                }
-                            }
-                        });
-                    }
-                    // Forward to trigger processor in poll_input
-                    {
-                        let raw = packet.payload_bytes();
-                        if raw.len() >= 3 {
-                            let mut arr = [0u8; 3];
-                            arr.copy_from_slice(&raw[..3]);
-                            ctx.local.trigger_sender_usb.try_send(arr).ok();
-                        }
-                    }
-                    // Flash Mon LED for MIDI activity (5 ticks = 100ms at 50Hz)
-                    ctx.local
-                        .led_sender_usb
-                        .try_send(LedEvent::Flash(
-                            pedalboard_midi::leds::Led::Mon,
-                            smart_leds::RGB8::new(0, 0, 64),
-                            5,
-                        ))
-                        .ok();
-                    // USB→DIN thru
-                    if usb_to_din {
-                        let raw = packet.payload_bytes();
-                        if raw.len() >= 3 {
-                            let mut arr = [0u8; 3];
-                            arr.copy_from_slice(&raw[..3]);
-                            ctx.local.din_thru_sender.try_send(arr).ok();
-                        }
-                    }
-                    // USB→USB thru
-                    if usb_to_usb {
-                        ctx.local.usb_sender_usb_thru.try_send(packet.clone()).ok();
+                    if raw.len() >= 3 {
+                        let mut arr = [0u8; 3];
+                        arr.copy_from_slice(&raw[..3]);
+                        ctx.local.trigger_sender_usb.try_send(arr).ok();
                     }
                 }
                 continue;
