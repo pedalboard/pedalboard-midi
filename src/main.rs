@@ -36,25 +36,12 @@ mod app {
     use embedded_hal_bus::i2c::AtomicDevice;
     use embedded_hal_bus::util::AtomicCell;
     use pedalboard_midi::leds::{Led, LedEvent};
-    #[cfg(feature = "opendeck")]
-    use pedalboard_midi::opendeck_handler::{OpenDeck, OpenDeckConfigResponses};
     use pedalboard_midi::persist::PERSIST_CAPACITY;
     use pedalboard_midi::system_status::SystemStatus;
-    #[cfg(feature = "opendeck")]
-    use rtic_sync::channel::TrySendError;
     use rtic_sync::channel::{Receiver, Sender};
     use rtic_sync::make_channel;
 
-    #[cfg(not(feature = "opendeck"))]
-    pub struct OpenDeck;
-    #[cfg(not(feature = "opendeck"))]
-    pub enum OpenDeckConfigResponses {
-        None,
-    }
-
     use heapless::Vec;
-    #[cfg(feature = "opendeck")]
-    use midi2::Data;
     use midi_convert::midi_types::MidiMessage;
     use midi_convert::{parse::MidiTryParseSlice, render_slice::MidiRenderSlice};
     use rp2040_hal::{
@@ -127,7 +114,6 @@ mod app {
     struct Shared {
         usb_midi: UsbMidiClass<'static, UsbBus>,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        opendeck: OpenDeck,
         active_preset: u8,
         pe_config: midi_controller::config::Config,
         global_config: midi_controller::config::GlobalConfig,
@@ -147,7 +133,6 @@ mod app {
             AtomicDevice<'static, I2CBus>,
         >,
         debug_led: Pin<Gpio10, FunctionSio<SioOutput>, PullDown>,
-        sender: Sender<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
         led_sender_midi: Sender<'static, LedEvent, LED_CAPACITY>,
         led_sender_usb: Sender<'static, LedEvent, LED_CAPACITY>,
         usb_sender_din_thru: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -165,7 +150,6 @@ mod app {
         USB_OUT_CAPACITY >= pedalboard_midi::MIN_USB_OUT_CAPACITY,
         "USB_OUT_CAPACITY too small for MAX_PRESET_SIZE PE replies"
     );
-    const SYSEX_CAPACITY: usize = 1;
     const DISPLAY_LOG_CAPACITY: usize = 8;
     const LED_CAPACITY: usize = 4;
     const DIN_THRU_CAPACITY: usize = 8;
@@ -238,7 +222,7 @@ mod app {
         let usb_midi = UsbMidiClass::new(usb_bus, 1, 1).unwrap();
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x2E8A, 0x0005))
             .strings(&[StringDescriptors::default()
-                .product("pedalboard OpenDeck")
+                .product("pedalboard MIDI")
                 .manufacturer("github.com/pedalboard")
                 .serial_number(serial_str)])
             .expect("Failed to set usb device strings")
@@ -337,9 +321,6 @@ mod app {
         let (usb_sender, usb_receiver) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
         send_to_usb_midi::spawn(usb_receiver).unwrap();
 
-        let (sysex_sender, sysex_receiver) = make_channel!(OpenDeckConfigResponses, SYSEX_CAPACITY);
-        sysex_processor::spawn(sysex_receiver, usb_sender.clone()).unwrap();
-
         let (display_sender, display_receiver) = make_channel!([u8; 3], DISPLAY_LOG_CAPACITY);
         let (display_event_sender, display_event_receiver) =
             make_channel!(pedalboard_midi::pe_handler::DisplayEvent, 4);
@@ -376,19 +357,6 @@ mod app {
         )
         .unwrap();
 
-        #[cfg(feature = "opendeck")]
-        let opendeck = OpenDeck::new(
-            opendeck::config::FirmwareVersion {
-                major: 1,
-                minor: 0,
-                revision: 0,
-            },
-            0x123456,
-            persist_sender.clone(),
-        );
-        #[cfg(not(feature = "opendeck"))]
-        let opendeck = OpenDeck;
-
         info!("pedalboard-midi {} initialized", env!("GIT_HASH"));
 
         // Presets loaded asynchronously in persist task
@@ -398,7 +366,6 @@ mod app {
             Shared {
                 usb_midi,
                 usb_dev,
-                opendeck,
                 active_preset: restored_active,
                 pe_config,
                 global_config: midi_controller::config::GlobalConfig::default(),
@@ -413,7 +380,6 @@ mod app {
                 led_spi,
                 displays,
                 debug_led,
-                sender: sysex_sender,
                 led_sender_midi: led_sender.clone(),
                 led_sender_usb: led_sender,
                 usb_sender_din_thru: usb_sender.clone(),
@@ -429,22 +395,13 @@ mod app {
         )
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru, trigger_sender_din], shared = [opendeck, global_config, pe_config, active_preset])]
+    #[task(binds = UART0_IRQ, local = [uart_midi_in, led_sender_midi, usb_sender_din_thru, trigger_sender_din], shared = [global_config, pe_config, active_preset])]
     fn midi_in(mut ctx: midi_in::Context) {
-        #[cfg(feature = "opendeck")]
-        use midi2::prelude::*;
-
         match ctx.local.uart_midi_in.read() {
             Ok(m) => {
                 let thru = ctx.shared.global_config.lock(|gc| gc.din_to_usb_thru);
                 let mut buf = [0x00u8; 3];
                 m.render_slice(&mut buf);
-                #[cfg(feature = "opendeck")]
-                ctx.shared.opendeck.lock(|opendeck| {
-                    if let Ok(m) = BytesMessage::try_from(&buf[..]) {
-                        opendeck.handle_midi_input(&m);
-                    }
-                });
                 // Reactive LED: check incoming CC against active preset's listen_cc bindings
                 if (buf[0] & 0xF0) == 0xB0 {
                     let channel = (buf[0] & 0x0F) + 1;
@@ -505,7 +462,7 @@ mod app {
         }
     }
 
-    #[task(priority = 2, local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [opendeck, active_preset, pe_config, global_config, state_store, button_active])]
+    #[task(priority = 2, local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [active_preset, pe_config, global_config, state_store, button_active])]
     async fn poll_input(
         mut ctx: poll_input::Context,
         mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
@@ -529,21 +486,6 @@ mod app {
             inputs.update();
             Mono::delay(1.millis()).await;
         }
-        // Reset encoder values and rings after glitches
-        #[cfg(feature = "opendeck")]
-        ctx.shared.opendeck.lock(|opendeck| {
-            use opendeck::encoder::EncoderSection;
-            use opendeck::{Amount, Block, OpenDeckRequest, Wish};
-            for i in 0..2u16 {
-                opendeck.config.process_req(OpenDeckRequest::Configuration(
-                    Wish::Set,
-                    Amount::Single,
-                    Block::Encoder(i, EncoderSection::RepeatedValue(0)),
-                ));
-            }
-            opendeck.reset_encoder_rings();
-        });
-
         let mut pe = {
             let store = ctx.shared.state_store.lock(|s| s.clone());
             pedalboard_midi::pe_handler::PeHandler::with_state(store)
@@ -681,7 +623,6 @@ mod app {
             let mut component_info_buf: Option<([u8; 16], usize)> = None;
 
             // Determine if active preset is a PE preset (has a name)
-            // Slots 0-3 can be either PE or OpenDeck; slots 4+ are PE-only
             let mut preset_idx = ctx.shared.active_preset.lock(|p| *p);
             let pe_active = ctx.shared.pe_config.lock(|cfg| {
                 cfg.presets
@@ -743,7 +684,7 @@ mod app {
                             .ok();
                     }
                     if !pe_midi_steps.is_empty() || led_dirty {
-                        // Read DIN enabled from global config (PE mode — no OpenDeck needed)
+                        // Read DIN enabled from global config
                         din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
                         if led_dirty {
                             ctx.shared.pe_config.lock(|cfg| {
@@ -763,17 +704,7 @@ mod app {
                     }
                 }
             } else if !events.is_empty() && preset_idx < 4 {
-                // OpenDeck mode (slots 0-3 only): sync preset and handle input
-                #[cfg(feature = "opendeck")]
-                {
-                    din_enabled = ctx.shared.global_config.lock(|gc| gc.din_enabled);
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        let (sent, anims, ci) = opendeck.process_events(preset_idx, &events);
-                        all_sent = sent;
-                        led_event = Some(LedEvent::SetAllRings(anims));
-                        component_info_buf = ci;
-                    });
-                }
+                // Slots without PE presets: inputs are silent
             }
             // Slots 4+ with no PE preset: inputs are silent
             // Send LED update outside the lock
@@ -877,7 +808,7 @@ mod app {
                         uart_midi_out.write(&mm).ok();
                     }
                 }
-                // Display log (only in OpenDeck mode — PE overlay is handled separately)
+                // Display log (only in non-PE mode — PE overlay is handled separately)
                 if !pe_active {
                     let mut display_raw = [0u8; 3];
                     let copy_len = (*len).min(3);
@@ -916,8 +847,8 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 3,
-        local = [ buf: Vec::<u8, 350>=Vec::new(), sender, led_sender_usb, usb_sender_usb_thru, din_thru_sender, trigger_sender_usb, persist_sender],
-        shared =[usb_midi,usb_dev,opendeck,pe_config,global_config,active_preset,presets_skipped]
+        local = [ buf: Vec::<u8, 350>=Vec::new(), led_sender_usb, usb_sender_usb_thru, din_thru_sender, trigger_sender_usb, persist_sender],
+        shared =[usb_midi,usb_dev,pe_config,global_config,active_preset,presets_skipped]
     )]
     fn usb_rx(mut ctx: usb_rx::Context) {
         let sysex_receive_buffer = ctx.local.buf;
@@ -949,16 +880,11 @@ mod app {
         let buffer_reader = UsbMidiPacketReader::new(&buffer, received_size);
         for packet in buffer_reader.into_iter().flatten() {
             if !packet.is_sysex() {
-                #[allow(unused_variables)]
-                if let Ok(m) = midi2::BytesMessage::try_from(packet.payload_bytes()) {
+                {
                     let (usb_to_din, usb_to_usb) = ctx
                         .shared
                         .global_config
                         .lock(|gc| (gc.usb_to_din_thru, gc.usb_to_usb_thru));
-                    #[cfg(feature = "opendeck")]
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        opendeck.handle_midi_input(&m);
-                    });
                     // Reactive LED: check incoming CC against active preset's listen_cc bindings
                     let raw = packet.payload_bytes();
                     if raw.len() >= 3 && (raw[0] & 0xF0) == 0xB0 {
@@ -1231,44 +1157,7 @@ mod app {
                             continue;
                         }
 
-                        // OpenDeck SysEx handling continues below
-                        #[cfg(feature = "opendeck")]
-                        {
-                            // Detect SET SINGLE commands and persist them
-                            // Format: F0 00 53 43 00 PP 01 00 BLOCK SECTION IDX_H IDX_L VAL_H VAL_L F7
-                            if sysex_receive_buffer.len() >= 15
-                                && sysex_receive_buffer[6] == 0x01  // WISH = SET
-                                && sysex_receive_buffer[7] == 0x00
-                            // AMOUNT = SINGLE
-                            {
-                                let block = sysex_receive_buffer[8];
-                                let section = sysex_receive_buffer[9];
-                                let index = sysex_receive_buffer[11]; // LSB
-                                let value = ((sysex_receive_buffer[12] as u16) << 8)
-                                    | sysex_receive_buffer[13] as u16;
-                                ctx.local
-                                    .persist_sender
-                                    .try_send(pedalboard_midi::persist::PersistCommand::Save(
-                                        block, section, index, value,
-                                    ))
-                                    .ok();
-                            }
-
-                            let mut responses = OpenDeckConfigResponses::None;
-                            ctx.shared.opendeck.lock(|opendeck| {
-                                responses = opendeck.process_sysex(sysex_receive_buffer.as_ref());
-                            });
-                            if let Err(err) = ctx.local.sender.try_send(responses) {
-                                match err {
-                                    TrySendError::Full(_) => {
-                                        error!("sysex out queue full");
-                                    }
-                                    TrySendError::NoReceiver(_) => {
-                                        error!("sysex out queue has no receiver");
-                                    }
-                                }
-                            }
-                        }
+                        // Unrecognized SysEx — ignored
                     }
                 }
                 Err(_) => {
@@ -1279,63 +1168,7 @@ mod app {
         }
     }
 
-    #[task(shared = [opendeck])]
-    async fn sysex_processor(
-        mut ctx: sysex_processor::Context,
-        mut receiver: Receiver<'static, OpenDeckConfigResponses, SYSEX_CAPACITY>,
-        mut sender: Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
-    ) {
-        #[cfg(feature = "opendeck")]
-        {
-            while let Ok(responses) = &mut receiver.recv().await {
-                let output_buffer = &mut [0u8; 78];
-                let mut more = true;
-                let mut len;
-                while more {
-                    len = 0;
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        match responses.next(output_buffer, &mut opendeck.config) {
-                            Ok(Some(response)) => {
-                                len = response.data().len();
-                            }
-                            Ok(None) => {
-                                more = false;
-                            }
-                            Err(_) => {
-                                more = false;
-                                error!("SysEx buffer overflow");
-                            }
-                        }
-                    });
-                    if len == 0 {
-                        continue;
-                    }
-                    debug!("SysEx OUT message: {:?}", output_buffer[..len]);
-                    for chunk in output_buffer[..len].chunks(3) {
-                        let packet =
-                            UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk);
-                        match packet {
-                            Ok(packet) => {
-                                sender.send(packet).await.unwrap();
-                            }
-                            Err(_) => {
-                                error!("USB MIDI packet error");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        #[cfg(not(feature = "opendeck"))]
-        {
-            let _ = (&mut ctx, &mut sender);
-            loop {
-                let _ = receiver.recv().await;
-            }
-        }
-    }
-
-    #[task(local = [eeprom_i2c], shared = [opendeck, pe_config, global_config, active_preset, state_store, presets_skipped])]
+    #[task(local = [eeprom_i2c], shared = [pe_config, global_config, active_preset, state_store, presets_skipped])]
     async fn persist(
         mut ctx: persist::Context,
         mut receiver: Receiver<'static, pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY>,
@@ -1344,42 +1177,6 @@ mod app {
         let eeprom = ctx.local.eeprom_i2c;
         info!("config persistence: loading from flash");
         if let Some(mut store) = pedalboard_midi::storage::ConfigStore::try_new() {
-            // Load persisted config and replay as SET commands
-            #[cfg(feature = "opendeck")]
-            {
-                let entries = store.load_all().await;
-                if !entries.is_empty() {
-                    info!("restoring {} config entries from flash", entries.len());
-                    ctx.shared.opendeck.lock(|opendeck| {
-                        let mut buf = [0u8; 78];
-                        for &(block, section, index, value) in &entries {
-                            if block == 7 {
-                                continue; // legacy label entries (removed), skip
-                            }
-                            let raw = [
-                                0xF0,
-                                0x00,
-                                0x53,
-                                0x43,
-                                0x00,
-                                0x00,
-                                0x01,
-                                0x00,
-                                block,
-                                section,
-                                (index >> 7) & 0x7F,
-                                index & 0x7F,
-                                ((value >> 8) as u8) & 0x7F,
-                                (value as u8) & 0x7F,
-                                0xF7,
-                            ];
-                            let mut responses = opendeck.config.process_sysex(&raw);
-                            while let Ok(Some(_)) = responses.next(&mut buf, &mut opendeck.config) {
-                            }
-                        }
-                    });
-                }
-            }
             info!("config persistence ready");
 
             // Load presets from flash
@@ -1448,10 +1245,6 @@ mod app {
             while let Ok(cmd) = receiver.recv().await {
                 use pedalboard_midi::persist::PersistCommand;
                 match cmd {
-                    #[cfg(feature = "opendeck")]
-                    PersistCommand::Save(block, section, index, value) => {
-                        store.save(block, section, index, value).await;
-                    }
                     PersistCommand::SavePreset(preset_index, data) => {
                         // Prepend flash format version byte before storing
                         let mut versioned: heapless::Vec<
@@ -1671,7 +1464,7 @@ mod app {
         }
     }
 
-    #[task(local = [displays], shared = [active_preset, opendeck, pe_config, button_active])]
+    #[task(local = [displays], shared = [active_preset, pe_config, button_active])]
     async fn display_out(
         mut ctx: display_out::Context,
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
@@ -1725,10 +1518,7 @@ mod app {
                 }
             }
 
-            // Check if SysEx session switched mode
-            #[cfg(feature = "opendeck")]
-            let sysex_active = ctx.shared.opendeck.lock(|od| od.config.sysex_enabled());
-            #[cfg(not(feature = "opendeck"))]
+            // SysEx debug mode (currently unused)
             let sysex_active = false;
             if sysex_active && !debug_mode {
                 debug_mode = true;
@@ -1990,7 +1780,7 @@ mod app {
                                         return;
                                     }
                                 }
-                                // Fallback: hardcoded CC#0/1/2/3 for OpenDeck default mode
+                                // Fallback: hardcoded CC#0/1/2/3 for default mode
                                 match raw[1] {
                                     0 => {
                                         displays.draw_overlay(DisplayLocation::L, "Vol", raw[2]);
