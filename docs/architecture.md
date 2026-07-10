@@ -10,7 +10,7 @@ The firmware uses RTIC v2 with async tasks on the RP2040. Dispatcher: `SW0_IRQ`.
 | `midi_in` | 1 (default) | ISR (`UART0_IRQ`) | DIN MIDI input, LED triggers, DIN→USB thru |
 | `poll_input` | 1 | async | Button/encoder/expression polling (5ms), MIDI out, preset switching |
 | `persist` | 1 | async | Flash config store + EEPROM state, load-on-boot, save-on-change |
-| `sysex_processor` | 1 | async | Serialise OpenDeck SysEx responses → USB out |
+| `sysex_processor` | 1 | async | PE SysEx responses → USB out |
 | `send_to_usb_midi` | 1 | async | USB MIDI TX queue drain |
 | `display_out` | 1 | async | OLED rendering (performance view, overlays) |
 | `led_out` | 1 | async | LED ring/single rendering, 50Hz tick loop via PIO |
@@ -32,7 +32,7 @@ graph LR
         POLL[poll_input<br/>1ms loop · events]
         DISPLAY[display_out<br/>200ms loop · labels]
         LED[led_writer<br/>SPI render]
-        SYSEX[sysex_processor<br/>OpenDeck responses]
+        SYSEX[sysex_processor<br/>PE responses]
         PERSIST[persist<br/>Flash read/write]
         SEND[send_to_usb_midi<br/>USB out queue]
         BLINK[blink<br/>heartbeat LED]
@@ -82,7 +82,7 @@ CLI/Bridge upload (USB MIDI SysEx)
 On boot:
 ```
 persist task init
-  → load_all(): replay OpenDeck config as SET SysEx
+  → load_all(): load PE presets from flash
   → load_all_presets(): deserialize into pe_config.presets[]
   → poll_input/display_out: use live config immediately
 ```
@@ -99,17 +99,17 @@ persist task init
 
 | Range | Encoding | Use |
 |-------|----------|-----|
-| `0x0000..0x7FFF` | `block[15:13] \| section[12:8] \| index[7:0]` | OpenDeck config values (u16 each) |
+| `0x0000..0x7FFF` | `block[15:13] \| section[12:8] \| index[7:0]` | Legacy config values (unused, reserved key range) |
 | `0x8000..0x80FF` | `0x8000 \| preset_index` | Preset blobs (postcard-serialized, variable length) |
 
 **Runtime state** (active preset, per-preset toggle/cycle state) persists to AT24CS01 EEPROM (128 bytes at I²C 0x50), not flash—avoids wear from frequent updates.
 
-## OpenDeck Coexistence
+## Flash Key Ranges
 
 - **PE (Property Exchange):** primary config path. Presets uploaded via MIDI-CI PE Set, stored as structured blobs. Drives button actions, encoders, labels, LED colors.
-- **OpenDeck SysEx:** hardware configuration (MIDI channel, thru routing, BPM, button count). Also supports the OpenDeck web UI for basic setup. Config values stored as individual key-value pairs in the same flash map.
+- Global config (MIDI routing, clock, calibration) stored as key-value pairs.
 
-Both share the `persist` task and `ConfigStore`. PE presets and OpenDeck config occupy separate key ranges so they never collide.
+PE presets and global config share the `persist` task and `ConfigStore` with separate key ranges.
 
 ## Memory Constraints
 

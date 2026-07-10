@@ -15,13 +15,13 @@ Presets were originally stored in a single raw 4KB flash sector with a manual fo
 This approach had several problems:
 - No wear leveling — the same sector was erased on every save (~100K cycle limit)
 - No integrity checking — a power loss during write corrupted the entire sector
-- Separate codepath from the existing OpenDeck config storage
+- Separate codepath from the existing config storage
 
-Meanwhile, the OpenDeck hardware config already used `sequential-storage` (map mode) with full wear leveling across 16 sectors.
+Meanwhile, the global config already used `sequential-storage` (map mode) with full wear leveling across 16 sectors.
 
 ## Decision
 
-Unify preset storage with the existing `ConfigStore` backed by `sequential-storage`. Presets are stored as variable-length postcard-serialized blobs under keys `0x8000 | index`, sharing the same 64KB flash region and wear-leveling pool as OpenDeck config entries.
+Unify preset storage with the existing `ConfigStore` backed by `sequential-storage`. Presets are stored as variable-length postcard-serialized blobs under keys `0x8000 | index`, sharing the same 64KB flash region and wear-leveling pool as global config entries.
 
 ## Consequences
 

@@ -129,7 +129,7 @@ enum Overlay {
 ## Presets & Banks
 
 ### Concept
-- A **bank** = an OpenDeck **preset** (each has its own button/encoder config)
+- A **bank** = a **preset** (each has its own button/encoder config)
 - Switching bank changes what every button/encoder does
 - Active bank shown on display with button labels
 
@@ -138,14 +138,14 @@ enum Overlay {
 | Mode | Trigger | Notes |
 |------|---------|-------|
 | Long press | Hold any configured button >500ms | Button still sends normal MIDI on short press |
-| Dedicated buttons | Button(s) assigned as Bank+/Bank- | Uses OpenDeckPresetChange message type |
+| Dedicated buttons | Button(s) assigned as Bank+/Bank- | Uses PE preset switch |
 | Encoder button | Push encoder to cycle banks | Encoder turn still controls CC |
 | Encoder turn | Dedicated encoder for bank selection | Encoder doesn't send MIDI in this mode |
 
 Only one mode active at a time. Configured per-device (not per-preset, since it's the mechanism to *reach* other presets).
 
 ### Open: Long press (future)
-- Not currently supported in the opendeck library (buttons are momentary or latching)
+- Buttons support momentary, toggle, and cycle modes
 - Likely needs a protocol extension (new button type or section)
 - Would need a firmware-level timer that distinguishes short vs long press
 - Short press = normal MIDI action, long press = bank change
