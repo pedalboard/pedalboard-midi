@@ -11,15 +11,11 @@ run: ## build and run by using pico_probe
 clean: ## clean build results
 	cargo clean
 
-OPENDECK_PATCH := --config 'patch."https://github.com/pedalboard/opendeck".opendeck.path="../opendeck"'
 PROTOCOL_PATCH := --config 'patch."https://github.com/pedalboard/midi-controller".midi-controller.path="../midi-controller"'
-PATCHES := $(OPENDECK_PATCH) $(PROTOCOL_PATCH)
+PATCHES := $(PROTOCOL_PATCH)
 
 build: ## build
 	cargo build --release $(PATCHES)
-
-build-no-opendeck: ## build without OpenDeck (PE-only)
-	cargo build --release --no-default-features $(PROTOCOL_PATCH)
 
 lint: ## lint source code
 	cargo clippy --all-features $(PATCHES)
