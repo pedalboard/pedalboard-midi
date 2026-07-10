@@ -10,7 +10,6 @@ Handles all real-time MIDI control: button input, encoder rotation, expression p
 
 - **RTIC v2** async tasks on single core (RP2040)
 - **PE (Property Exchange)** for preset config via MIDI-CI SysEx
-- **OpenDeck SysEx** for legacy/hardware configuration (being phased out)
 - **Flash persistence** via `sequential-storage` (64KB, wear-leveled)
 - **EEPROM state** (AT24CS01) for runtime toggle/encoder state across power cycles
 
@@ -69,7 +68,7 @@ See [pedalboard-hw](https://github.com/pedalboard/pedalboard-hw) for the PCB des
 
 ## Acknowledgments
 
-This firmware builds upon the [OpenDeck](https://github.com/shanteacontrols/OpenDeck) platform by [Igor Petrović / Shantea Controls](https://shanteacontrols.com) for its SysEx configuration protocol.
+This firmware was originally based on the [OpenDeck](https://github.com/shanteacontrols/OpenDeck) platform by [Igor Petrović / Shantea Controls](https://shanteacontrols.com) for its SysEx configuration protocol (since removed, replaced by PE protocol).
 
 ## License
 
