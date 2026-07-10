@@ -1159,6 +1159,7 @@ mod app {
                             Mono::delay(5.millis()).await;
                         }
                         info!("factory reset: storage + presets + eeprom erased, rebooting");
+                        Mono::delay(1000.millis()).await;
                         cortex_m::peripheral::SCB::sys_reset();
                     }
                     PersistCommand::Reboot => {
