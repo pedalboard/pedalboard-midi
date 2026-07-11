@@ -1432,6 +1432,7 @@ mod app {
                                 }
                                 SystemAction::TapTempo => "Tap",
                                 SystemAction::SetBpm(_) => "BPM",
+                                _ => "",
                             };
                             displays.draw_long_press_hint(label);
                             show_overlay = true;
