@@ -543,7 +543,13 @@ mod app {
                     match step {
                         MidiStep::Send(raw, len) => {
                             let din_on = ctx.shared.global_config.lock(|gc| gc.din_enabled);
-                            if din_on {
+                            let is_internal = ctx.shared.global_config.lock(|gc| {
+                                *len >= 1
+                                    && raw[0] >= 0x80
+                                    && raw[0] <= 0xEF
+                                    && (raw[0] & 0x0F) + 1 == gc.internal_channel
+                            });
+                            if din_on && !is_internal {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
                                 }
@@ -673,13 +679,18 @@ mod app {
 
             // Send MIDI outside the lock (latency-critical path first)
             let mut midi_sent = false;
+            let internal_channel = ctx.shared.global_config.lock(|gc| gc.internal_channel);
             {
                 use pedalboard_midi::pe_handler::MidiStep;
                 for step in &pe_midi_steps {
                     match step {
                         MidiStep::Send(raw, len) => {
                             midi_sent = true;
-                            if din_enabled {
+                            let is_internal = *len >= 1
+                                && raw[0] >= 0x80
+                                && raw[0] <= 0xEF
+                                && (raw[0] & 0x0F) + 1 == internal_channel;
+                            if din_enabled && !is_internal {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
                                 }

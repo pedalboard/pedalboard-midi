@@ -47,7 +47,7 @@ embedded-midi = { git = "https://github.com/rust-midi/embedded-midi.git", branch
 usbd-midi = { version = "0.5.1" }
 midi-types = { version = "0.2.0", features = ["defmt"] }
 # midi crates
-midi-controller = "0.7.1"
+midi-controller = { git = "https://github.com/pedalboard/midi-controller" }
 postcard = { version = "1.1.1", default-features = false }
 sequential-storage = "7.2.0"
 embedded-storage = "0.3.1"
