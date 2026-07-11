@@ -163,6 +163,7 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 [[package]]
 name = "midi-controller"
 version = "0.7.1"
+source = "git+https://github.com/pedalboard/midi-controller#c69769dbaa4ab3050c5647a09c8f7202bd77e3e4"
 dependencies = [
  "bitflags 2.13.0",
  "heapless",
@@ -323,3 +324,7 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[patch.unused]]
+name = "midi-controller"
+version = "0.7.1"

@@ -26,7 +26,7 @@ pub use midi_controller::engine::{DisplayEvent, DisplaySide, SystemAction};
 /// A step in an action sequence: raw MIDI bytes, a delay, or an LED change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MidiStep {
-    Send([u8; 3], usize),
+    Send([u8; 3], usize, midi_controller::routing::MidiPort),
     Delay(u16),
     SetLed {
         btn_idx: usize,
@@ -294,7 +294,10 @@ impl PeHandler {
         for step in &ctrl_result.midi {
             match step {
                 ActionStep::Send(msg) => {
-                    result.midi.push(MidiStep::Send(msg.data, msg.len)).ok();
+                    result
+                        .midi
+                        .push(MidiStep::Send(msg.data, msg.len, msg.dest))
+                        .ok();
                 }
                 ActionStep::Delay(ms) => {
                     result.midi.push(MidiStep::Delay(*ms)).ok();
@@ -549,7 +552,7 @@ mod tests {
         assert!(!r.midi.is_empty(), "expected MIDI output on button press");
         let step = &r.midi[0];
         assert!(
-            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 80 && d[2] == 127),
+            matches!(step, MidiStep::Send(d, 3, _) if d[0] == 0xB0 && d[1] == 80 && d[2] == 127),
             "expected CC 80 value 127 on ch1, got {:?}",
             step
         );
@@ -567,7 +570,7 @@ mod tests {
         let midi_sends: heapless::Vec<&MidiStep, 32> = r
             .midi
             .iter()
-            .filter(|s| matches!(s, MidiStep::Send(_, _)))
+            .filter(|s| matches!(s, MidiStep::Send(_, _, _)))
             .collect();
         assert!(
             midi_sends.is_empty(),
@@ -587,7 +590,7 @@ mod tests {
         let step = &r.midi[0];
         // Value should be 65 (64 + 1)
         assert!(
-            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 7 && d[2] == 65),
+            matches!(step, MidiStep::Send(d, 3, _) if d[0] == 0xB0 && d[1] == 7 && d[2] == 65),
             "expected CC 7 value 65, got {:?}",
             step
         );
@@ -604,7 +607,7 @@ mod tests {
         let step = &r.midi[0];
         // Value should be 63 (64 - 1)
         assert!(
-            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 7 && d[2] == 63),
+            matches!(step, MidiStep::Send(d, 3, _) if d[0] == 0xB0 && d[1] == 7 && d[2] == 63),
             "expected CC 7 value 63, got {:?}",
             step
         );
@@ -622,7 +625,7 @@ mod tests {
         let cc_msgs: heapless::Vec<&MidiStep, 32> = r
             .midi
             .iter()
-            .filter(|s| matches!(s, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 12))
+            .filter(|s| matches!(s, MidiStep::Send(d, 3, _) if d[0] == 0xB0 && d[1] == 12))
             .collect();
         assert!(
             !cc_msgs.is_empty(),
@@ -630,7 +633,7 @@ mod tests {
             r.midi
         );
         // Value should be proportional — roughly 2048/3750 * 127 ≈ 69
-        if let MidiStep::Send(d, _) = cc_msgs[0] {
+        if let MidiStep::Send(d, _, _) = cc_msgs[0] {
             assert!(
                 d[2] > 50 && d[2] < 90,
                 "expected proportional CC value around 69, got {}",
@@ -651,7 +654,7 @@ mod tests {
             .midi
             .iter()
             .filter(
-                |s| matches!(s, MidiStep::Send(d, 3) if d[0] == 0xB1 && d[1] == 99 && d[2] == 127),
+                |s| matches!(s, MidiStep::Send(d, 3, _) if d[0] == 0xB1 && d[1] == 99 && d[2] == 127),
             )
             .collect();
         assert!(

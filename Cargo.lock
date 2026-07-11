@@ -109,9 +109,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cc"
-version = "1.2.66"
+version = "1.2.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996"
+checksum = "e17dd265a7d0f31ef544e1b20e03add05d3b45b491b633b10d67145d2acc1a38"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -761,7 +761,7 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 [[package]]
 name = "midi-controller"
 version = "0.7.1"
-source = "git+https://github.com/pedalboard/midi-controller#da4b6551ecc481ebe736a56a8211e301058eebad"
+source = "git+https://github.com/pedalboard/midi-controller#8b4406d668348b3fe4633afe9a35fa33d55dc605"
 dependencies = [
  "bitflags 2.13.0",
  "heapless 0.9.3",

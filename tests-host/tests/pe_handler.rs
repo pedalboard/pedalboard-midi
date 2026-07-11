@@ -125,7 +125,7 @@ fn on_press_fires_immediately() {
     let mut h = PeHandler::new();
     let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)],  0);
     assert_eq!(r.midi.len(), 1);
-    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x90, 60, 127]));
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _, _) if *d == [0x90, 60, 127]));
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn on_release_fires_note_off() {
     let mut h = PeHandler::new();
     let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Deactivate)],  0);
     assert_eq!(r.midi.len(), 1);
-    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0x80, 60, 0]));
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _, _) if *d == [0x80, 60, 0]));
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn short_release_fires_on_press() {
         101,
     );
     assert_eq!(r.midi.len(), 1);
-    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 10, 127]));
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _, _) if *d == [0xB0, 10, 127]));
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn encoder_generates_cc() {
     h.set_encoder_value(0, 64);
     let r = h.handle_events(&config, &[InputEvent::Vol(Pulse::Clockwise)],  0);
     assert_eq!(r.midi.len(), 1);
-    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 7, 65]));
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _, _) if *d == [0xB0, 7, 65]));
 }
 
 #[test]
@@ -262,7 +262,7 @@ fn action_sequence_with_delay() {
     let mut h = PeHandler::new();
     let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)],  0);
     assert_eq!(r.midi.len(), 3);
-    assert!(matches!(&r.midi[0], MidiStep::Send(d, _) if *d == [0xB0, 1, 127]));
+    assert!(matches!(&r.midi[0], MidiStep::Send(d, _, _) if *d == [0xB0, 1, 127]));
     assert_eq!(r.midi[1], MidiStep::Delay(100));
-    assert!(matches!(&r.midi[2], MidiStep::Send(d, _) if *d == [0xB0, 1, 0]));
+    assert!(matches!(&r.midi[2], MidiStep::Send(d, _, _) if *d == [0xB0, 1, 0]));
 }

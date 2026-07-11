@@ -446,15 +446,18 @@ mod app {
                         led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
                         // Send any MIDI from boot switch (on_enter actions)
                         for step in &boot_result.midi {
+                            use midi_controller::routing::MidiPort;
                             use pedalboard_midi::pe_handler::MidiStep;
                             match step {
-                                MidiStep::Send(raw, len) => {
-                                    let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                        CableNumber::Cable0,
-                                        &raw[..*len],
-                                    );
-                                    if let Ok(packet) = packet {
-                                        sender.try_send(packet).ok();
+                                MidiStep::Send(raw, len, dest) => {
+                                    if dest.contains(MidiPort::USB) {
+                                        let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                            CableNumber::Cable0,
+                                            &raw[..*len],
+                                        );
+                                        if let Ok(packet) = packet {
+                                            sender.try_send(packet).ok();
+                                        }
                                     }
                                 }
                                 MidiStep::Delay(_) | MidiStep::SetLed { .. } => {}
@@ -539,27 +542,24 @@ mod app {
                 }
                 // Trigger-generated MIDI output
                 for step in &result.midi {
+                    use midi_controller::routing::MidiPort;
                     use pedalboard_midi::pe_handler::MidiStep;
                     match step {
-                        MidiStep::Send(raw, len) => {
+                        MidiStep::Send(raw, len, dest) => {
                             let din_on = ctx.shared.global_config.lock(|gc| gc.din_enabled);
-                            let is_internal = ctx.shared.global_config.lock(|gc| {
-                                *len >= 1
-                                    && raw[0] >= 0x80
-                                    && raw[0] <= 0xEF
-                                    && (raw[0] & 0x0F) + 1 == gc.internal_channel
-                            });
-                            if din_on && !is_internal {
+                            if din_on && dest.contains(MidiPort::DIN) {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
                                 }
                             }
-                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                CableNumber::Cable0,
-                                &raw[..*len],
-                            );
-                            if let Ok(packet) = packet {
-                                sender.try_send(packet).ok();
+                            if dest.contains(MidiPort::USB) {
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    &raw[..*len],
+                                );
+                                if let Ok(packet) = packet {
+                                    sender.try_send(packet).ok();
+                                }
                             }
                         }
                         MidiStep::Delay(_) => {}
@@ -679,28 +679,26 @@ mod app {
 
             // Send MIDI outside the lock (latency-critical path first)
             let mut midi_sent = false;
-            let internal_channel = ctx.shared.global_config.lock(|gc| gc.internal_channel);
             {
+                use midi_controller::routing::MidiPort;
                 use pedalboard_midi::pe_handler::MidiStep;
                 for step in &pe_midi_steps {
                     match step {
-                        MidiStep::Send(raw, len) => {
+                        MidiStep::Send(raw, len, dest) => {
                             midi_sent = true;
-                            let is_internal = *len >= 1
-                                && raw[0] >= 0x80
-                                && raw[0] <= 0xEF
-                                && (raw[0] & 0x0F) + 1 == internal_channel;
-                            if din_enabled && !is_internal {
+                            if din_enabled && dest.contains(MidiPort::DIN) {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
                                 }
                             }
-                            let packet = UsbMidiEventPacket::try_from_payload_bytes(
-                                CableNumber::Cable0,
-                                &raw[..*len],
-                            );
-                            if let Ok(packet) = packet {
-                                sender.try_send(packet).ok();
+                            if dest.contains(MidiPort::USB) {
+                                let packet = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    &raw[..*len],
+                                );
+                                if let Ok(packet) = packet {
+                                    sender.try_send(packet).ok();
+                                }
                             }
                             // Reactive LED: locally-generated CC also triggers reactive rings
                             if *len >= 3 && (raw[0] & 0xF0) == 0xB0 {
