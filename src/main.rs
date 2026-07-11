@@ -1618,23 +1618,30 @@ mod app {
         mut din_sender: Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
         mut led_sender: Sender<'static, LedEvent, LED_CAPACITY>,
     ) {
+        use midi_controller::clock::MidiClock;
+
+        let mut clock = MidiClock::new();
+
         loop {
-            let interval_us = ctx.shared.global_config.lock(|gc| {
-                if gc.midi_clock {
+            let (clock_enabled, interval_us) = ctx.shared.global_config.lock(|gc| {
+                let interval = if gc.midi_clock {
                     Some(gc.tick_interval_us())
                 } else {
                     None
-                }
+                };
+                (gc.midi_clock, interval)
             });
+
+            // Update clock state — sends Start/Stop on transitions.
+            if let Some(output) = clock.update_config(clock_enabled) {
+                dispatch_clock_messages(&output, &mut sender, &mut din_sender);
+            }
+
             match interval_us {
                 Some(us) => {
-                    // Send MIDI Clock (0xF8)
-                    let raw: [u8; 3] = [0xF8, 0x00, 0x00];
-                    din_sender.try_send(raw).ok();
-                    if let Ok(packet) =
-                        UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, &[0xF8])
-                    {
-                        sender.try_send(packet).ok();
+                    // Tick the clock — sends 0xF8 if running.
+                    if let Some(output) = clock.tick() {
+                        dispatch_clock_messages(&output, &mut sender, &mut din_sender);
                     }
                     // Sync LED animations to BPM
                     led_sender.try_send(LedEvent::BpmTick).ok();
@@ -1643,6 +1650,32 @@ mod app {
                 None => {
                     // Clock disabled, check again in 100ms
                     Mono::delay(100.millis()).await;
+                }
+            }
+        }
+    }
+
+    /// Dispatch clock messages (F8/FA/FC/FB) to DIN and USB based on port flags.
+    fn dispatch_clock_messages(
+        output: &midi_controller::clock::ClockOutput,
+        sender: &mut Sender<'static, UsbMidiEventPacket, USB_OUT_CAPACITY>,
+        din_sender: &mut Sender<'static, [u8; 3], DIN_THRU_CAPACITY>,
+    ) {
+        use midi_controller::routing::MidiPort;
+
+        for msg in &output.messages {
+            let bytes = msg.bytes();
+            if msg.dest.contains(MidiPort::DIN) {
+                let mut raw = [0u8; 3];
+                let len = bytes.len().min(3);
+                raw[..len].copy_from_slice(&bytes[..len]);
+                din_sender.try_send(raw).ok();
+            }
+            if msg.dest.contains(MidiPort::USB) {
+                if let Ok(packet) =
+                    UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, bytes)
+                {
+                    sender.try_send(packet).ok();
                 }
             }
         }
