@@ -416,3 +416,332 @@ pub fn reactive_led_event(preset: &Preset, channel: u8, cc: u8, value: u8) -> Op
     };
     Some(evt)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{Edge, InputEvent, Pulse};
+    use midi_controller::config::*;
+
+    /// Helper: build a config with one preset containing a single CC button + encoder + analog.
+    fn cc_button_config() -> Config {
+        let mut buttons: heapless::Vec<ButtonConfig, MAX_BUTTONS> = heapless::Vec::new();
+        buttons
+            .push(ButtonConfig {
+                label: Label::new(),
+                color: LedConfig {
+                    on: Color::Blue,
+                    off: Color::Off,
+                    animation: LedAnimation::Solid,
+                    renderer: LedRenderer::Solid,
+                    renderer_param: 0,
+                },
+                mode: ButtonMode::Momentary,
+                on_press: {
+                    let mut v = heapless::Vec::new();
+                    v.push(Action::cc(80, 127, 1).unwrap()).ok();
+                    v
+                },
+                on_release: heapless::Vec::new(),
+                on_long_press: heapless::Vec::new(),
+                cycle_values: heapless::Vec::new(),
+                listen_cc: None,
+            })
+            .ok();
+
+        let mut encoders: heapless::Vec<EncoderConfig, MAX_ENCODERS> = heapless::Vec::new();
+        encoders
+            .push(EncoderConfig {
+                label: Label::try_from("Vol").unwrap(),
+                action: EncoderAction::Cc {
+                    cc: 7,
+                    channel: 1,
+                    min: 0,
+                    max: 127,
+                },
+                ..Default::default()
+            })
+            .ok();
+
+        let mut analog: heapless::Vec<AnalogConfig, MAX_ANALOG> = heapless::Vec::new();
+        // Index 0 = ExpressionPedal2 (mapped in handle_events), Index 1 = ExpressionPedal1
+        analog
+            .push(AnalogConfig {
+                label: Label::new(),
+                cc: 11,
+                channel: 1,
+                min: 0,
+                max: 127,
+            })
+            .ok();
+        analog
+            .push(AnalogConfig {
+                label: Label::new(),
+                cc: 12,
+                channel: 1,
+                min: 0,
+                max: 127,
+            })
+            .ok();
+
+        let preset = Preset {
+            name: Label::try_from("Test").unwrap(),
+            buttons,
+            encoders,
+            analog,
+            defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
+        };
+
+        let mut presets: heapless::Vec<Preset, MAX_PRESETS> = heapless::Vec::new();
+        presets.push(preset).ok();
+        Config {
+            global: GlobalConfig::default(),
+            presets,
+        }
+    }
+
+    /// Helper: config with on_enter actions on second preset.
+    fn on_enter_config() -> Config {
+        let empty_preset = Preset {
+            name: Label::try_from("First").unwrap(),
+            buttons: heapless::Vec::new(),
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+            defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
+        };
+
+        let second_preset = Preset {
+            name: Label::try_from("Second").unwrap(),
+            buttons: heapless::Vec::new(),
+            encoders: heapless::Vec::new(),
+            analog: heapless::Vec::new(),
+            defaults: Default::default(),
+            on_enter: {
+                let mut v = heapless::Vec::new();
+                v.push(Action::cc(99, 127, 2).unwrap()).ok();
+                v
+            },
+            on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
+        };
+
+        let mut presets: heapless::Vec<Preset, MAX_PRESETS> = heapless::Vec::new();
+        presets.push(empty_preset).ok();
+        presets.push(second_preset).ok();
+        Config {
+            global: GlobalConfig::default(),
+            presets,
+        }
+    }
+
+    // --- Test 1 ---
+    #[test]
+    fn button_press_generates_cc() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)], 0);
+        assert!(!r.midi.is_empty(), "expected MIDI output on button press");
+        let step = &r.midi[0];
+        assert!(
+            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 80 && d[2] == 127),
+            "expected CC 80 value 127 on ch1, got {:?}",
+            step
+        );
+    }
+
+    // --- Test 2 ---
+    #[test]
+    fn button_release_no_output() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        // Press first to set state
+        h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)], 0);
+        // Release — momentary button with no on_release actions
+        let r = h.handle_events(&config, &[InputEvent::ButtonA(Edge::Deactivate)], 10);
+        let midi_sends: heapless::Vec<&MidiStep, 32> = r
+            .midi
+            .iter()
+            .filter(|s| matches!(s, MidiStep::Send(_, _)))
+            .collect();
+        assert!(
+            midi_sends.is_empty(),
+            "expected no MIDI on release of momentary button with no on_release, got {:?}",
+            midi_sends
+        );
+    }
+
+    // --- Test 3 ---
+    #[test]
+    fn encoder_clockwise_increments_cc() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        h.set_encoder_value(0, 64);
+        let r = h.handle_events(&config, &[InputEvent::Vol(Pulse::Clockwise)], 0);
+        assert!(!r.midi.is_empty(), "expected MIDI output from encoder CW");
+        let step = &r.midi[0];
+        // Value should be 65 (64 + 1)
+        assert!(
+            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 7 && d[2] == 65),
+            "expected CC 7 value 65, got {:?}",
+            step
+        );
+    }
+
+    // --- Test 4 ---
+    #[test]
+    fn encoder_counterclockwise_decrements_cc() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        h.set_encoder_value(0, 64);
+        let r = h.handle_events(&config, &[InputEvent::Vol(Pulse::CounterClockwise)], 0);
+        assert!(!r.midi.is_empty(), "expected MIDI output from encoder CCW");
+        let step = &r.midi[0];
+        // Value should be 63 (64 - 1)
+        assert!(
+            matches!(step, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 7 && d[2] == 63),
+            "expected CC 7 value 63, got {:?}",
+            step
+        );
+    }
+
+    // --- Test 5 ---
+    #[test]
+    fn expression_pedal_generates_cc() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        // ExpressionPedal1 maps to analog index 1 (cc 12, channel 1)
+        // ADC mid-point: 2048 out of default range 0..3750
+        let r = h.handle_events(&config, &[InputEvent::ExpressionPedal1(2048)], 0);
+        // Should produce a CC message on channel 1, cc 12
+        let cc_msgs: heapless::Vec<&MidiStep, 32> = r
+            .midi
+            .iter()
+            .filter(|s| matches!(s, MidiStep::Send(d, 3) if d[0] == 0xB0 && d[1] == 12))
+            .collect();
+        assert!(
+            !cc_msgs.is_empty(),
+            "expected CC 12 output from expression pedal, got {:?}",
+            r.midi
+        );
+        // Value should be proportional — roughly 2048/3750 * 127 ≈ 69
+        if let MidiStep::Send(d, _) = cc_msgs[0] {
+            assert!(
+                d[2] > 50 && d[2] < 90,
+                "expected proportional CC value around 69, got {}",
+                d[2]
+            );
+        }
+    }
+
+    // --- Test 6 ---
+    #[test]
+    fn preset_switch_fires_on_enter() {
+        let config = on_enter_config();
+        let mut h = PeHandler::new();
+        // Switch from preset 0 to preset 1 (which has on_enter CC 99)
+        let r = h.switch_to(1, &config);
+        assert!(r.preset_changed, "expected preset_changed flag");
+        let cc_msgs: heapless::Vec<&MidiStep, 32> = r
+            .midi
+            .iter()
+            .filter(
+                |s| matches!(s, MidiStep::Send(d, 3) if d[0] == 0xB1 && d[1] == 99 && d[2] == 127),
+            )
+            .collect();
+        assert!(
+            !cc_msgs.is_empty(),
+            "expected on_enter CC 99 on ch2, got {:?}",
+            r.midi
+        );
+    }
+
+    // --- Test 7 ---
+    #[test]
+    fn led_state_active_button_shows_color() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        // Press button A to make it active
+        h.handle_events(&config, &[InputEvent::ButtonA(Edge::Activate)], 0);
+        let preset = &config.presets[0];
+        let leds = h.led_state(preset);
+        // Button A (index 0) should show on-color (Blue) with Solid modifier
+        let expected_renderer = Renderer::Solid(crate::ledring::Rgb::new(0, 0, 255));
+        assert_eq!(
+            leds[0].renderer, expected_renderer,
+            "expected blue solid renderer for active button"
+        );
+        assert_eq!(
+            leds[0].modifier,
+            Modifier::Solid,
+            "expected Solid modifier for active button"
+        );
+    }
+
+    // --- Test 8 ---
+    #[test]
+    fn led_state_inactive_button_shows_glow() {
+        let config = cc_button_config();
+        let h = PeHandler::new();
+        let preset = &config.presets[0];
+        let leds = h.led_state(preset);
+        // Button A (index 0) is not pressed, off == Color::Off → should show Glow modifier
+        let expected_renderer = Renderer::Solid(crate::ledring::Rgb::new(0, 0, 255));
+        assert_eq!(
+            leds[0].renderer, expected_renderer,
+            "expected blue renderer for inactive button with off=Off"
+        );
+        assert_eq!(
+            leds[0].modifier,
+            Modifier::Glow,
+            "expected Glow modifier for inactive button"
+        );
+    }
+
+    // --- Test 9 ---
+    #[test]
+    fn led_state_encoder_heatmap() {
+        let config = cc_button_config();
+        let mut h = PeHandler::new();
+        h.set_encoder_value(0, 64);
+        let preset = &config.presets[0];
+        let leds = h.led_state(preset);
+        // Encoder 0 (Vol) → anims[6], fill = (64 * 12) / 127 = 6
+        let expected_fill = ((64u16 * 12) / 127).min(12) as u8;
+        assert_eq!(
+            leds[6].renderer,
+            Renderer::Heatmap(expected_fill),
+            "expected heatmap fill={} for encoder value 64",
+            expected_fill
+        );
+        assert_eq!(leds[6].modifier, Modifier::Solid);
+    }
+
+    // --- Test 10 ---
+    #[test]
+    fn process_incoming_midi_routes_to_output() {
+        // Enable USB → DIN thru routing
+        let mut config = cc_button_config();
+        config.global.usb_to_din_thru = true;
+        let mut h = PeHandler::new();
+        // Send a CC message as if received from USB
+        let raw = [0xB0, 44, 100]; // CC 44, value 100, channel 1
+        let r = h.process_incoming_midi(&config, &raw);
+        // Should be routed to DIN output
+        assert!(
+            !r.routed.is_empty(),
+            "expected routed output for thru, got empty"
+        );
+        let routed = &r.routed[0];
+        assert_eq!(
+            &routed.data[..routed.len as usize],
+            &[0xB0, 44, 100],
+            "expected same CC bytes in routed output"
+        );
+    }
+}

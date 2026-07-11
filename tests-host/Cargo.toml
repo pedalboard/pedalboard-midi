@@ -11,6 +11,7 @@ heapless = "0.9.3"
 midi-controller = "0.7.1"
 smart-leds = "0.4.0"
 eg-seven-segment = "0.2.0"
+defmt = { version = "1.1.0", features = ["unstable-test"] }
 
 [[test]]
 name = "performance"
@@ -19,3 +20,7 @@ path = "tests/performance.rs"
 [[test]]
 name = "pe_handler"
 path = "tests/pe_handler.rs"
+
+[[test]]
+name = "pe_sysex"
+path = "tests/pe_sysex.rs"
