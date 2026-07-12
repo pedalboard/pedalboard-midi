@@ -499,6 +499,8 @@ mod app {
                             let boot_result = pe.switch_to(preset_idx, cfg);
                             let anims = pe.led_state(preset);
                             led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
+                            // Update button active state for display task.
+                            ctx.shared.button_active.lock(|ba| *ba = pe.button_active());
                             for step in &boot_result.midi {
                                 use midi_controller::routing::MidiPort;
                                 use pedalboard_midi::pe_handler::MidiStep;

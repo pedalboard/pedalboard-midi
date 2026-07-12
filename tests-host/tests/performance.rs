@@ -344,3 +344,52 @@ fn preset_meta_from_config_includes_long_press_hints() {
         hints[0]
     );
 }
+
+#[test]
+fn preset_meta_from_config_prev_preset_hint() {
+    use heapless::{String, Vec};
+    use midi_controller::config::*;
+
+    let mut presets = Vec::new();
+    let mut buttons = Vec::new();
+    buttons
+        .push(ButtonConfig {
+            label: String::try_from("Back").unwrap(),
+            color: LedConfig::default(),
+            mode: ButtonMode::default(),
+            on_press: Vec::new(),
+            on_release: Vec::new(),
+            on_long_press: {
+                let mut v = Vec::new();
+                v.push(Action::PresetPrev).ok();
+                v
+            },
+            cycle_values: Vec::new(),
+            listen_cc: None,
+        })
+        .ok();
+    presets
+        .push(Preset {
+            name: String::try_from("Song").unwrap(),
+            buttons,
+            encoders: Vec::new(),
+            analog: Vec::new(),
+            defaults: Default::default(),
+            on_enter: heapless::Vec::new(),
+            on_exit: heapless::Vec::new(),
+            triggers: heapless::Vec::new(),
+            bpm: 0,
+        })
+        .ok();
+
+    let cfg = Config {
+        global: GlobalConfig::default(),
+        presets,
+    };
+    let (_, _, hints) = performance::preset_meta_from_config(&cfg, 0);
+    assert!(
+        hints[0].as_str().contains("Prev"),
+        "Expected hint to contain 'Prev', got '{}'",
+        hints[0]
+    );
+}
