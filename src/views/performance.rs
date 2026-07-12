@@ -26,6 +26,7 @@ pub const BUTTON_COUNT: usize = 6;
 #[derive(Debug, Clone)]
 pub struct PresetMeta {
     pub name: String<16>,
+    pub preset_number: u8,
     pub button_labels: [String<16>; BUTTON_COUNT],
     pub button_active: [bool; BUTTON_COUNT],
     /// Short hint for long-press action (e.g., "» Next", "« Prev"), empty if none.
@@ -36,6 +37,7 @@ impl Default for PresetMeta {
     fn default() -> Self {
         Self {
             name: String::new(),
+            preset_number: 0,
             button_labels: core::array::from_fn(|_| String::new()),
             button_active: [false; BUTTON_COUNT],
             long_press_hints: core::array::from_fn(|_| String::new()),
@@ -210,7 +212,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
             use embedded_graphics::primitives::{Circle, PrimitiveStyleBuilder, Triangle};
 
             let indicator_color = if is_active {
-                Gray4::new(0x6)
+                Gray4::BLACK
             } else {
                 Gray4::WHITE
             };
@@ -261,19 +263,22 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         }
     }
 
-    // Preset name header (left display only, bottom edge)
-    if matches!(side, Side::Left) && !preset.name.is_empty() {
-        let header_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
-        let header_box = TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Center)
+    // Preset number indicator (left display only, bottom-right corner)
+    if matches!(side, Side::Left) {
+        use core::fmt::Write;
+        use embedded_graphics::mono_font::ascii::FONT_6X9;
+        let num_style = MonoTextStyle::new(&FONT_6X9, Gray4::new(0x8));
+        let mut buf: String<4> = String::new();
+        write!(buf, "{}", preset.preset_number).ok();
+        let num_box = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Right)
             .vertical_alignment(VerticalAlignment::Bottom)
             .build();
-        let header_rect = Rectangle::new(
-            Point::new(0, (DISPLAY_SIZE - 20) as i32),
-            Size::new(DISPLAY_SIZE, 20),
+        let num_rect = Rectangle::new(
+            Point::new(0, (DISPLAY_SIZE - 12) as i32),
+            Size::new(DISPLAY_SIZE - 4, 12),
         );
-        TextBox::with_textbox_style(preset.name.as_str(), header_rect, header_style, header_box)
-            .draw(display)?;
+        TextBox::with_textbox_style(buf.as_str(), num_rect, num_style, num_box).draw(display)?;
     }
 
     Ok(())

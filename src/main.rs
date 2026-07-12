@@ -486,10 +486,41 @@ mod app {
                 .ok();
         }
 
-        let mut bpm_displayed = false;
         let mut config_mode = pedalboard_midi::config_mode::ConfigMode::new();
+        let mut leds_initialized = false;
 
         loop {
+            // One-shot LED init: render LEDs once config is loaded from flash.
+            if !leds_initialized {
+                let preset_idx = ctx.shared.active_preset.lock(|p| *p);
+                ctx.shared.pe_config.lock(|cfg| {
+                    if let Some(preset) = cfg.presets.get(preset_idx as usize) {
+                        if !preset.name.is_empty() {
+                            let boot_result = pe.switch_to(preset_idx, cfg);
+                            let anims = pe.led_state(preset);
+                            led_sender.try_send(LedEvent::SetAllRings(anims)).ok();
+                            for step in &boot_result.midi {
+                                use midi_controller::routing::MidiPort;
+                                use pedalboard_midi::pe_handler::MidiStep;
+                                if let MidiStep::Send(raw, len, dest) = step {
+                                    if dest.contains(MidiPort::USB) {
+                                        if let Ok(packet) =
+                                            UsbMidiEventPacket::try_from_payload_bytes(
+                                                CableNumber::Cable0,
+                                                &raw[..*len],
+                                            )
+                                        {
+                                            sender.try_send(packet).ok();
+                                        }
+                                    }
+                                }
+                            }
+                            leds_initialized = true;
+                        }
+                    }
+                });
+            }
+
             // Drain USB→DIN thru messages
             while let Ok(raw) = din_thru_receiver.try_recv() {
                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw) {
@@ -753,8 +784,7 @@ mod app {
                 // Handle tap tempo from result
                 if let Some(bpm) = result.bpm {
                     ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                    if !bpm_displayed && !config_active {
-                        bpm_displayed = true;
+                    if !result.preset_changed && !config_active {
                         display_event_sender
                             .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
                             .ok();
@@ -766,7 +796,6 @@ mod app {
                 }
                 let new_preset = pe.active_preset();
                 if result.preset_changed {
-                    bpm_displayed = true; // suppress BPM overlay on preset switch
                     ctx.shared.active_preset.lock(|p| *p = new_preset);
                 }
                 // Send display events directly (no MIDI round-trip)
@@ -1547,6 +1576,7 @@ mod app {
                         || meta.long_press_hints != hints
                     {
                         meta.name = name;
+                        meta.preset_number = (i + 1) as u8;
                         meta.button_labels = labels;
                         meta.long_press_hints = hints;
                         changed = true;
@@ -1904,6 +1934,7 @@ mod app {
             let (name, labels, hints) =
                 pedalboard_midi::views::performance::preset_meta_from_config(cfg, i);
             meta.name = name;
+            meta.preset_number = (i + 1) as u8;
             meta.button_labels = labels;
             meta.long_press_hints = hints;
         }
