@@ -106,6 +106,45 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    /// Partial update: redraw only the rows corresponding to the changed buttons.
+    /// `changed` is a 6-element array indexed by button (A=0..F=5).
+    pub fn draw_performance_partial(
+        &mut self,
+        preset: &pedalboard_midi::views::performance::PresetMeta,
+        changed: [bool; 6],
+    ) {
+        use pedalboard_midi::views::performance;
+
+        // Left display: D(3)=row0, E(4)=row1, A(0)=row2
+        let left_rows: [(usize, u32); 3] = [(3, 0), (4, 1), (0, 2)];
+        // Right display: F(5)=row0, B(1)=row1, C(2)=row2
+        let right_rows: [(usize, u32); 3] = [(5, 0), (1, 1), (2, 2)];
+
+        if let Some(display) = &mut self.display_l.driver {
+            for &(btn, row) in &left_rows {
+                if changed[btn] {
+                    performance::draw_row(display, preset, performance::Side::Left, row).ok();
+                    // Row 2 (button A) overlaps with the preset number — redraw it.
+                    if row == 2 {
+                        performance::draw_preset_number(display, preset.preset_number).ok();
+                    }
+                    let (start, end) = performance::row_flush_range(row as usize);
+                    display.flush_rows(start, end).ok();
+                }
+            }
+        }
+
+        if let Some(display) = &mut self.display_r.driver {
+            for &(btn, row) in &right_rows {
+                if changed[btn] {
+                    performance::draw_row(display, preset, performance::Side::Right, row).ok();
+                    let (start, end) = performance::row_flush_range(row as usize);
+                    display.flush_rows(start, end).ok();
+                }
+            }
+        }
+    }
+
     pub fn draw_overlay(&mut self, loc: DisplayLocation, label: &str, value: u8) {
         use pedalboard_midi::views::overlay;
         match loc {

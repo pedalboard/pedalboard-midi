@@ -1589,17 +1589,22 @@ mod app {
 
             // Refresh button active state
             let idx = (current_preset as usize) % presets.len();
-            let (left_changed, right_changed) = ctx.shared.button_active.lock(|ba| {
+            let buttons_changed = ctx.shared.button_active.lock(|ba| {
                 let old = &presets[idx].button_active;
-                // Left display: D(3), E(4), A(0)
-                let lc = old[0] != ba[0] || old[3] != ba[3] || old[4] != ba[4];
-                // Right display: F(5), B(1), C(2)
-                let rc = old[1] != ba[1] || old[2] != ba[2] || old[5] != ba[5];
-                if lc || rc {
+                let changed = [
+                    old[0] != ba[0],
+                    old[1] != ba[1],
+                    old[2] != ba[2],
+                    old[3] != ba[3],
+                    old[4] != ba[4],
+                    old[5] != ba[5],
+                ];
+                if changed.iter().any(|&c| c) {
                     presets[idx].button_active = *ba;
                 }
-                (lc, rc)
+                changed
             });
+            let any_changed = buttons_changed.iter().any(|&c| c);
 
             // Preset switch takes priority — check first.
             if new_preset != current_preset {
@@ -1629,15 +1634,9 @@ mod app {
             } else if config_changed && !debug_mode {
                 debug!("DISP: config_changed → full redraw");
                 displays.draw_performance(&presets[idx]);
-            } else if (left_changed || right_changed) && !debug_mode {
-                if left_changed && overlay_ticks == 0 {
-                    debug!("DISP: active_changed left");
-                    displays.draw_performance_left(&presets[idx]);
-                }
-                if right_changed && overlay_ticks == 0 {
-                    debug!("DISP: active_changed right");
-                    displays.draw_performance_right(&presets[idx]);
-                }
+            } else if any_changed && !debug_mode && overlay_ticks == 0 {
+                debug!("DISP: active_changed partial");
+                displays.draw_performance_partial(&presets[idx], buttons_changed);
             }
 
             // PE display events (direct from action layer, no MIDI round-trip)
