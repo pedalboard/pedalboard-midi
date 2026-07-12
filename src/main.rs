@@ -1589,6 +1589,10 @@ mod app {
                     displays.draw_performance_right(&presets[idx]);
                     overlay_ticks = OVERLAY_DURATION;
                     show_overlay = true;
+                    // Re-sync to prevent stale diff triggering active_changed on next loop.
+                    ctx.shared.button_active.lock(|ba| {
+                        presets[idx].button_active = *ba;
+                    });
                 }
             } else if config_changed && !debug_mode {
                 debug!("DISP: config_changed → full redraw");
@@ -1598,7 +1602,7 @@ mod app {
                     debug!("DISP: active_changed left");
                     displays.draw_performance_left(&presets[idx]);
                 }
-                if right_changed {
+                if right_changed && overlay_ticks == 0 {
                     debug!("DISP: active_changed right");
                     displays.draw_performance_right(&presets[idx]);
                 }
@@ -1795,9 +1799,13 @@ mod app {
             } else if !show_overlay && overlay_ticks > 0 {
                 overlay_ticks -= 1;
                 if overlay_ticks == 0 {
-                    debug!("DISP: overlay_timeout → perf_left");
+                    debug!("DISP: overlay_timeout → perf_both");
                     let idx = (current_preset as usize) % presets.len();
-                    displays.draw_performance_left(&presets[idx]);
+                    // Re-sync button state before final draw.
+                    ctx.shared.button_active.lock(|ba| {
+                        presets[idx].button_active = *ba;
+                    });
+                    displays.draw_performance(&presets[idx]);
                 }
             }
 
