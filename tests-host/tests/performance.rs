@@ -101,6 +101,7 @@ fn preset_meta_uses_config_name_and_labels() {
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
             triggers: heapless::Vec::new(),
+            bpm: 0,
         })
         .ok();
 
@@ -141,6 +142,7 @@ fn preset_meta_empty_label_uses_default() {
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
             triggers: heapless::Vec::new(),
+            bpm: 0,
         })
         .ok();
 

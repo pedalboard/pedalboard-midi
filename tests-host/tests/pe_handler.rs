@@ -116,6 +116,7 @@ fn make_test_preset() -> Preset {
         on_enter: heapless::Vec::new(),
         on_exit: heapless::Vec::new(),
         triggers: heapless::Vec::new(),
+            bpm: 0,
     }
 }
 
@@ -254,6 +255,7 @@ fn action_sequence_with_delay() {
         on_enter: heapless::Vec::new(),
         on_exit: heapless::Vec::new(),
         triggers: heapless::Vec::new(),
+            bpm: 0,
     };
     let mut presets: Vec<Preset, MAX_PRESETS> = Vec::new();
     presets.push(preset).ok();

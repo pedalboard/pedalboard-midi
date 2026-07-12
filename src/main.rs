@@ -570,6 +570,10 @@ mod app {
                 if let Some(bpm) = result.bpm {
                     ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
                 }
+                // Handle clock start/stop from button actions
+                if let Some(running) = result.clock_running {
+                    ctx.shared.global_config.lock(|gc| gc.midi_clock = running);
+                }
                 // Handle preset change
                 if result.preset_changed {
                     let new_idx = pe.active_preset();
@@ -630,6 +634,10 @@ mod app {
                             .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
                             .ok();
                     }
+                }
+                // Handle clock start/stop from button actions
+                if let Some(running) = result.clock_running {
+                    ctx.shared.global_config.lock(|gc| gc.midi_clock = running);
                 }
                 let new_preset = pe.active_preset();
                 if result.preset_changed {

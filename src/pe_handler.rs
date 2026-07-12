@@ -44,6 +44,7 @@ pub struct HandleResult {
     pub leds_changed: bool,
     pub preset_changed: bool,
     pub bpm: Option<u16>,
+    pub clock_running: Option<bool>,
 }
 
 /// LED state for all 8 rings (A-F + Vol + Gain).
@@ -89,6 +90,7 @@ impl PeHandler {
             leds_changed: false,
             preset_changed: false,
             bpm: None,
+            clock_running: None,
         };
 
         // Map hardware button events
@@ -190,6 +192,7 @@ impl PeHandler {
             leds_changed: false,
             preset_changed: false,
             bpm: None,
+            clock_running: None,
         };
         self.merge(&r, &mut result);
         result
@@ -234,6 +237,7 @@ impl PeHandler {
             leds_changed: false,
             preset_changed: false,
             bpm: None,
+            clock_running: None,
         };
         self.merge(&r, &mut result);
         result
@@ -325,6 +329,9 @@ impl PeHandler {
         }
         if let Some(bpm) = ctrl_result.bpm {
             result.bpm = Some(bpm);
+        }
+        if let Some(running) = ctrl_result.clock_running {
+            result.clock_running = Some(running);
         }
     }
 }
@@ -496,6 +503,7 @@ mod tests {
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
             triggers: heapless::Vec::new(),
+            bpm: 0,
         };
 
         let mut presets: heapless::Vec<Preset, MAX_PRESETS> = heapless::Vec::new();
@@ -517,6 +525,7 @@ mod tests {
             on_enter: heapless::Vec::new(),
             on_exit: heapless::Vec::new(),
             triggers: heapless::Vec::new(),
+            bpm: 0,
         };
 
         let second_preset = Preset {
@@ -532,6 +541,7 @@ mod tests {
             },
             on_exit: heapless::Vec::new(),
             triggers: heapless::Vec::new(),
+            bpm: 0,
         };
 
         let mut presets: heapless::Vec<Preset, MAX_PRESETS> = heapless::Vec::new();
