@@ -1554,17 +1554,27 @@ mod app {
 
             // Refresh button active state
             let idx = (current_preset as usize) % presets.len();
-            let active_changed = ctx.shared.button_active.lock(|ba| {
-                if presets[idx].button_active != *ba {
+            let (left_changed, right_changed) = ctx.shared.button_active.lock(|ba| {
+                let old = &presets[idx].button_active;
+                // Left display: D(3), E(4), A(0)
+                let lc = old[0] != ba[0] || old[3] != ba[3] || old[4] != ba[4];
+                // Right display: F(5), B(1), C(2)
+                let rc = old[1] != ba[1] || old[2] != ba[2] || old[5] != ba[5];
+                if lc || rc {
                     presets[idx].button_active = *ba;
-                    true
-                } else {
-                    false
                 }
+                (lc, rc)
             });
 
-            if (config_changed || active_changed) && !debug_mode {
+            if config_changed && !debug_mode {
                 displays.draw_performance(&presets[idx]);
+            } else if (left_changed || right_changed) && !debug_mode {
+                if left_changed {
+                    displays.draw_performance_left(&presets[idx]);
+                }
+                if right_changed {
+                    displays.draw_performance_right(&presets[idx]);
+                }
             }
 
             if new_preset != current_preset {

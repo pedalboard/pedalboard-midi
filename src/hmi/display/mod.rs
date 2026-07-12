@@ -80,6 +80,32 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    /// Redraw only the left display (buttons D, E, A).
+    pub fn draw_performance_left(
+        &mut self,
+        preset: &pedalboard_midi::views::performance::PresetMeta,
+    ) {
+        use pedalboard_midi::views::performance;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            performance::draw(display, preset, performance::Side::Left).ok();
+            display.flush().ok();
+        }
+    }
+
+    /// Redraw only the right display (buttons F, B, C).
+    pub fn draw_performance_right(
+        &mut self,
+        preset: &pedalboard_midi::views::performance::PresetMeta,
+    ) {
+        use pedalboard_midi::views::performance;
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            performance::draw(display, preset, performance::Side::Right).ok();
+            display.flush().ok();
+        }
+    }
+
     pub fn draw_overlay(&mut self, loc: DisplayLocation, label: &str, value: u8) {
         use pedalboard_midi::views::overlay;
         match loc {
