@@ -163,18 +163,25 @@ fn draw_active_button_renders_filled() {
     preset.button_active[3] = true;
     performance::draw(&mut display_active, &preset, Side::Left).unwrap();
 
-    // Active rendering should produce visually different output than inactive.
-    // Count pixels that differ between the two renders.
-    let differing_pixels: usize = display_inactive
+    // Active rendering should produce different pixels than inactive
+    // (filled background vs outline-only)
+    let inactive_pixels: Vec<_> = display_inactive
         .affected_area()
         .points()
-        .filter(|p| display_inactive.get_pixel(*p) != display_active.get_pixel(*p))
-        .count();
+        .filter(|p| display_inactive.get_pixel(*p) == Some(Gray4::WHITE))
+        .collect();
+    let active_pixels: Vec<_> = display_active
+        .affected_area()
+        .points()
+        .filter(|p| display_active.get_pixel(*p) == Some(Gray4::WHITE))
+        .collect();
 
+    // Active (filled) should have significantly more white pixels than inactive (outline only)
     assert!(
-        differing_pixels > 100,
-        "Active and inactive should differ significantly. differing={}",
-        differing_pixels
+        active_pixels.len() > inactive_pixels.len() * 2,
+        "Active button should have more white pixels (filled). active={}, inactive={}",
+        active_pixels.len(),
+        inactive_pixels.len()
     );
 }
 

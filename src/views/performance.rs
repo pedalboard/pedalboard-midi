@@ -86,9 +86,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         .build();
 
     let active_fill = PrimitiveStyleBuilder::new()
-        .fill_color(Gray4::new(0xC))
-        .stroke_color(Gray4::WHITE)
-        .stroke_width(2)
+        .fill_color(Gray4::WHITE)
         .build();
     let active_text_style = MonoTextStyle::new(&FONT_10X20, Gray4::BLACK);
 
