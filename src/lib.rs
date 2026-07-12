@@ -37,6 +37,7 @@ pub const MAX_PE_REPLY_SIZE: usize = 350;
 pub const MIN_USB_OUT_CAPACITY: usize = MAX_PE_REPLY_SIZE / 3 + 1;
 
 pub mod action;
+pub mod config_mode;
 pub mod display;
 pub mod events;
 pub mod ledring;

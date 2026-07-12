@@ -153,6 +153,7 @@ mod app {
     const DIN_THRU_CAPACITY: usize = 8;
     const TRIGGER_CAPACITY: usize = 8;
     const SYSTEM_STATUS_CAPACITY: usize = 1;
+    const CONFIG_DISPLAY_CAPACITY: usize = 8;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -330,6 +331,10 @@ mod app {
             make_channel!(pedalboard_midi::persist::PersistCommand, PERSIST_CAPACITY);
         let (system_status_sender, system_status_receiver) =
             make_channel!(SystemStatus, SYSTEM_STATUS_CAPACITY);
+        let (config_display_sender, config_display_receiver) = make_channel!(
+            pedalboard_midi::config_mode::ConfigDisplayEvent,
+            CONFIG_DISPLAY_CAPACITY
+        );
 
         blink::spawn().unwrap();
         led_out::spawn(led_receiver).unwrap();
@@ -339,12 +344,14 @@ mod app {
             display_event_sender,
             led_sender.clone(),
             persist_sender.clone(),
+            config_display_sender,
         )
         .unwrap();
         display_out::spawn(
             display_receiver,
             display_event_receiver,
             system_status_receiver,
+            config_display_receiver,
         )
         .unwrap();
         persist::spawn(persist_receiver, system_status_sender).unwrap();
@@ -417,6 +424,11 @@ mod app {
             pedalboard_midi::persist::PersistCommand,
             PERSIST_CAPACITY,
         >,
+        mut config_display_sender: Sender<
+            'static,
+            pedalboard_midi::config_mode::ConfigDisplayEvent,
+            CONFIG_DISPLAY_CAPACITY,
+        >,
     ) {
         let inputs = ctx.local.inputs;
         let uart_midi_out = ctx.local.uart_midi_out;
@@ -475,6 +487,7 @@ mod app {
         }
 
         let mut bpm_displayed = false;
+        let mut config_mode = pedalboard_midi::config_mode::ConfigMode::new();
 
         loop {
             // Drain USB→DIN thru messages
@@ -486,6 +499,19 @@ mod app {
 
             // Process incoming MIDI (routing, reactive LEDs, triggers)
             while let Ok(raw) = ctx.local.trigger_receiver.try_recv() {
+                // Log incoming MIDI to config mode display.
+                if config_mode.is_active() {
+                    let msg_len: u8 = match raw[0] & 0xF0 {
+                        0xC0 | 0xD0 => 2, // Program Change, Channel Pressure
+                        _ => 3,
+                    };
+                    config_display_sender
+                        .try_send(pedalboard_midi::config_mode::ConfigDisplayEvent::MidiIn {
+                            data: raw,
+                            len: msg_len,
+                        })
+                        .ok();
+                }
                 let result = ctx
                     .shared
                     .pe_config
@@ -607,6 +633,105 @@ mod app {
                 events.push(*e).ok();
             }
 
+            // Config mode: always process for entry/exit detection + diagnostics.
+            let now_ms_cfg = (Mono::now().ticks() / 1_000) as u32;
+            let config_active = {
+                // Process when: config mode active, encoder buttons in events, or waiting for hold timeout.
+                let has_encoder_buttons = events.iter().any(|e| {
+                    matches!(
+                        e,
+                        pedalboard_midi::events::InputEvent::VolButton(_)
+                            | pedalboard_midi::events::InputEvent::GainButton(_)
+                    )
+                });
+                let need_full_processing =
+                    config_mode.is_active() || has_encoder_buttons || config_mode.is_holding();
+
+                if need_full_processing {
+                    let preset_count = ctx.shared.pe_config.lock(|cfg| cfg.presets.len() as u8);
+                    let (
+                        din_enabled_cfg,
+                        midi_clock_cfg,
+                        bpm_cfg,
+                        din_to_usb_cfg,
+                        usb_to_din_cfg,
+                        usb_to_usb_cfg,
+                    ) = ctx.shared.global_config.lock(|gc| {
+                        (
+                            gc.din_enabled,
+                            gc.midi_clock,
+                            gc.bpm,
+                            gc.din_to_usb_thru,
+                            gc.usb_to_din_thru,
+                            gc.usb_to_usb_thru,
+                        )
+                    });
+                    let pidx = ctx.shared.active_preset.lock(|p| *p) as usize;
+
+                    let (button_actions, encoder_configs, analog_configs) =
+                        ctx.shared.pe_config.lock(|cfg| {
+                            let mut actions = [
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                                pedalboard_midi::config_mode::ButtonAction::default(),
+                            ];
+                            let mut encs = [
+                                pedalboard_midi::config_mode::EncoderInfo::default(),
+                                pedalboard_midi::config_mode::EncoderInfo::default(),
+                            ];
+                            let mut analogs = [
+                                pedalboard_midi::config_mode::AnalogInfo::default(),
+                                pedalboard_midi::config_mode::AnalogInfo::default(),
+                            ];
+                            if let Some(preset) = cfg.presets.get(pidx) {
+                                for (i, action) in actions.iter_mut().enumerate() {
+                                    *action =
+                                        pedalboard_midi::config_mode::summarize_button(preset, i);
+                                }
+                                for (i, enc) in encs.iter_mut().enumerate() {
+                                    *enc =
+                                        pedalboard_midi::config_mode::summarize_encoder(preset, i);
+                                }
+                                for (i, analog) in analogs.iter_mut().enumerate() {
+                                    *analog =
+                                        pedalboard_midi::config_mode::summarize_analog(preset, i);
+                                }
+                            }
+                            (actions, encs, analogs)
+                        });
+
+                    let context = pedalboard_midi::config_mode::ConfigContext {
+                        firmware_version: env!("CARGO_PKG_VERSION"),
+                        git_hash: env!("GIT_HASH"),
+                        preset_count,
+                        din_enabled: din_enabled_cfg,
+                        midi_clock: midi_clock_cfg,
+                        bpm: bpm_cfg,
+                        din_to_usb_thru: din_to_usb_cfg,
+                        usb_to_din_thru: usb_to_din_cfg,
+                        usb_to_usb_thru: usb_to_usb_cfg,
+                        button_actions: &button_actions,
+                        encoder_configs,
+                        analog_configs,
+                    };
+
+                    let config_events = config_mode.process_events(&events, now_ms_cfg, &context);
+                    for evt in config_events {
+                        config_display_sender.try_send(evt).ok();
+                    }
+                }
+                config_mode.is_active()
+            };
+
+            // When config mode is active, suppress normal display events but keep MIDI flowing.
+            if config_active {
+                // Drain display events from PE handler (don't show them on display).
+                // MIDI processing continues below.
+            }
+
             let mut pe_midi_steps: heapless::Vec<pedalboard_midi::pe_handler::MidiStep, 24> =
                 heapless::Vec::new();
             let mut led_event: Option<LedEvent> = None;
@@ -628,7 +753,7 @@ mod app {
                 // Handle tap tempo from result
                 if let Some(bpm) = result.bpm {
                     ctx.shared.global_config.lock(|gc| gc.bpm = bpm);
-                    if !bpm_displayed {
+                    if !bpm_displayed && !config_active {
                         bpm_displayed = true;
                         display_event_sender
                             .try_send(pedalboard_midi::pe_handler::DisplayEvent::BpmOverlay { bpm })
@@ -645,8 +770,10 @@ mod app {
                     ctx.shared.active_preset.lock(|p| *p = new_preset);
                 }
                 // Send display events directly (no MIDI round-trip)
-                for evt in result.display {
-                    display_event_sender.try_send(evt).ok();
+                if !config_active {
+                    for evt in result.display {
+                        display_event_sender.try_send(evt).ok();
+                    }
                 }
                 // Update LEDs and preset index on actual switch
                 let led_dirty = result.leds_changed || result.preset_changed;
@@ -694,6 +821,17 @@ mod app {
                     match step {
                         MidiStep::Send(raw, len, dest) => {
                             midi_sent = true;
+                            // Log outgoing MIDI to config mode display.
+                            if config_active {
+                                config_display_sender
+                                    .try_send(
+                                        pedalboard_midi::config_mode::ConfigDisplayEvent::MidiOut {
+                                            data: *raw,
+                                            len: *len as u8,
+                                        },
+                                    )
+                                    .ok();
+                            }
                             if din_enabled && dest.contains(MidiPort::DIN) {
                                 if let Ok(mm) = MidiMessage::try_parse_slice(&raw[..*len]) {
                                     uart_midi_out.write(&mm).ok();
@@ -1264,6 +1402,11 @@ mod app {
         mut receiver: Receiver<'static, [u8; 3], DISPLAY_LOG_CAPACITY>,
         mut event_receiver: Receiver<'static, pedalboard_midi::pe_handler::DisplayEvent, 4>,
         mut system_status_receiver: Receiver<'static, SystemStatus, SYSTEM_STATUS_CAPACITY>,
+        mut config_display_receiver: Receiver<
+            'static,
+            pedalboard_midi::config_mode::ConfigDisplayEvent,
+            CONFIG_DISPLAY_CAPACITY,
+        >,
     ) {
         use crate::hmi::display::DisplayLocation;
         use heapless::String;
@@ -1299,6 +1442,7 @@ mod app {
         let mut debug_mode = false;
         let mut debug_mode_ticks: u8 = 0;
         const DEBUG_MODE_TIMEOUT: u8 = 25; // 25 * 200ms = 5 seconds
+        let mut config_mode_active = false;
 
         loop {
             let mut show_overlay = false;
@@ -1310,6 +1454,61 @@ mod app {
                 loop {
                     Mono::delay(100.millis()).await;
                 }
+            }
+
+            // Config mode display events.
+            while let Ok(evt) = config_display_receiver.try_recv() {
+                use pedalboard_midi::config_mode::ConfigDisplayEvent;
+                match &evt {
+                    ConfigDisplayEvent::Entered => {
+                        config_mode_active = true;
+                        displays.draw_config_entered();
+                        midi_log = pedalboard_midi::display::MidiLog::new();
+                    }
+                    ConfigDisplayEvent::Info(info) => {
+                        displays.draw_config_info(info);
+                    }
+                    ConfigDisplayEvent::ButtonPress { button, detail } => {
+                        displays.draw_config_button_press(button, detail.as_str());
+                    }
+                    ConfigDisplayEvent::ButtonRelease { .. } => {
+                        // Return to info screen after brief pause (handled by overlay timeout)
+                    }
+                    ConfigDisplayEvent::EncoderTurn {
+                        encoder,
+                        direction: _,
+                        detail,
+                    } => {
+                        displays.draw_config_encoder_turn(encoder, detail.as_str());
+                    }
+                    ConfigDisplayEvent::ExpressionPedal {
+                        pedal,
+                        raw_adc,
+                        detail,
+                    } => {
+                        displays.draw_config_expression(pedal, *raw_adc, detail.as_str());
+                    }
+                    ConfigDisplayEvent::MidiIn { data, len } => {
+                        midi_log.push_midi('<', data, *len);
+                        displays.draw_midi_log_right(&midi_log);
+                    }
+                    ConfigDisplayEvent::MidiOut { data, len } => {
+                        midi_log.push_midi('>', data, *len);
+                        displays.draw_midi_log_right(&midi_log);
+                    }
+                    ConfigDisplayEvent::Exited => {
+                        config_mode_active = false;
+                        // Restore normal performance view.
+                        let idx = (current_preset as usize) % presets.len();
+                        displays.draw_performance(&presets[idx]);
+                    }
+                }
+            }
+
+            // Skip normal display updates while in config mode.
+            if config_mode_active {
+                Mono::delay(200.millis()).await;
+                continue;
             }
 
             // SysEx debug mode (currently unused)

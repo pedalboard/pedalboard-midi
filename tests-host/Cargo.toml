@@ -24,3 +24,7 @@ path = "tests/pe_handler.rs"
 [[test]]
 name = "pe_sysex"
 path = "tests/pe_sysex.rs"
+
+[[test]]
+name = "config_mode"
+path = "tests/config_mode.rs"

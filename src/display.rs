@@ -47,6 +47,40 @@ impl MidiLog {
         self.next += 1;
     }
 
+    /// Push a formatted MIDI message with direction prefix.
+    /// `dir`: '>' for outgoing, '<' for incoming.
+    pub fn push_midi(&mut self, dir: char, data: &[u8], len: u8) {
+        let l = len as usize;
+        if l < 2 {
+            return;
+        }
+        let msg_type = data[0] & 0xF0;
+        let ch = (data[0] & 0x0F) + 1;
+        let line = &mut self.lines[self.next % MAX_LINES];
+        line.clear();
+        match msg_type {
+            0x90 if l >= 3 && data[2] > 0 => {
+                write!(line, "{}NOn C{:02} #{:3} v{:3}", dir, ch, data[1], data[2]).ok();
+            }
+            0x90 if l >= 3 => {
+                write!(line, "{}NOf C{:02} #{:3}", dir, ch, data[1]).ok();
+            }
+            0x80 if l >= 3 => {
+                write!(line, "{}NOf C{:02} #{:3}", dir, ch, data[1]).ok();
+            }
+            0xB0 if l >= 3 => {
+                write!(line, "{}CC  C{:02} #{:3} v{:3}", dir, ch, data[1], data[2]).ok();
+            }
+            0xC0 => {
+                write!(line, "{}PC  C{:02} #{:3}", dir, ch, data[1]).ok();
+            }
+            _ => {
+                write!(line, "{}{:02X} {:02X}", dir, data[0], data[1]).ok();
+            }
+        }
+        self.next += 1;
+    }
+
     /// Render the log to a display
     pub fn draw<D: DrawTarget<Color = Gray4>>(&self, display: &mut D) -> Result<(), D::Error> {
         display.fill_solid(

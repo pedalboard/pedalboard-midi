@@ -58,6 +58,14 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    /// Draw MIDI log on the right display only (for config mode).
+    pub fn draw_midi_log_right(&mut self, midi_log: &pedalboard_midi::display::MidiLog) {
+        if let Some(display) = &mut self.display_r.driver {
+            midi_log.draw(display).ok();
+            display.flush().ok();
+        }
+    }
+
     pub fn draw_performance(&mut self, preset: &pedalboard_midi::views::performance::PresetMeta) {
         use pedalboard_midi::views::performance;
         if let Some(display) = &mut self.display_l.driver {
@@ -180,6 +188,63 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
         if let Some(display) = &mut self.display_r.driver {
             display.clear(Gray4::BLACK).ok();
+            display.flush().ok();
+        }
+    }
+
+    // --- Config Mode display methods ---
+
+    pub fn draw_config_entered(&mut self) {
+        use pedalboard_midi::views::config_mode;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_entered(display).ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_entered(display).ok();
+            display.flush().ok();
+        }
+    }
+
+    pub fn draw_config_info(&mut self, info: &pedalboard_midi::config_mode::InfoScreen) {
+        use pedalboard_midi::views::config_mode;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_info_left(display, info).ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_info_right(display, info).ok();
+            display.flush().ok();
+        }
+    }
+
+    pub fn draw_config_button_press(&mut self, button: &str, detail: &str) {
+        use pedalboard_midi::views::config_mode;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_button_press(display, button, detail).ok();
+            display.flush().ok();
+        }
+    }
+
+    pub fn draw_config_encoder_turn(&mut self, encoder: &str, detail: &str) {
+        use pedalboard_midi::views::config_mode;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_encoder_turn(display, encoder, detail).ok();
+            display.flush().ok();
+        }
+    }
+
+    pub fn draw_config_expression(&mut self, pedal: &str, raw_adc: u16, detail: &str) {
+        use pedalboard_midi::views::config_mode;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            config_mode::draw_expression(display, pedal, raw_adc, detail).ok();
             display.flush().ok();
         }
     }
