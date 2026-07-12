@@ -154,44 +154,54 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 .draw(display)?;
         }
 
-        // Fill sharp corner with a solid triangle indicator
-        let cs = 10i32;
-        let corner_fill_color = if is_active {
-            Gray4::BLACK
+        // Corner triangle indicator
+        let cs = if is_active { 10i32 } else { 12i32 };
+        let corner_style = if is_active {
+            // Active: outline triangle (white stroke, black inside) for contrast on white fill
+            PrimitiveStyleBuilder::new()
+                .fill_color(Gray4::BLACK)
+                .stroke_color(Gray4::WHITE)
+                .stroke_width(2)
+                .build()
         } else {
-            Gray4::WHITE
+            // Inactive: solid white triangle on black background
+            PrimitiveStyleBuilder::new()
+                .fill_color(Gray4::WHITE)
+                .build()
         };
-        let fill = PrimitiveStyleBuilder::new()
-            .fill_color(corner_fill_color)
-            .build();
         let corner_pos = match (side, i) {
-            (Side::Left, 0) => Triangle::new(
-                rect.top_left,
-                rect.top_left + Point::new(cs, 0),
-                rect.top_left + Point::new(0, cs),
-            ),
+            (Side::Left, 0) => {
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(o, o);
+                Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, cs))
+            }
             (Side::Left, 1) => {
-                let p = rect.top_left + Point::new(w as i32 - 1, 0);
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(w as i32 - 1 - o, o);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Left, _) => {
-                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(o, ROW_HEIGHT as i32 - 1 - o);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, 0) => {
-                let p = rect.top_left + Point::new(w as i32 - 1, 0);
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(w as i32 - 1 - o, o);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, cs))
             }
             (Side::Right, 1) => {
-                let p = rect.top_left + Point::new(0, ROW_HEIGHT as i32 - 1);
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(o, ROW_HEIGHT as i32 - 1 - o);
                 Triangle::new(p, p + Point::new(cs, 0), p + Point::new(0, -cs))
             }
             (Side::Right, _) => {
-                let p = rect.top_left + Point::new(w as i32 - 1, ROW_HEIGHT as i32 - 1);
+                let o = if is_active { 2 } else { 0 };
+                let p = rect.top_left + Point::new(w as i32 - 1 - o, ROW_HEIGHT as i32 - 1 - o);
                 Triangle::new(p, p + Point::new(-cs, 0), p + Point::new(0, -cs))
             }
         };
-        corner_pos.into_styled(fill).draw(display)?;
+        corner_pos.into_styled(corner_style).draw(display)?;
 
         // Label text
         if is_active {
