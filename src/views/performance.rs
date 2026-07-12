@@ -211,11 +211,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         if !hint.is_empty() {
             use embedded_graphics::primitives::{Circle, PrimitiveStyleBuilder, Triangle};
 
-            let indicator_color = if is_active {
-                Gray4::BLACK
-            } else {
-                Gray4::WHITE
-            };
+            let indicator_color = Gray4::WHITE;
             let indicator_style = PrimitiveStyleBuilder::new()
                 .fill_color(indicator_color)
                 .build();

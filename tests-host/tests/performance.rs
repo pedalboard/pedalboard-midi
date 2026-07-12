@@ -245,35 +245,34 @@ fn preset_number_only_on_left_side() {
 
 #[test]
 fn long_press_hint_renders_indicator() {
-    // Test that the hint changes rendering on a button that is active
-    // (active button has white fill, hint draws BLACK triangle = detectable)
+    // Test that the hint adds white pixels in the INSET gap
+    // (indicator is always white on black gap background)
     let mut display_with_hint = new_display();
     let mut display_without = new_display();
 
     let mut preset = PresetMeta::default();
     preset.button_labels[5] = String::try_from("Next").unwrap();
-    preset.button_active[5] = true; // Active = white fill
     performance::draw(&mut display_without, &preset, Side::Right).unwrap();
 
     preset.long_press_hints[5] = String::try_from("» Next").unwrap();
     performance::draw(&mut display_with_hint, &preset, Side::Right).unwrap();
 
-    // With hint on active button: should have BLACK pixels (indicator on white bg)
-    let without_black: usize = display_without
+    // With hint should have more white pixels (the triangle in the INSET gap)
+    let without_white: usize = display_without
         .affected_area()
         .points()
-        .filter(|p| display_without.get_pixel(*p) == Some(Gray4::BLACK))
+        .filter(|p| display_without.get_pixel(*p) == Some(Gray4::WHITE))
         .count();
-    let with_black: usize = display_with_hint
+    let with_white: usize = display_with_hint
         .affected_area()
         .points()
-        .filter(|p| display_with_hint.get_pixel(*p) == Some(Gray4::BLACK))
+        .filter(|p| display_with_hint.get_pixel(*p) == Some(Gray4::WHITE))
         .count();
     assert!(
-        with_black > without_black,
-        "Hint on active button should add black pixels. with={}, without={}",
-        with_black,
-        without_black
+        with_white > without_white,
+        "Hint should add white pixels in INSET gap. with={}, without={}",
+        with_white,
+        without_white
     );
 }
 
