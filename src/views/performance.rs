@@ -226,8 +226,12 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
                 .fill_color(indicator_color)
                 .build();
 
-            // Vertical center of this row
-            let cy = y + (ROW_HEIGHT as i32) / 2;
+            // Vertical center of this row (shift up for bottom-left to avoid preset number)
+            let cy = if matches!(side, Side::Left) && i == 2 {
+                y + (ROW_HEIGHT as i32) / 2 - 10
+            } else {
+                y + (ROW_HEIGHT as i32) / 2
+            };
             const IND_SIZE: i32 = 14;
 
             let is_next = hint.as_str().contains("Next") || hint.as_str().contains("»");
@@ -272,8 +276,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     // Preset number indicator (left display only, bottom-right corner)
     if matches!(side, Side::Left) {
         use core::fmt::Write;
-        use embedded_graphics::mono_font::ascii::FONT_6X9;
-        let num_style = MonoTextStyle::new(&FONT_6X9, Gray4::new(0x8));
+        let num_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
         let mut buf: String<4> = String::new();
         write!(buf, "{}", preset.preset_number).ok();
         let num_box = TextBoxStyleBuilder::new()
@@ -281,8 +284,8 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
             .vertical_alignment(VerticalAlignment::Bottom)
             .build();
         let num_rect = Rectangle::new(
-            Point::new(0, (DISPLAY_SIZE - 12) as i32),
-            Size::new(DISPLAY_SIZE - 4, 12),
+            Point::new(0, (DISPLAY_SIZE - 22) as i32),
+            Size::new(DISPLAY_SIZE - 4, 22),
         );
         TextBox::with_textbox_style(buf.as_str(), num_rect, num_style, num_box).draw(display)?;
     }
