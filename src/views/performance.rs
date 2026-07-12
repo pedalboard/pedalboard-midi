@@ -273,21 +273,26 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
         }
     }
 
-    // Preset number indicator (left display only, bottom-right corner)
+    // Preset number indicator (left display only, bottom-right corner, 7-segment style)
     if matches!(side, Side::Left) {
         use core::fmt::Write;
-        let num_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+        use eg_seven_segment::SevenSegmentStyleBuilder;
+        use embedded_graphics::text::Text;
+
+        let seg_style = SevenSegmentStyleBuilder::new()
+            .digit_size(Size::new(9, 16))
+            .segment_width(2)
+            .segment_color(Gray4::WHITE)
+            .build();
         let mut buf: String<4> = String::new();
         write!(buf, "{}", preset.preset_number).ok();
-        let num_box = TextBoxStyleBuilder::new()
-            .alignment(HorizontalAlignment::Right)
-            .vertical_alignment(VerticalAlignment::Bottom)
-            .build();
-        let num_rect = Rectangle::new(
-            Point::new(0, (DISPLAY_SIZE - 22) as i32),
-            Size::new(DISPLAY_SIZE - 4, 22),
-        );
-        TextBox::with_textbox_style(buf.as_str(), num_rect, num_style, num_box).draw(display)?;
+
+        let digit_count = buf.len() as i32;
+        let digit_width = 13;
+        let x = DISPLAY_SIZE as i32 - 4 - digit_count * digit_width;
+        let y = DISPLAY_SIZE as i32 - 4;
+
+        Text::new(buf.as_str(), Point::new(x, y), seg_style).draw(display)?;
     }
 
     Ok(())
