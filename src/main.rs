@@ -1659,7 +1659,11 @@ mod app {
                             } else {
                                 label.as_str()
                             };
-                            displays.draw_overlay(loc, lbl, *value);
+                            if overlay_ticks > 0 {
+                                displays.update_overlay_value(loc, lbl, *value);
+                            } else {
+                                displays.draw_overlay(loc, lbl, *value);
+                            }
                             debug!("DISP: enc/analog overlay");
                             overlay_ticks = OVERLAY_DURATION;
                             show_overlay = true;

@@ -165,6 +165,28 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    /// Partial overlay update: only flushes the value + bar region (rows 40–125).
+    /// The label (rows 0–39) is unchanged on screen from the initial draw_overlay.
+    pub fn update_overlay_value(&mut self, loc: DisplayLocation, label: &str, value: u8) {
+        use pedalboard_midi::views::overlay;
+        match loc {
+            DisplayLocation::L => {
+                if let Some(display) = &mut self.display_l.driver {
+                    display.clear(Gray4::BLACK).ok();
+                    overlay::draw(display, label, value).ok();
+                    display.flush_rows(40, 125).ok();
+                }
+            }
+            DisplayLocation::R => {
+                if let Some(display) = &mut self.display_r.driver {
+                    display.clear(Gray4::BLACK).ok();
+                    overlay::draw(display, label, value).ok();
+                    display.flush_rows(40, 125).ok();
+                }
+            }
+        }
+    }
+
     pub fn draw_preset_overlay(&mut self, number: u8, name: &str, forward: bool) {
         use pedalboard_midi::views::preset_overlay;
         // Arrow on the side of the button pressed, number+name on the other
