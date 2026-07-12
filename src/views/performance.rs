@@ -28,6 +28,8 @@ pub struct PresetMeta {
     pub name: String<16>,
     pub button_labels: [String<16>; BUTTON_COUNT],
     pub button_active: [bool; BUTTON_COUNT],
+    /// Short hint for long-press action (e.g., "» Next", "« Prev"), empty if none.
+    pub long_press_hints: [String<8>; BUTTON_COUNT],
 }
 
 impl Default for PresetMeta {
@@ -36,6 +38,7 @@ impl Default for PresetMeta {
             name: String::new(),
             button_labels: core::array::from_fn(|_| String::new()),
             button_active: [false; BUTTON_COUNT],
+            long_press_hints: core::array::from_fn(|_| String::new()),
         }
     }
 }
@@ -86,7 +89,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     let active_text_style = MonoTextStyle::new(&FONT_10X20, Gray4::BLACK);
 
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
-    const INSET: u32 = 8;
+    const INSET: u32 = 24;
 
     for i in 0..ROWS {
         let btn_idx = indices[i as usize];
@@ -200,6 +203,77 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
             TextBox::with_textbox_style(label.as_str(), rect, text_style, textbox_style)
                 .draw(display)?;
         }
+
+        // Long-press indicator (icon in the INSET gap of the button row)
+        let hint = &preset.long_press_hints[btn_idx];
+        if !hint.is_empty() {
+            use embedded_graphics::primitives::{Circle, PrimitiveStyleBuilder, Triangle};
+
+            let indicator_color = if is_active {
+                Gray4::new(0x6)
+            } else {
+                Gray4::WHITE
+            };
+            let indicator_style = PrimitiveStyleBuilder::new()
+                .fill_color(indicator_color)
+                .build();
+
+            // Vertical center of this row
+            let cy = y + (ROW_HEIGHT as i32) / 2;
+            const IND_SIZE: i32 = 14;
+
+            let is_next = hint.as_str().contains("Next") || hint.as_str().contains("»");
+            let is_prev = hint.as_str().contains("Prev") || hint.as_str().contains("«");
+
+            // The INSET gap position
+            let ix = if sharp_on_left {
+                // Gap is on the right: from x + w to x + w + INSET
+                x + w as i32 + (INSET as i32 - IND_SIZE) / 2
+            } else {
+                // Gap is on the left: from PADDING to PADDING + INSET
+                PADDING as i32 + (INSET as i32 - IND_SIZE) / 2
+            };
+
+            if is_next {
+                // Right-pointing triangle
+                Triangle::new(
+                    Point::new(ix, cy - IND_SIZE / 2),
+                    Point::new(ix, cy + IND_SIZE / 2),
+                    Point::new(ix + IND_SIZE, cy),
+                )
+                .into_styled(indicator_style)
+                .draw(display)?;
+            } else if is_prev {
+                // Left-pointing triangle
+                Triangle::new(
+                    Point::new(ix + IND_SIZE, cy - IND_SIZE / 2),
+                    Point::new(ix + IND_SIZE, cy + IND_SIZE / 2),
+                    Point::new(ix, cy),
+                )
+                .into_styled(indicator_style)
+                .draw(display)?;
+            } else {
+                // Dot (generic long-press action)
+                Circle::new(Point::new(ix + 1, cy - 4), 8)
+                    .into_styled(indicator_style)
+                    .draw(display)?;
+            }
+        }
+    }
+
+    // Preset name header (left display only, bottom edge)
+    if matches!(side, Side::Left) && !preset.name.is_empty() {
+        let header_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+        let header_box = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Center)
+            .vertical_alignment(VerticalAlignment::Bottom)
+            .build();
+        let header_rect = Rectangle::new(
+            Point::new(0, (DISPLAY_SIZE - 20) as i32),
+            Size::new(DISPLAY_SIZE, 20),
+        );
+        TextBox::with_textbox_style(preset.name.as_str(), header_rect, header_style, header_box)
+            .draw(display)?;
     }
 
     Ok(())
@@ -210,7 +284,13 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
 pub fn preset_meta_from_config(
     cfg: &midi_controller::config::Config,
     index: usize,
-) -> (String<16>, [String<16>; BUTTON_COUNT]) {
+) -> (
+    String<16>,
+    [String<16>; BUTTON_COUNT],
+    [String<8>; BUTTON_COUNT],
+) {
+    use midi_controller::config::Action;
+
     let defaults = ["A", "B", "C", "D", "E", "F"];
     if let Some(p) = cfg.presets.get(index) {
         let name = if p.name.is_empty() {
@@ -226,11 +306,33 @@ pub fn preset_meta_from_config(
                 None => String::try_from(defaults[j]).unwrap_or_default(),
             }
         });
-        (name, labels)
+        let hints: [String<8>; BUTTON_COUNT] = core::array::from_fn(|j| {
+            let mut hint: String<8> = String::new();
+            if let Some(btn) = p.buttons.get(j) {
+                if let Some(action) = btn.on_long_press.first() {
+                    match action {
+                        Action::PresetNext => {
+                            core::fmt::Write::write_str(&mut hint, "» Next").ok();
+                        }
+                        Action::PresetPrev => {
+                            core::fmt::Write::write_str(&mut hint, "« Prev").ok();
+                        }
+                        Action::PresetSelect(idx) => {
+                            core::fmt::Write::write_fmt(&mut hint, format_args!("» {}", idx + 1))
+                                .ok();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            hint
+        });
+        (name, labels, hints)
     } else {
         let mut name: String<16> = String::new();
         core::fmt::Write::write_fmt(&mut name, format_args!("Preset {}", index + 1)).ok();
         let labels = core::array::from_fn(|j| String::try_from(defaults[j]).unwrap_or_default());
-        (name, labels)
+        let hints = core::array::from_fn(|_| String::new());
+        (name, labels, hints)
     }
 }

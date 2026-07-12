@@ -59,7 +59,7 @@ fn empty_labels_still_draws_nothing() {
 #[test]
 fn preset_meta_defaults_when_config_empty() {
     let cfg = midi_controller::config::Config::default();
-    let (name, labels) = performance::preset_meta_from_config(&cfg, 0);
+    let (name, labels, _hints) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(name.as_str(), "Preset 1");
     assert_eq!(labels[0].as_str(), "A");
     assert_eq!(labels[5].as_str(), "F");
@@ -68,7 +68,7 @@ fn preset_meta_defaults_when_config_empty() {
 #[test]
 fn preset_meta_defaults_for_index_beyond_vec() {
     let cfg = midi_controller::config::Config::default();
-    let (name, _) = performance::preset_meta_from_config(&cfg, 4);
+    let (name, _, _) = performance::preset_meta_from_config(&cfg, 4);
     assert_eq!(name.as_str(), "Preset 5");
 }
 
@@ -106,7 +106,7 @@ fn preset_meta_uses_config_name_and_labels() {
         .ok();
 
     let cfg = Config { global: midi_controller::config::GlobalConfig::default(), presets };
-    let (name, labels) = performance::preset_meta_from_config(&cfg, 0);
+    let (name, labels, _hints) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(name.as_str(), "My Song");
     assert_eq!(labels[0].as_str(), "Verse");
     // Remaining buttons fall back to defaults
@@ -147,7 +147,7 @@ fn preset_meta_empty_label_uses_default() {
         .ok();
 
     let cfg = Config { global: midi_controller::config::GlobalConfig::default(), presets };
-    let (_, labels) = performance::preset_meta_from_config(&cfg, 0);
+    let (_, labels, _) = performance::preset_meta_from_config(&cfg, 0);
     assert_eq!(labels[0].as_str(), ""); // empty label = intentionally hidden
 }
 

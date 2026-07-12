@@ -42,6 +42,50 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     Ok(())
 }
 
+/// Draw preset number + name + direction arrow on a single display
+pub fn draw_with_arrow<D: DrawTarget<Color = Gray4>>(
+    display: &mut D,
+    number: u8,
+    name: &str,
+    arrow: &str,
+) -> Result<(), D::Error> {
+    use embedded_graphics::primitives::Rectangle;
+    use embedded_text::{
+        alignment::{HorizontalAlignment, VerticalAlignment},
+        style::TextBoxStyleBuilder,
+        TextBox,
+    };
+
+    // Arrow at top
+    let text_style = MonoTextStyle::new(&FONT_10X20, Gray4::new(0x8));
+    let centered = TextBoxStyleBuilder::new()
+        .alignment(HorizontalAlignment::Center)
+        .vertical_alignment(VerticalAlignment::Middle)
+        .build();
+    let top = Rectangle::new(Point::zero(), Size::new(DISPLAY_SIZE, 30));
+    TextBox::with_textbox_style(arrow, top, text_style, centered).draw(display)?;
+
+    // Large number in center
+    let seg_style = SevenSegmentStyleBuilder::new()
+        .digit_size(Size::new(30, 50))
+        .segment_width(6)
+        .segment_color(Gray4::WHITE)
+        .build();
+    let mut buf: String<4> = String::new();
+    write!(buf, "{}", number).ok();
+    let digit_count = buf.len() as u32;
+    let total_width = digit_count * 40;
+    let x = ((DISPLAY_SIZE - total_width) / 2) as i32;
+    Text::new(buf.as_str(), Point::new(x, 80), seg_style).draw(display)?;
+
+    // Name at bottom
+    let name_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+    let bottom = Rectangle::new(Point::new(0, 90), Size::new(DISPLAY_SIZE, 38));
+    TextBox::with_textbox_style(name, bottom, name_style, centered).draw(display)?;
+
+    Ok(())
+}
+
 /// Draw just the preset name centered on the display
 pub fn draw_name<D: DrawTarget<Color = Gray4>>(
     display: &mut D,

@@ -156,6 +156,17 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    /// Show preset overlay on the left display only (right keeps performance view).
+    pub fn draw_preset_overlay_left(&mut self, number: u8, name: &str, forward: bool) {
+        use pedalboard_midi::views::preset_overlay;
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            let arrow = if forward { ">>" } else { "<<" };
+            preset_overlay::draw_with_arrow(display, number, name, arrow).ok();
+            display.flush().ok();
+        }
+    }
+
     pub fn draw_long_press_hint(&mut self, label: &str) {
         use pedalboard_midi::views::preset_overlay;
         // Show hint on both displays

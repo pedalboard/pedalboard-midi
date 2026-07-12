@@ -766,7 +766,7 @@ mod app {
                 }
                 let new_preset = pe.active_preset();
                 if result.preset_changed {
-                    bpm_displayed = false;
+                    bpm_displayed = true; // suppress BPM overlay on preset switch
                     ctx.shared.active_preset.lock(|p| *p = new_preset);
                 }
                 // Send display events directly (no MIDI round-trip)
@@ -1436,7 +1436,6 @@ mod app {
         // Overlay timeout: counts down each loop iteration (200ms each)
         let mut overlay_ticks: u8 = 0;
         const OVERLAY_DURATION: u8 = 5; // ~1s
-        const PRESET_OVERLAY_DURATION: u8 = 10; // ~2s
 
         let mut midi_log = pedalboard_midi::display::MidiLog::new();
         let mut debug_mode = false;
@@ -1541,11 +1540,15 @@ mod app {
             let config_changed = ctx.shared.pe_config.lock(|cfg| {
                 let mut changed = false;
                 for (i, meta) in presets.iter_mut().enumerate() {
-                    let (name, labels) =
+                    let (name, labels, hints) =
                         pedalboard_midi::views::performance::preset_meta_from_config(cfg, i);
-                    if meta.name != name || meta.button_labels != labels {
+                    if meta.name != name
+                        || meta.button_labels != labels
+                        || meta.long_press_hints != hints
+                    {
                         meta.name = name;
                         meta.button_labels = labels;
+                        meta.long_press_hints = hints;
                         changed = true;
                     }
                 }
@@ -1566,37 +1569,45 @@ mod app {
                 (lc, rc)
             });
 
-            if config_changed && !debug_mode {
-                displays.draw_performance(&presets[idx]);
-            } else if (left_changed || right_changed) && !debug_mode {
-                if left_changed {
-                    displays.draw_performance_left(&presets[idx]);
-                }
-                if right_changed {
-                    displays.draw_performance_right(&presets[idx]);
-                }
-            }
-
+            // Preset switch takes priority — check first.
             if new_preset != current_preset {
                 let forward =
                     new_preset > current_preset || (current_preset > 0 && new_preset == 0);
                 current_preset = new_preset;
                 let idx = (current_preset as usize) % presets.len();
+                // Update button state for new preset before drawing.
+                ctx.shared.button_active.lock(|ba| {
+                    presets[idx].button_active = *ba;
+                });
                 if !debug_mode {
-                    displays.draw_preset_overlay(
+                    debug!("DISP: preset_switch overlay_left + perf_right");
+                    displays.draw_preset_overlay_left(
                         current_preset + 1,
                         presets[idx].name.as_str(),
                         forward,
                     );
-                    overlay_ticks = PRESET_OVERLAY_DURATION;
+                    displays.draw_performance_right(&presets[idx]);
+                    overlay_ticks = OVERLAY_DURATION;
                     show_overlay = true;
+                }
+            } else if config_changed && !debug_mode {
+                debug!("DISP: config_changed → full redraw");
+                displays.draw_performance(&presets[idx]);
+            } else if (left_changed || right_changed) && !debug_mode {
+                if left_changed && overlay_ticks == 0 {
+                    debug!("DISP: active_changed left");
+                    displays.draw_performance_left(&presets[idx]);
+                }
+                if right_changed {
+                    debug!("DISP: active_changed right");
+                    displays.draw_performance_right(&presets[idx]);
                 }
             }
 
             // PE display events (direct from action layer, no MIDI round-trip)
             while let Ok(evt) = event_receiver.try_recv() {
                 use crate::hmi::display::DisplayLocation;
-                use pedalboard_midi::pe_handler::{DisplayEvent, DisplaySide, SystemAction};
+                use pedalboard_midi::pe_handler::{DisplayEvent, DisplaySide};
                 if !debug_mode {
                     match &evt {
                         DisplayEvent::EncoderOverlay { side, label, value }
@@ -1614,49 +1625,15 @@ mod app {
                                 label.as_str()
                             };
                             displays.draw_overlay(loc, lbl, *value);
+                            debug!("DISP: enc/analog overlay");
                             overlay_ticks = OVERLAY_DURATION;
                             show_overlay = true;
                         }
-                        DisplayEvent::LongPressHint { action } => {
-                            let label = match action {
-                                SystemAction::PresetNext => {
-                                    let next = (current_preset as usize + 1) % presets.len();
-                                    if presets[next].name.is_empty() {
-                                        ">> Next"
-                                    } else {
-                                        presets[next].name.as_str()
-                                    }
-                                }
-                                SystemAction::PresetPrev => {
-                                    let prev = if current_preset == 0 {
-                                        presets.len() - 1
-                                    } else {
-                                        (current_preset as usize) - 1
-                                    };
-                                    if presets[prev].name.is_empty() {
-                                        "<< Prev"
-                                    } else {
-                                        presets[prev].name.as_str()
-                                    }
-                                }
-                                SystemAction::PresetSelect(idx) => {
-                                    let i = *idx as usize;
-                                    if i < presets.len() && !presets[i].name.is_empty() {
-                                        presets[i].name.as_str()
-                                    } else {
-                                        "Select"
-                                    }
-                                }
-                                _ => action.label(),
-                            };
-                            displays.draw_long_press_hint(label);
-                            show_overlay = true;
+                        DisplayEvent::LongPressHint { action: _ } => {
+                            // Long-press hint is shown statically in performance view.
                         }
                         DisplayEvent::LongPressCancel => {
-                            // Return to performance view
-                            let idx = (current_preset as usize) % presets.len();
-                            displays.draw_performance(&presets[idx]);
-                            show_overlay = true;
+                            // No overlay to cancel — performance view stays.
                         }
                         DisplayEvent::BpmOverlay { bpm } => {
                             use core::fmt::Write;
@@ -1818,8 +1795,9 @@ mod app {
             } else if !show_overlay && overlay_ticks > 0 {
                 overlay_ticks -= 1;
                 if overlay_ticks == 0 {
+                    debug!("DISP: overlay_timeout → perf_left");
                     let idx = (current_preset as usize) % presets.len();
-                    displays.draw_performance(&presets[idx]);
+                    displays.draw_performance_left(&presets[idx]);
                 }
             }
 
@@ -1915,10 +1893,11 @@ mod app {
         cfg: &midi_controller::config::Config,
     ) {
         for (i, meta) in presets.iter_mut().enumerate() {
-            let (name, labels) =
+            let (name, labels, hints) =
                 pedalboard_midi::views::performance::preset_meta_from_config(cfg, i);
             meta.name = name;
             meta.button_labels = labels;
+            meta.long_press_hints = hints;
         }
     }
 }
