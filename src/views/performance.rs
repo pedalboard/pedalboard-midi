@@ -91,7 +91,7 @@ pub fn draw<D: DrawTarget<Color = Gray4>>(
     let active_text_style = MonoTextStyle::new(&FONT_10X20, Gray4::BLACK);
 
     let radius = Size::new(CORNER_RADIUS, CORNER_RADIUS);
-    const INSET: u32 = 24;
+    const INSET: u32 = 30;
 
     for i in 0..ROWS {
         let btn_idx = indices[i as usize];
