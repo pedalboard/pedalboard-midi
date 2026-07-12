@@ -1504,7 +1504,7 @@ dependencies = [
 [[package]]
 name = "ssd1327-i2c"
 version = "0.2.0"
-source = "git+https://github.com/pedalboard/ssd1327-i2c?branch=master#fd64e42f0f52d0345c92574bb1f4381fcc9f01bb"
+source = "git+https://github.com/pedalboard/ssd1327-i2c?branch=master#bc4be16ea89586fe3f1462add4287eba3ce5a15c"
 dependencies = [
  "embedded-graphics-core",
  "embedded-hal 1.0.0",

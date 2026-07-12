@@ -295,13 +295,6 @@ impl<I2C: I2c> Display<I2C> {
     fn new(i2c: I2C, addr: u8) -> Self {
         let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, addr);
         driver.init();
-        // Set max contrast (init defaults to 0x7F). Send twice to ensure delivery on shared bus.
-        driver
-            .send_cmd(ssd1327_i2c::Commands::ContrastControl(255))
-            .ok();
-        driver
-            .send_cmd(ssd1327_i2c::Commands::ContrastControl(255))
-            .ok();
 
         Display {
             driver: Option::Some(driver),
