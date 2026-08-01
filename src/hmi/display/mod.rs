@@ -34,9 +34,17 @@ pub struct Displays<I2CL, I2CR> {
 
 impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
     pub fn new(i2c_l: I2CL, i2c_r: I2CR, enabled: bool) -> Self {
+        if !enabled {
+            return Displays {
+                display_l: Display::new(i2c_l, 0x3D, false),
+                display_r: Display::new(i2c_r, 0x3C, false),
+            };
+        }
+        let display_l = Display::new(i2c_l, 0x3D, true);
+        let display_r = Display::new(i2c_r, 0x3C, true);
         Displays {
-            display_l: Display::new(i2c_l, 0x3D, enabled),
-            display_r: Display::new(i2c_r, 0x3C, enabled),
+            display_l,
+            display_r,
         }
     }
     pub fn splash_screen(&mut self) {
