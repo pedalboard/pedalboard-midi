@@ -33,10 +33,10 @@ pub struct Displays<I2CL, I2CR> {
 }
 
 impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
-    pub fn new(i2c_l: I2CL, i2c_r: I2CR) -> Self {
+    pub fn new(i2c_l: I2CL, i2c_r: I2CR, enabled: bool) -> Self {
         Displays {
-            display_l: Display::new(i2c_l, 0x3D),
-            display_r: Display::new(i2c_r, 0x3C),
+            display_l: Display::new(i2c_l, 0x3D, enabled),
+            display_r: Display::new(i2c_r, 0x3C, enabled),
         }
     }
     pub fn splash_screen(&mut self) {
@@ -353,9 +353,22 @@ struct Display<I2C> {
 }
 
 impl<I2C: I2c> Display<I2C> {
-    fn new(i2c: I2C, addr: u8) -> Self {
+    fn new(i2c: I2C, addr: u8, enabled: bool) -> Self {
+        if !enabled {
+            return Display { driver: None };
+        }
+
         let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, addr);
         driver.init();
+
+        // Verify the display responds after init
+        if driver
+            .send_cmd(ssd1327_i2c::Commands::ContrastControl(255))
+            .is_err()
+        {
+            defmt::warn!("Display at 0x{:02x} init failed — disabled", addr);
+            return Display { driver: None };
+        }
 
         Display {
             driver: Option::Some(driver),
@@ -364,18 +377,17 @@ impl<I2C: I2c> Display<I2C> {
     fn splash_screen(&mut self) {
         if let Some(disp) = &mut self.driver {
             let bmp_data = include_bytes!("../../../img/pedalboard-logo.bmp");
-
             let bmp = Bmp::from_slice(bmp_data).unwrap();
-
-            Image::new(&bmp, Point::new(0, 0)).draw(disp).unwrap();
-
-            disp.flush().unwrap();
+            Image::new(&bmp, Point::new(0, 0)).draw(disp).ok();
+            if disp.flush().is_err() {
+                defmt::warn!("Display flush failed during splash");
+            }
         }
     }
 
     fn show(&mut self) {
         if let Some(display) = &mut self.driver {
-            display.clear(Gray4::BLACK).unwrap();
+            display.clear(Gray4::BLACK).ok();
 
             let text = version_string!();
             let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
@@ -390,9 +402,8 @@ impl<I2C: I2c> Display<I2C> {
             let text_box =
                 TextBox::with_textbox_style(text, bounds, character_style, textbox_style);
 
-            text_box.draw(display).unwrap();
-
-            display.flush().unwrap();
+            text_box.draw(display).ok();
+            display.flush().ok();
         }
     }
 }

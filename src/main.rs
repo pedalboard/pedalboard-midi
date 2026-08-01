@@ -285,7 +285,19 @@ mod app {
         let led_spi = Ws2812Direct::new(led_pin, &mut pio0, sm0, clocks.peripheral_clock.freq());
 
         // Configure I²C for OLED display
-        let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio24.reconfigure();
+        // First check if the bus is healthy (SDA not stuck low)
+        let mut sda_test: Pin<_, FunctionSio<SioInput>, PullUp> = pins.gpio24.reconfigure();
+        // Give pull-up time to charge the line
+        cortex_m::asm::delay(1000);
+        let bus_ok = {
+            use embedded_hal::digital::InputPin;
+            sda_test.is_high().unwrap_or(false)
+        };
+        if !bus_ok {
+            defmt::warn!("I2C bus stuck (SDA low) — displays disabled");
+        }
+
+        let sda_pin: Pin<_, FunctionI2C, PullUp> = sda_test.reconfigure();
         let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio25.reconfigure();
         let mut i2c = I2C::i2c0(
             ctx.device.I2C0,
@@ -315,6 +327,7 @@ mod app {
         let mut displays = crate::hmi::display::Displays::new(
             AtomicDevice::new(i2c_bus),
             AtomicDevice::new(i2c_bus),
+            bus_ok,
         );
         displays.splash_screen();
         let (usb_sender, usb_receiver) = make_channel!(UsbMidiEventPacket, USB_OUT_CAPACITY);
