@@ -353,7 +353,14 @@ struct Display<I2C> {
 }
 
 impl<I2C: I2c> Display<I2C> {
-    fn new(i2c: I2C, addr: u8) -> Self {
+    fn new(mut i2c: I2C, addr: u8) -> Self {
+        // Probe the display with a zero-length write (address-only).
+        // If the device doesn't ACK, skip it entirely to avoid blocking.
+        if i2c.write(addr, &[]).is_err() {
+            defmt::warn!("Display at 0x{:02x} not responding — disabled", addr);
+            return Display { driver: None };
+        }
+
         let mut driver = ssd1327_i2c::SSD1327I2C::with_addr(i2c, addr);
         driver.init();
 
@@ -364,18 +371,17 @@ impl<I2C: I2c> Display<I2C> {
     fn splash_screen(&mut self) {
         if let Some(disp) = &mut self.driver {
             let bmp_data = include_bytes!("../../../img/pedalboard-logo.bmp");
-
             let bmp = Bmp::from_slice(bmp_data).unwrap();
-
-            Image::new(&bmp, Point::new(0, 0)).draw(disp).unwrap();
-
-            disp.flush().unwrap();
+            Image::new(&bmp, Point::new(0, 0)).draw(disp).ok();
+            if disp.flush().is_err() {
+                defmt::warn!("Display flush failed during splash");
+            }
         }
     }
 
     fn show(&mut self) {
         if let Some(display) = &mut self.driver {
-            display.clear(Gray4::BLACK).unwrap();
+            display.clear(Gray4::BLACK).ok();
 
             let text = version_string!();
             let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
@@ -390,9 +396,8 @@ impl<I2C: I2c> Display<I2C> {
             let text_box =
                 TextBox::with_textbox_style(text, bounds, character_style, textbox_style);
 
-            text_box.draw(display).unwrap();
-
-            display.flush().unwrap();
+            text_box.draw(display).ok();
+            display.flush().ok();
         }
     }
 }
