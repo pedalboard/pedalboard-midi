@@ -17,6 +17,7 @@ PATCHES := $(PROTOCOL_PATCH) $(LED_RING_PATCH)
 
 build: ## build
 	cargo build --release $(PATCHES)
+	elf2uf2-rs ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
 lint: ## lint source code
 	cargo clippy --all-features $(PATCHES)
@@ -24,7 +25,7 @@ lint: ## lint source code
 attach: ## attach to the running program
 	probe-rs attach --chip RP2040  ./target/thumbv6m-none-eabi/release/pedalboard-midi
 
-flash: uf2 ## flash firmware via CLI (bootloader + HTTP upload to bridge)
+flash: build ## flash firmware via CLI (bootloader + HTTP upload to bridge)
 	cd ../pedalboard-cli && cargo run -q $(PROTOCOL_PATCH) -- flash \
 		../pedalboard-midi/target/thumbv6m-none-eabi/release/pedalboard-midi.uf2
 

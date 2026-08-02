@@ -328,13 +328,10 @@ fn draw_single_row<D: DrawTarget<Color = Gray4>>(
             .fill_color(indicator_color)
             .build();
 
-        // Vertical center of this row (shift up for bottom-left to avoid preset number)
-        let cy = if matches!(side, Side::Left) && i == 2 {
-            y + (ROW_HEIGHT as i32) / 2 - 10
-        } else {
-            y + (ROW_HEIGHT as i32) / 2
-        };
-        const IND_SIZE: i32 = 14;
+        // Always position indicator in the upper quarter of the INSET gap.
+        // The lower half is reserved for status badges (e.g. GIG).
+        let cy = y + 8;
+        const IND_SIZE: i32 = 12;
 
         let is_next = hint.as_str().contains("Next") || hint.as_str().contains("»");
         let is_prev = hint.as_str().contains("Prev") || hint.as_str().contains("«");

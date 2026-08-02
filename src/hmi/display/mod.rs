@@ -326,14 +326,14 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
-    /// Draw a small "GIG" badge in the top-right corner of the left display.
-    /// Positioned in the INSET gap column beside button D (x=95..128, y=2..16).
-    /// Call after `draw_performance_left` to layer on top without clearing.
+    /// Draw a small "GIG" badge in the bottom-right of the left display INSET column.
+    /// Positioned below button A's lower half (x=96..126, y=112..126), leaving
+    /// the upper half of each INSET slot free for next/prev indicators.
     pub fn draw_gig_badge(&mut self) {
         use embedded_graphics::{mono_font::ascii::FONT_6X10, primitives::PrimitiveStyleBuilder};
         if let Some(display) = &mut self.display_l.driver {
-            // Sits in the right-side inset gap, clear of button D's rounded rect
-            let badge_rect = Rectangle::new(Point::new(96, 2), Size::new(30, 14));
+            // Bottom of INSET column, below the next/prev indicator zone
+            let badge_rect = Rectangle::new(Point::new(96, 112), Size::new(30, 14));
             let fill_style = PrimitiveStyleBuilder::new()
                 .fill_color(Gray4::WHITE)
                 .build();
@@ -348,7 +348,7 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
                 .draw(display)
                 .ok();
 
-            display.flush_rows(0, 16).ok();
+            display.flush_rows(110, 127).ok();
         }
     }
 
