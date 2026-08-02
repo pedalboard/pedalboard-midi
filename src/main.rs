@@ -154,6 +154,7 @@ mod app {
     const TRIGGER_CAPACITY: usize = 8;
     const SYSTEM_STATUS_CAPACITY: usize = 1;
     const CONFIG_DISPLAY_CAPACITY: usize = 8;
+    const GIG_MODE_CAPACITY: usize = 2;
 
     #[init(local = [
         usb_bus: MaybeUninit<usb_device::bus::UsbBusAllocator<UsbBus>> = MaybeUninit::uninit(),
@@ -348,6 +349,8 @@ mod app {
             pedalboard_midi::config_mode::ConfigDisplayEvent,
             CONFIG_DISPLAY_CAPACITY
         );
+        let (gig_mode_sender, gig_mode_receiver) =
+            make_channel!(pedalboard_midi::pe_handler::GigModeEvent, GIG_MODE_CAPACITY);
 
         blink::spawn().unwrap();
         led_out::spawn(led_receiver).unwrap();
@@ -358,6 +361,7 @@ mod app {
             led_sender.clone(),
             persist_sender.clone(),
             config_display_sender,
+            gig_mode_sender,
         )
         .unwrap();
         display_out::spawn(
@@ -365,6 +369,7 @@ mod app {
             display_event_receiver,
             system_status_receiver,
             config_display_receiver,
+            gig_mode_receiver,
         )
         .unwrap();
         persist::spawn(persist_receiver, system_status_sender).unwrap();
@@ -425,6 +430,7 @@ mod app {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[task(priority = 2, local = [inputs, uart_midi_out, din_thru_receiver, trigger_receiver], shared = [active_preset, pe_config, global_config, state_store, button_active])]
     async fn poll_input(
         mut ctx: poll_input::Context,
@@ -441,6 +447,11 @@ mod app {
             'static,
             pedalboard_midi::config_mode::ConfigDisplayEvent,
             CONFIG_DISPLAY_CAPACITY,
+        >,
+        mut gig_mode_sender: Sender<
+            'static,
+            pedalboard_midi::pe_handler::GigModeEvent,
+            GIG_MODE_CAPACITY,
         >,
     ) {
         let inputs = ctx.local.inputs;
@@ -501,6 +512,12 @@ mod app {
 
         let mut config_mode = pedalboard_midi::config_mode::ConfigMode::new();
         let mut leds_initialized = false;
+
+        // Gig mode combo state: A (index 0) + F (index 5) held for 3 seconds.
+        let mut combo_a_held = false;
+        let mut combo_f_held = false;
+        let mut combo_start_ms: Option<u32> = None;
+        let mut gig_active = false;
 
         loop {
             // One-shot LED init: render LEDs once config is loaded from flash.
@@ -678,6 +695,63 @@ mod app {
             for e in slow_events.iter() {
                 events.push(*e).ok();
             }
+
+            // A+F combo detection: both held for 3 seconds → toggle gig mode.
+            {
+                use pedalboard_midi::events::{Edge, InputEvent};
+                for e in events.iter() {
+                    match e {
+                        InputEvent::ButtonA(Edge::Activate) => combo_a_held = true,
+                        InputEvent::ButtonA(Edge::Deactivate) => {
+                            combo_a_held = false;
+                            combo_start_ms = None;
+                        }
+                        InputEvent::ButtonF(Edge::Activate) => combo_f_held = true,
+                        InputEvent::ButtonF(Edge::Deactivate) => {
+                            combo_f_held = false;
+                            combo_start_ms = None;
+                        }
+                        _ => {}
+                    }
+                }
+                let now_ms = (Mono::now().ticks() / 1_000) as u32;
+                if combo_a_held && combo_f_held {
+                    match combo_start_ms {
+                        None => combo_start_ms = Some(now_ms),
+                        Some(start) if now_ms.wrapping_sub(start) >= 3_000 => {
+                            combo_start_ms = None;
+                            combo_a_held = false;
+                            combo_f_held = false;
+                            gig_active = !gig_active;
+                            // Send gig mode SysEx to bridge on internal channel (USB only).
+                            // F0 7D 01 01 F7 = enter gig, F0 7D 01 00 F7 = exit gig.
+                            let sysex: [u8; 5] = if gig_active {
+                                [0xF0, 0x7D, 0x01, 0x01, 0xF7]
+                            } else {
+                                [0xF0, 0x7D, 0x01, 0x00, 0xF7]
+                            };
+                            info!("Gig combo fired: gig_active={}", gig_active);
+                            for chunk in sysex.chunks(3) {
+                                if let Ok(packet) = UsbMidiEventPacket::try_from_payload_bytes(
+                                    CableNumber::Cable0,
+                                    chunk,
+                                ) {
+                                    sender.try_send(packet).ok();
+                                }
+                            }
+                            // Signal display task to show/hide GIG badge.
+                            gig_mode_sender
+                                .try_send(if gig_active {
+                                    pedalboard_midi::pe_handler::GigModeEvent::Entered
+                                } else {
+                                    pedalboard_midi::pe_handler::GigModeEvent::Exited
+                                })
+                                .ok();
+                        }
+                        _ => {}
+                    }
+                }
+            } // end combo detection
 
             // Config mode: always process for entry/exit detection + diagnostics.
             let now_ms_cfg = (Mono::now().ticks() / 1_000) as u32;
@@ -1451,6 +1525,11 @@ mod app {
             pedalboard_midi::config_mode::ConfigDisplayEvent,
             CONFIG_DISPLAY_CAPACITY,
         >,
+        mut gig_mode_receiver: Receiver<
+            'static,
+            pedalboard_midi::pe_handler::GigModeEvent,
+            GIG_MODE_CAPACITY,
+        >,
     ) {
         use crate::hmi::display::DisplayLocation;
         use heapless::String;
@@ -1486,6 +1565,7 @@ mod app {
         let mut debug_mode_ticks: u8 = 0;
         const DEBUG_MODE_TIMEOUT: u8 = 25; // 25 * 200ms = 5 seconds
         let mut config_mode_active = false;
+        let mut gig_mode = false;
 
         loop {
             let mut show_overlay = false;
@@ -1496,6 +1576,23 @@ mod app {
                 // Hold display until reset occurs (persist task will reset after delay)
                 loop {
                     Mono::delay(100.millis()).await;
+                }
+            }
+
+            // Gig mode events.
+            while let Ok(evt) = gig_mode_receiver.try_recv() {
+                use pedalboard_midi::pe_handler::GigModeEvent;
+                match evt {
+                    GigModeEvent::Entered => {
+                        gig_mode = true;
+                        displays.draw_gig_confirm(true);
+                        overlay_ticks = 5; // hold confirm for ~1s then redraw with badge
+                    }
+                    GigModeEvent::Exited => {
+                        gig_mode = false;
+                        displays.draw_gig_confirm(false);
+                        overlay_ticks = 5; // hold confirm for ~1s then redraw without badge
+                    }
                 }
             }
 
@@ -1544,6 +1641,9 @@ mod app {
                         // Restore normal performance view.
                         let idx = (current_preset as usize) % presets.len();
                         displays.draw_performance(&presets[idx]);
+                        if gig_mode {
+                            displays.draw_gig_badge();
+                        }
                     }
                 }
             }
@@ -1566,6 +1666,9 @@ mod app {
                 debug_mode = false;
                 let idx = (current_preset as usize) % presets.len();
                 displays.draw_performance(&presets[idx]);
+                if gig_mode {
+                    displays.draw_gig_badge();
+                }
             }
             // Timeout: recover if ConnectionClose was never received
             if debug_mode && debug_mode_ticks > 0 {
@@ -1574,6 +1677,9 @@ mod app {
                     debug_mode = false;
                     let idx = (current_preset as usize) % presets.len();
                     displays.draw_performance(&presets[idx]);
+                    if gig_mode {
+                        displays.draw_gig_badge();
+                    }
                 }
             }
 
@@ -1637,6 +1743,9 @@ mod app {
                         forward,
                     );
                     displays.draw_performance_right(&presets[idx]);
+                    if gig_mode {
+                        displays.draw_gig_badge();
+                    }
                     overlay_ticks = OVERLAY_DURATION;
                     show_overlay = true;
                     // Re-sync to prevent stale diff triggering active_changed on next loop.
@@ -1647,6 +1756,9 @@ mod app {
             } else if config_changed && !debug_mode {
                 debug!("DISP: config_changed → full redraw");
                 displays.draw_performance(&presets[idx]);
+                if gig_mode {
+                    displays.draw_gig_badge();
+                }
             } else if any_changed && !debug_mode && overlay_ticks == 0 {
                 debug!("DISP: active_changed partial");
                 displays.draw_performance_partial(&presets[idx], buttons_changed);
@@ -1854,6 +1966,9 @@ mod app {
                         presets[idx].button_active = *ba;
                     });
                     displays.draw_performance(&presets[idx]);
+                    if gig_mode {
+                        displays.draw_gig_badge();
+                    }
                 }
             }
 

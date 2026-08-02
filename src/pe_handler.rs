@@ -23,6 +23,15 @@ const NUM_BUTTONS: usize = 6;
 // Re-export types used by main.rs
 pub use midi_controller::engine::{DisplayEvent, DisplaySide, SystemAction};
 
+/// Firmware-level display event for gig mode (not part of the controller protocol).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GigModeEvent {
+    /// Gig mode entered (show GIG badge + brief full-screen confirmation).
+    Entered,
+    /// Gig mode exited (hide GIG badge).
+    Exited,
+}
+
 /// A step in an action sequence: raw MIDI bytes, a delay, or an LED change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MidiStep {

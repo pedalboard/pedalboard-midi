@@ -298,6 +298,61 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
+    // --- Gig Mode display methods ---
+
+    /// Brief full-screen confirmation on both displays when switching mode.
+    /// `entering` = true → "GIG\nMODE", false → "STUDIO"
+    pub fn draw_gig_confirm(&mut self, entering: bool) {
+        let text = if entering { "GIG\nMODE" } else { "STUDIO" };
+        let character_style = MonoTextStyle::new(&FONT_10X20, Gray4::WHITE);
+        let textbox_style = TextBoxStyleBuilder::new()
+            .alignment(HorizontalAlignment::Center)
+            .vertical_alignment(VerticalAlignment::Middle)
+            .build();
+        let bounds = Rectangle::new(Point::zero(), Size::new(128, 128));
+        if let Some(display) = &mut self.display_l.driver {
+            display.clear(Gray4::BLACK).ok();
+            TextBox::with_textbox_style(text, bounds, character_style, textbox_style)
+                .draw(display)
+                .ok();
+            display.flush().ok();
+        }
+        if let Some(display) = &mut self.display_r.driver {
+            display.clear(Gray4::BLACK).ok();
+            TextBox::with_textbox_style(text, bounds, character_style, textbox_style)
+                .draw(display)
+                .ok();
+            display.flush().ok();
+        }
+    }
+
+    /// Draw a small "GIG" badge in the top-right corner of the right display.
+    /// Call after `draw_performance_right` to layer on top without clearing.
+    pub fn draw_gig_badge(&mut self) {
+        use embedded_graphics::{mono_font::ascii::FONT_6X10, primitives::PrimitiveStyleBuilder};
+        if let Some(display) = &mut self.display_r.driver {
+            // Filled rounded rect background
+            let badge_rect = Rectangle::new(Point::new(88, 2), Size::new(38, 14));
+            let fill_style = PrimitiveStyleBuilder::new()
+                .fill_color(Gray4::WHITE)
+                .build();
+            badge_rect.into_styled(fill_style).draw(display).ok();
+
+            // "GIG" label in black over white background
+            let label_style = MonoTextStyle::new(&FONT_6X10, Gray4::BLACK);
+            let textbox_style = TextBoxStyleBuilder::new()
+                .alignment(HorizontalAlignment::Center)
+                .vertical_alignment(VerticalAlignment::Middle)
+                .build();
+            TextBox::with_textbox_style("GIG", badge_rect, label_style, textbox_style)
+                .draw(display)
+                .ok();
+
+            // Flush only the badge rows (0–16)
+            display.flush_rows(0, 16).ok();
+        }
+    }
+
     // --- Config Mode display methods ---
 
     pub fn draw_config_entered(&mut self) {
