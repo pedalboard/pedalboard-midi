@@ -1485,7 +1485,7 @@ mod app {
             let data = leds.render();
             ctx.local
                 .led_spi
-                .write(brightness(data.iter().cloned(), 32))
+                .write(brightness(data.iter().cloned(), 128))
                 .unwrap();
 
             // 50Hz frame rate = 20ms

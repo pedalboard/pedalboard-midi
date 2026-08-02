@@ -695,9 +695,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "led-ring"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66e7513ce05e7b8492f243568813011f12d725b7046e92e0072a94174f3da6ab"
+checksum = "9989ecf7460df013e1e0e89969f86d4ab5161e22e8fd82c5451a2989c2d9355f"
 dependencies = [
  "serde",
 ]
@@ -761,7 +761,7 @@ checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 [[package]]
 name = "midi-controller"
 version = "0.7.1"
-source = "git+https://github.com/pedalboard/midi-controller#c8cfc3c19f3a820d62c7d5a4027ef9af6c8bf426"
+source = "git+https://github.com/pedalboard/midi-controller#6c34cecd1d5e277909422945da2cb9abd5b75f15"
 dependencies = [
  "bitflags 2.13.0",
  "heapless 0.9.3",

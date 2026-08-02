@@ -12,7 +12,8 @@ clean: ## clean build results
 	cargo clean
 
 PROTOCOL_PATCH := --config 'patch."https://github.com/pedalboard/midi-controller".midi-controller.path="../midi-controller"'
-PATCHES := $(PROTOCOL_PATCH)
+LED_RING_PATCH := --config 'patch.crates-io.led-ring.path="../led-ring"'
+PATCHES := $(PROTOCOL_PATCH) $(LED_RING_PATCH)
 
 build: ## build
 	cargo build --release $(PATCHES)
