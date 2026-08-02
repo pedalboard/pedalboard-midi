@@ -326,20 +326,20 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
-    /// Draw a small "GIG" badge in the bottom-right of the left display INSET column.
-    /// Positioned below button A's lower half (x=96..126, y=112..126), leaving
-    /// the upper half of each INSET slot free for next/prev indicators.
+    /// Draw a small "GIG" badge in button D's INSET gap (right side of left display, top row).
+    /// D's gap runs x=95..128, full row height. Indicator sits at y=3..20, badge below that.
     pub fn draw_gig_badge(&mut self) {
-        use embedded_graphics::{mono_font::ascii::FONT_6X10, primitives::PrimitiveStyleBuilder};
+        use embedded_graphics::{mono_font::ascii::FONT_7X14, primitives::PrimitiveStyleBuilder};
         if let Some(display) = &mut self.display_l.driver {
-            // Bottom of INSET column, below the next/prev indicator zone
-            let badge_rect = Rectangle::new(Point::new(96, 112), Size::new(30, 14));
+            // Button D inset gap, below the next/prev indicator (which is at y=3..20)
+            // Narrower width to fit the gap, taller font for visibility
+            let badge_rect = Rectangle::new(Point::new(99, 22), Size::new(26, 16));
             let fill_style = PrimitiveStyleBuilder::new()
                 .fill_color(Gray4::WHITE)
                 .build();
             badge_rect.into_styled(fill_style).draw(display).ok();
 
-            let label_style = MonoTextStyle::new(&FONT_6X10, Gray4::BLACK);
+            let label_style = MonoTextStyle::new(&FONT_7X14, Gray4::BLACK);
             let textbox_style = TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Center)
                 .vertical_alignment(VerticalAlignment::Middle)
@@ -348,7 +348,7 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
                 .draw(display)
                 .ok();
 
-            display.flush_rows(110, 127).ok();
+            display.flush_rows(20, 40).ok();
         }
     }
 
