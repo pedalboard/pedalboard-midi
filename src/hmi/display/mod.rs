@@ -326,19 +326,19 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
         }
     }
 
-    /// Draw a small "GIG" badge in the top-right corner of the right display.
-    /// Call after `draw_performance_right` to layer on top without clearing.
+    /// Draw a small "GIG" badge in the top-right corner of the left display.
+    /// Positioned in the INSET gap column beside button D (x=95..128, y=2..16).
+    /// Call after `draw_performance_left` to layer on top without clearing.
     pub fn draw_gig_badge(&mut self) {
         use embedded_graphics::{mono_font::ascii::FONT_6X10, primitives::PrimitiveStyleBuilder};
-        if let Some(display) = &mut self.display_r.driver {
-            // Filled rounded rect background
-            let badge_rect = Rectangle::new(Point::new(88, 2), Size::new(38, 14));
+        if let Some(display) = &mut self.display_l.driver {
+            // Sits in the right-side inset gap, clear of button D's rounded rect
+            let badge_rect = Rectangle::new(Point::new(96, 2), Size::new(30, 14));
             let fill_style = PrimitiveStyleBuilder::new()
                 .fill_color(Gray4::WHITE)
                 .build();
             badge_rect.into_styled(fill_style).draw(display).ok();
 
-            // "GIG" label in black over white background
             let label_style = MonoTextStyle::new(&FONT_6X10, Gray4::BLACK);
             let textbox_style = TextBoxStyleBuilder::new()
                 .alignment(HorizontalAlignment::Center)
@@ -348,7 +348,6 @@ impl<I2CL: I2c, I2CR: I2c> Displays<I2CL, I2CR> {
                 .draw(display)
                 .ok();
 
-            // Flush only the badge rows (0–16)
             display.flush_rows(0, 16).ok();
         }
     }
