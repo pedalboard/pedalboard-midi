@@ -28,3 +28,7 @@ path = "tests/pe_sysex.rs"
 [[test]]
 name = "config_mode"
 path = "tests/config_mode.rs"
+
+[[test]]
+name = "combo"
+path = "tests/combo.rs"

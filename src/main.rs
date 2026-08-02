@@ -513,10 +513,8 @@ mod app {
         let mut config_mode = pedalboard_midi::config_mode::ConfigMode::new();
         let mut leds_initialized = false;
 
-        // Gig mode combo state: A (index 0) + F (index 5) held for 3 seconds.
-        let mut combo_a_held = false;
-        let mut combo_f_held = false;
-        let mut combo_start_ms: Option<u32> = None;
+        // Gig mode combo: A + F held for 3 seconds toggles gig mode.
+        let mut combo = pedalboard_midi::combo::ComboDetector::new(3_000);
         let mut gig_active = false;
 
         loop {
@@ -699,57 +697,38 @@ mod app {
             // A+F combo detection: both held for 3 seconds → toggle gig mode.
             {
                 use pedalboard_midi::events::{Edge, InputEvent};
+                let now_ms = (Mono::now().ticks() / 1_000) as u32;
                 for e in events.iter() {
                     match e {
-                        InputEvent::ButtonA(Edge::Activate) => combo_a_held = true,
-                        InputEvent::ButtonA(Edge::Deactivate) => {
-                            combo_a_held = false;
-                            combo_start_ms = None;
-                        }
-                        InputEvent::ButtonF(Edge::Activate) => combo_f_held = true,
-                        InputEvent::ButtonF(Edge::Deactivate) => {
-                            combo_f_held = false;
-                            combo_start_ms = None;
-                        }
+                        InputEvent::ButtonA(Edge::Activate) => combo.update_a(true, now_ms),
+                        InputEvent::ButtonA(Edge::Deactivate) => combo.update_a(false, now_ms),
+                        InputEvent::ButtonF(Edge::Activate) => combo.update_f(true, now_ms),
+                        InputEvent::ButtonF(Edge::Deactivate) => combo.update_f(false, now_ms),
                         _ => {}
                     }
                 }
-                let now_ms = (Mono::now().ticks() / 1_000) as u32;
-                if combo_a_held && combo_f_held {
-                    match combo_start_ms {
-                        None => combo_start_ms = Some(now_ms),
-                        Some(start) if now_ms.wrapping_sub(start) >= 3_000 => {
-                            combo_start_ms = None;
-                            combo_a_held = false;
-                            combo_f_held = false;
-                            gig_active = !gig_active;
-                            // Send gig mode SysEx to bridge on internal channel (USB only).
-                            // F0 7D 01 01 F7 = enter gig, F0 7D 01 00 F7 = exit gig.
-                            let sysex: [u8; 5] = if gig_active {
-                                [0xF0, 0x7D, 0x01, 0x01, 0xF7]
-                            } else {
-                                [0xF0, 0x7D, 0x01, 0x00, 0xF7]
-                            };
-                            info!("Gig combo fired: gig_active={}", gig_active);
-                            for chunk in sysex.chunks(3) {
-                                if let Ok(packet) = UsbMidiEventPacket::try_from_payload_bytes(
-                                    CableNumber::Cable0,
-                                    chunk,
-                                ) {
-                                    sender.try_send(packet).ok();
-                                }
-                            }
-                            // Signal display task to show/hide GIG badge.
-                            gig_mode_sender
-                                .try_send(if gig_active {
-                                    pedalboard_midi::pe_handler::GigModeEvent::Entered
-                                } else {
-                                    pedalboard_midi::pe_handler::GigModeEvent::Exited
-                                })
-                                .ok();
+                if combo.poll(now_ms) {
+                    gig_active = !gig_active;
+                    let sysex: [u8; 5] = if gig_active {
+                        [0xF0, 0x7D, 0x01, 0x01, 0xF7]
+                    } else {
+                        [0xF0, 0x7D, 0x01, 0x00, 0xF7]
+                    };
+                    info!("Gig combo fired: gig_active={}", gig_active);
+                    for chunk in sysex.chunks(3) {
+                        if let Ok(packet) =
+                            UsbMidiEventPacket::try_from_payload_bytes(CableNumber::Cable0, chunk)
+                        {
+                            sender.try_send(packet).ok();
                         }
-                        _ => {}
                     }
+                    gig_mode_sender
+                        .try_send(if gig_active {
+                            pedalboard_midi::pe_handler::GigModeEvent::Entered
+                        } else {
+                            pedalboard_midi::pe_handler::GigModeEvent::Exited
+                        })
+                        .ok();
                 }
             } // end combo detection
 
